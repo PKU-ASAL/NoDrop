@@ -1,0 +1,7 @@
+.tmp_versions/*
+.vscode/*
+.gdb_history
+*.o
+hello/*.o
+*.ko
+a.out
