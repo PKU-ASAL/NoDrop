@@ -21,7 +21,7 @@ ENTRY (_start)
 END (_start)
     
 
-ENTRY (__l_restore_context)
+ENTRY (__restore_registers)
     /* restore normal registers */
     RESTORE_REG(rdi, R15, r15)
     RESTORE_REG(rdi, R14, r14)
@@ -55,4 +55,4 @@ ENTRY (__l_restore_context)
 
     /* return address is put on the stack top */
     retq
-END (__l_restore_context)
+END (__restore_registers)

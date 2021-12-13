@@ -1,13 +1,14 @@
 KDIR := /lib/modules/$(shell uname -r)/build
 PWD  := $(shell pwd)
+EXTRA_CFLAGS += -I$(src)/include
 
 MODULE := pinject
 obj-m  += $(MODULE).o
 $(MODULE)-objs := \
 	pinject_main.o \
 	loader.o \
-	kprobe.o \
-	# hock.o \
+	hock.o \
+	# kprobe.o \
 
 all:
 	make -C $(KDIR) M=$(PWD) modules

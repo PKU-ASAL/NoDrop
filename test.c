@@ -20,13 +20,13 @@ ssize_t my_write(int fd, const void *buf, size_t size)
 }
 
 int main() { 
-    // printf("hello, world1\n");
-    // printf("hello, world2\n");
-    // printf("hello, world3\n");
-    // printf("hello, world4\n");
-    // printf("hello, world5\n");
-    my_write(1, "a.out1\n", 7);
-    my_write(1, "a.out2\n", 7);
+    printf("hello, world1\n");
+    printf("hello, world2\n");
+    printf("hello, world3\n");
+    printf("hello, world4\n");
+    printf("hello, world5\n");
+    // my_write(1, "a.out1\n", 7);
+    // my_write(1, "a.out2\n", 7);
     // my_write(1, "")
     // _exit(0);
     // puts("hello");

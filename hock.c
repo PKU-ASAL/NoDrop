@@ -22,8 +22,8 @@ static long
 __hocked_syscall_entry(struct pt_regs *reg) {
     int nr = reg->orig_ax;
     long retval;
-    // char log_buf[MAX_LOG_LENGTH];
-    // char *argv[2] = { log_buf, NULL };
+    char log_buf[MAX_LOG_LENGTH];
+    char *argv[2] = { log_buf, NULL };
     unsigned long _ip, _sp;
 
     sys_call_ptr_t __syscall_real_entry = syscall_table_bak[nr];
@@ -33,24 +33,25 @@ __hocked_syscall_entry(struct pt_regs *reg) {
         goto out;
     }
 
-    // sprintf(log_buf, "eid=%lu,proc=%s,pid=%d,rax=%lx,rdi=%lx,rsi=%lx,rdx=%lx,r10=%lx,r8=%lx,r9=%lx", event_id++, current->comm, current->pid,
-    //             reg->ax, reg->di, reg->si, reg->dx, reg->r10, reg->r8, reg->r9);
-
     retval = __syscall_real_entry(reg);
 
-    if(strcmp(current->comm, "a.out"))    
-        goto out;
+    // if(strcmp(current->comm, "a.out"))    
+    //     goto out;
 
-    // reg->ax = retval;
+    sprintf(log_buf, "eid=%lu,proc=%s,pid=%d,nr=%lx,rdi=%lx,rsi=%lx,rdx=%lx,r10=%lx,r8=%lx,r9=%lx", event_id++, current->comm, current->pid,
+                nr, reg->di, reg->si, reg->dx, reg->r10, reg->r8, reg->r9);
 
-    // _ip = reg->ip;
-    // _sp = reg->sp;
+    reg->ax = retval;
 
-    // if (!do_load_collector(reg, &_ip, &_sp, argv)) {
-    //     reg->ip = _ip;
-    //     reg->sp = _sp;
-    //     // reg->cx = _ip;
-    // }
+    _ip = reg->ip;
+    _sp = reg->sp;
+
+    int tmp = do_load_collector(reg, &_ip, &_sp, argv);
+    if (!tmp) {
+        reg->ip = _ip;
+        reg->sp = _sp;
+        reg->cx = _ip;
+    }
 
 out:
     return retval;
@@ -62,6 +63,7 @@ hock_syscall_table(void) {
 
     for (i = 0, sz = sizeof(filtered_syscall) / sizeof(int); i < sz; ++i) {
         nr = filtered_syscall[i];
+        printk(KERN_INFO "filter syscall %d\n", nr);
         syscall_table_bak[nr] = syscall_table[nr];
         syscall_table[nr] = (sys_call_ptr_t)__hocked_syscall_entry;
     }

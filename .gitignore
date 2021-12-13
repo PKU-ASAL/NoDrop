@@ -5,3 +5,4 @@
 hello/*.o
 *.ko
 a.out
+.DS_Store

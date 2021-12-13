@@ -14,6 +14,7 @@
 #include <linux/random.h>
 
 #include "pinject.h"
+#include "common.h"
 
 
 #if ELF_EXEC_PAGESIZE > PAGE_SIZE
@@ -343,8 +344,6 @@ out:
 	return error;
 }
 
-
-
 static int
 create_elf_tbls(struct elfhdr *exec, 
 				unsigned long load_addr, 
@@ -367,6 +366,13 @@ create_elf_tbls(struct elfhdr *exec,
 	unsigned char k_rand_bytes[16];
 	unsigned char tmp[sizeof(elf_addr_t) + 1];
 
+	struct context_struct context = {
+		.fsbase = current->thread.fsbase,
+		.gsbase = current->thread.gsbase,
+	};
+	memcpy(&context.reg, reg, sizeof(struct pt_regs));
+	
+
 	original_rsp = *target_sp;
 	p = *target_sp & ~0xf;
 
@@ -374,8 +380,8 @@ create_elf_tbls(struct elfhdr *exec,
 	for (argc = 0; argv[argc]; argc++);
 
 	// save user context to user stack
-	context_addr = p = STACK_ALLOC(p, sizeof(struct pt_regs));
-	copy_to_user((char __user *)p, reg, sizeof(struct pt_regs));
+	context_addr = p = STACK_ALLOC(p, sizeof(struct context_struct));
+	copy_to_user((char __user *)p, (char *)&context, sizeof(struct context_struct));
 
 	for(i = argc - 1; i >= 0; --i) {
 		int len = strlen(argv[i]);

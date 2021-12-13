@@ -3,7 +3,7 @@
 # 		 -fmerge-all-constants -fno-stack-protector -frounding-math -g -Wstrict-prototypes -Wold-style-definition\
 # 		 -fPIC  -fno-stack-protector -mno-mmx  -ftls-model=initial-exec -MD -MP\
 
-INCLUDE_PATH := -I.
+INCLUDE_PATH := -I. -I../include
 CFLAGS := $(INCLUDE_PATH) -std=gnu11 -fPIC -O2
 LDFALGS := -nostartfiles -Wl,-zlazy -Wl,-Tscript_x86-64.ld #-nostdlib -Wl,-z,combreloc -Wl,-z,relro -Wl,--hash-style=both #-Wl,-z,defs
 
