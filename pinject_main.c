@@ -16,14 +16,14 @@ static int pinject_init(void)
     //     return err;
     // }
 
-    if((err = hock_init())) {
-        printk(KERN_ERR "hock syscall_table failed (%d)\n", err);
-        goto out;
-    }
-
     err = loader_init();
     if (err) {
         printk(KERN_ERR "load monitor failed (%d)\n", err);
+        goto out;
+    }
+
+    if((err = hock_init())) {
+        printk(KERN_ERR "hock syscall_table failed (%d)\n", err);
         goto out;
     }
 
@@ -36,8 +36,8 @@ out:
 static void pinject_exit(void)
 {
     // kprobe_destroy();
-    loader_destory();
     hock_destory();
+    loader_destory();
 }
 
 module_init(pinject_init);
