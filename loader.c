@@ -364,16 +364,20 @@ create_elf_tbls(struct elfhdr *exec,
 				unsigned long *target_sp,
 				const struct pt_regs *reg,
 				char *argv[]) {
+
+#define STACK_ROUND(sp, items) 	(((unsigned long) (sp - (items))) &~ 15UL)
 #define STACK_ADD(sp, items) ((elf_addr_t __user *)(sp) - (items))
 #define STACK_ALLOC(sp, len) ({sp -= (len); sp;})
 
-	int i, argc;
+	int i, argc, envc;
+	int elf_info_idx;
 	unsigned long p;
 	unsigned long arg_start, env_start, original_rsp;
 	elf_addr_t context_addr;
 
 	elf_addr_t __user *sp;
 	elf_addr_t __user *u_rand_bytes;
+	elf_addr_t *elf_info = NULL;
 	unsigned char k_rand_bytes[16];
 
 	struct context_struct context = {
@@ -384,7 +388,7 @@ create_elf_tbls(struct elfhdr *exec,
 	
 
 	original_rsp = *target_sp;
-	p = *target_sp & ~0xf;
+	p = *target_sp;
 
 	// get the number of arg vector and env vector
 	for (argc = 0; argv[argc]; argc++);
@@ -410,23 +414,11 @@ create_elf_tbls(struct elfhdr *exec,
 	if (__copy_to_user(u_rand_bytes, k_rand_bytes, sizeof(k_rand_bytes)))
 		goto err;
 
-
-#define INSERT_AUX_ENT(id, val, p) \
-	({\
-		p = STACK_ALLOC(p, sizeof(unsigned long) + sizeof(unsigned long));\	
-		if(put_user((unsigned long)val, (elf_addr_t *)(p) + 1)) \
-			goto err; \
-		if(put_user((unsigned long)id, (elf_addr_t *)(p))) \
-			goto err; \
-		p; \
-	})
-
-	/*
-	* Note that ld.so may be invoke movaps instruction
-	* this instruction need 16-byte aligned
-	*/
-	p &= ~0xf;
-	// p = STACK_ALLOC(p, 8);
+#define INSERT_AUX_ENT(id, val) \
+	do { \
+		elf_info[elf_info_idx++] = id; \
+		elf_info[elf_info_idx++] = val; \
+	} while (0)
 
 	/*
 	* If we have mapped the collector before,
@@ -434,26 +426,29 @@ create_elf_tbls(struct elfhdr *exec,
 	* so the arugment `load_addr`, `interp_load_addr` and `exec` is not required
 	* we only need to put the argc, argv and env onto the stack
 	*/
+	elf_info_idx = 0;
 	if (exec) {
-		p = INSERT_AUX_ENT(AT_NULL, 0, p);
-		p = INSERT_AUX_ENT(AT_RANDOM, (elf_addr_t)(unsigned long)u_rand_bytes, p);
-		p = INSERT_AUX_ENT(AT_EXECFN, original_rsp, p);
-		p = INSERT_AUX_ENT(AT_ENTRY, load_addr + exec->e_entry, p);
-		p = INSERT_AUX_ENT(AT_FLAGS, 0, p);
-		p = INSERT_AUX_ENT(AT_BASE, interp_load_addr, p);
-		p = INSERT_AUX_ENT(AT_PHNUM, exec->e_phnum, p);
-		p = INSERT_AUX_ENT(AT_PHENT, sizeof(struct elf_phdr), p);
-		p = INSERT_AUX_ENT(AT_PHDR, load_addr + exec->e_phoff, p);
-		p = INSERT_AUX_ENT(AT_CLKTCK, CLOCKS_PER_SEC, p);
-		p = INSERT_AUX_ENT(AT_PAGESZ, ELF_EXEC_PAGESIZE, p);
-		p = INSERT_AUX_ENT(AT_HWCAP, ELF_HWCAP, p);
+		elf_info = kmalloc(sizeof(elf_addr_t) * 12 * 2, GFP_KERNEL);
+		if (!elf_info)
+			goto err;
+		INSERT_AUX_ENT(AT_HWCAP, ELF_HWCAP);
+		INSERT_AUX_ENT(AT_PAGESZ, ELF_EXEC_PAGESIZE);
+		INSERT_AUX_ENT(AT_CLKTCK, CLOCKS_PER_SEC);
+		INSERT_AUX_ENT(AT_PHDR, load_addr + exec->e_phoff);
+		INSERT_AUX_ENT(AT_PHENT, sizeof(struct elf_phdr));
+		INSERT_AUX_ENT(AT_PHNUM, exec->e_phnum);
+		INSERT_AUX_ENT(AT_BASE, interp_load_addr);
+		INSERT_AUX_ENT(AT_FLAGS, 0);
+		INSERT_AUX_ENT(AT_ENTRY, load_addr + exec->e_entry);
+		INSERT_AUX_ENT(AT_EXECFN, original_rsp);
+		INSERT_AUX_ENT(AT_RANDOM, (elf_addr_t)(unsigned long)u_rand_bytes);
+		INSERT_AUX_ENT(AT_NULL, 0);
 	}
 
-#define INSERT_ENV_ENT(start, p) \
+#define INSERT_ENV_ENT(start, sp) \
 	({\
 		size_t len; \
-		p = STACK_ALLOC(p, sizeof(elf_addr_t));\
-		if (put_user((elf_addr_t)start, (elf_addr_t *)p)) \
+		if (put_user((elf_addr_t)start, (elf_addr_t *)sp++)) \
 			goto err; \
 		len = strnlen_user((void __user *)start, MAX_ARG_STRLEN); \
 		if (!len || len > MAX_ARG_STRLEN) \
@@ -461,22 +456,34 @@ create_elf_tbls(struct elfhdr *exec,
 		len; \
 	})
 
-	// fill NULL as end of env
-	p = STACK_ALLOC(p, sizeof(elf_addr_t));
-	if (put_user((elf_addr_t)0, (elf_addr_t *)p))
-		goto err;
+#define TRAVERSE_ENV_ENT(start) \
+	({\
+		size_t len; \
+		len = strnlen_user((void __user *)start, MAX_ARG_STRLEN); \
+		if (!len || len > MAX_ARG_STRLEN) \
+			goto err; \
+		len; \
+	})
 
+	// count that how many envs
+	envc = 0;
 	env_start = current->mm->env_start;
 	while (env_start < current->mm->env_end) {
-		env_start += INSERT_ENV_ENT(env_start, p);
+		env_start += TRAVERSE_ENV_ENT(env_start);
+		envc++;
 	}
 
-	sp = STACK_ADD(p, argc + 1);
+	// make stack 16-byte aligned
+	int items = (argc + 1) + (envc + 1) + 1;
+	sp = STACK_ADD(p, elf_info_idx);
+	sp = STACK_ROUND(sp, items);
 	*target_sp = (unsigned long)sp;
 
+	// put argc
 	if (__put_user(argc, sp++))
 		goto err;
 
+	// put argv
 	for (i = 0; i < argc - 1; ++i) {
 		size_t len = strlen(argv[i]);
 		if(put_user((elf_addr_t)arg_start, sp++))
@@ -484,15 +491,35 @@ create_elf_tbls(struct elfhdr *exec,
 		arg_start += len + 1;
 	}
 
+	// put context info addr
 	if (put_user(context_addr, sp++))
 		goto err;
-
+	// put NULL to mark the end of argv
 	if (put_user(0, sp++))
 		goto err;
+
+	// put env
+	env_start = current->mm->env_start;
+	while (env_start < current->mm->env_end) {
+		env_start += INSERT_ENV_ENT(env_start, sp);
+	}
+
+	// put NULL to mark the end of env
+	if (__put_user(0, sp++))
+		goto err;
+
+	if (exec) {
+		// put AUXV
+		if (copy_to_user(sp, elf_info, elf_info_idx * sizeof(elf_addr_t)))
+			return -EFAULT;
+		kfree(elf_info);
+	}
 
 	return 0;
 err:
 	*target_sp = original_rsp;
+	if (elf_info)
+		kfree(elf_info);
 	return -EFAULT;
 }
 

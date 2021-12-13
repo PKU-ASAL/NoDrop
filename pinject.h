@@ -3,7 +3,7 @@
 
 #include <linux/ptrace.h>
 
-#define MONITOR_FILE "hello/hello"
+#define MONITOR_FILE "monitor/hello"
 #define MONITOR_PATH "/mnt/hgfs/Projects/process_inject/"MONITOR_FILE
 
 #define MAX_LOG_LENGTH 128
