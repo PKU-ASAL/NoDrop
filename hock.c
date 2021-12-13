@@ -8,13 +8,12 @@
 #include "pinject.h"
 
 #define __NR_syscall_max __NR_statx // may change
-#define MAX_LOG_LENGTH 128
 
 typedef long (*sys_call_ptr_t)(const struct pt_regs *);
 
 sys_call_ptr_t *syscall_table;
-sys_call_ptr_t syscall_table_bak[__NR_syscall_max + 1] = { (sys_call_ptr_t)NULL };
-int filtered_syscall[] = { __NR_write };
+sys_call_ptr_t syscall_table_bak[__NR_syscall_max + 1];
+int filtered_syscall[] = { __NR_write, __NR_clone /*__NR_write, __NR_read*/ };
 
 static unsigned long event_id;
 
@@ -23,31 +22,28 @@ __hocked_syscall_entry(struct pt_regs *reg) {
     int nr = reg->orig_ax;
     long retval;
     char log_buf[MAX_LOG_LENGTH];
-    char *argv[2] = { log_buf, NULL };
     unsigned long _ip, _sp;
 
     sys_call_ptr_t __syscall_real_entry = syscall_table_bak[nr];
-    if (__syscall_real_entry == NULL) {
+    if (__syscall_real_entry == 0) {
         printk(KERN_ERR "unexpect syscall_nr=%d\n", nr);
         retval = -ENOSYS;
         goto out;
     }
-
     retval = __syscall_real_entry(reg);
 
-    // if(strcmp(current->comm, "a.out"))    
+    // if(!strcmp(current->comm, "users") ||
+    //     !strcmp(current->comm, "gnome-terminal-"))
     //     goto out;
-
-    sprintf(log_buf, "eid=%lu,proc=%s,pid=%d,nr=%lx,rdi=%lx,rsi=%lx,rdx=%lx,r10=%lx,r8=%lx,r9=%lx", event_id++, current->comm, current->pid,
-                nr, reg->di, reg->si, reg->dx, reg->r10, reg->r8, reg->r9);
+    if(strcmp(current->comm, "a.out"))    
+        goto out;
 
     reg->ax = retval;
 
     _ip = reg->ip;
     _sp = reg->sp;
 
-    int tmp = do_load_collector(reg, &_ip, &_sp, argv);
-    if (!tmp) {
+    if (!do_load_monitor(reg, &_ip, &_sp, &event_id)) {
         reg->ip = _ip;
         reg->sp = _sp;
         reg->cx = _ip;
@@ -61,11 +57,14 @@ static void
 hock_syscall_table(void) {
     int sz, nr, i;
 
+    for (i = 0; i <= __NR_syscall_max; ++i)
+        syscall_table_bak[i] = 0;
+
     for (i = 0, sz = sizeof(filtered_syscall) / sizeof(int); i < sz; ++i) {
         nr = filtered_syscall[i];
-        printk(KERN_INFO "filter syscall %d\n", nr);
         syscall_table_bak[nr] = syscall_table[nr];
         syscall_table[nr] = (sys_call_ptr_t)__hocked_syscall_entry;
+        printk(KERN_INFO "hock syscall %d [%lx]\n", nr, syscall_table_bak[nr]);
     }
 }
 
@@ -76,7 +75,7 @@ make_rw(unsigned long _addr) {
 
 	pte = lookup_address(_addr, &level);
 	if(pte == NULL) {
-		printk("%s: get pte failed\n", __func__);
+		printk(KERN_INFO "%s: get pte failed\n", __func__);
 		return -1;
 	} 
 	
@@ -93,7 +92,7 @@ make_ro(unsigned long _addr) {
 
 	pte = lookup_address(_addr, &level);
 	if(pte == NULL) {
-		printk("%s: get pte failed\n", __func__);
+		printk(KERN_INFO "%s: get pte failed\n", __func__);
 		return -1;
 	} 
 	
@@ -111,18 +110,30 @@ int hock_init() {
 
     retval = make_rw((unsigned long)syscall_table);
 
-    if (retval >= 0)
+    if (!retval)
         hock_syscall_table();
+
+    if (make_ro((unsigned long)syscall_table)) {
+        printk(KERN_ERR "err!! can not make syscall_table read only!!!!");
+    }
 
     return retval;
 }
 
 void hock_destory() {
-    int i;
+    int i, nr, sz;
 
-    for (i = 0; i <= __NR_syscall_max; ++i) {
-        if (syscall_table_bak[i])
-            syscall_table[i] = syscall_table_bak[i];
+    printk(KERN_INFO "event_id = %lu\n", event_id);
+
+    if (make_rw((unsigned long)syscall_table)) {
+        printk(KERN_ERR "err!! can not make syscall_table writable!!!!");
+        asm("hlt");
+    }
+
+    for (i = 0, sz = sizeof(filtered_syscall) / sizeof(int); i < sz; ++i) {
+        nr = filtered_syscall[i];
+        syscall_table[nr] = syscall_table_bak[nr];
+        printk(KERN_INFO "restore syscall %d [%lx]\n", nr, syscall_table[nr]);
     }
 
     if (make_ro((unsigned long)syscall_table)) {

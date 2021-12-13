@@ -145,9 +145,8 @@ SECTIONS
   .jcr            : { KEEP (*(.jcr)) }
   .data.rel.ro : { *(.data.rel.ro.local* .gnu.linkonce.d.rel.ro.local.*) *(.data.rel.ro .data.rel.ro.* .gnu.linkonce.d.rel.ro.*) }
   . = ALIGN(0x1000);
-  .collector.info : {
-    KEEP (*(.collector_enter))
-    KEEP (*(.collector_ehdr))
+  .monitor.info : {
+    KEEP (*(.monitor.enter))
   }
   .dynamic        : { *(.dynamic) }
   . = DATA_SEGMENT_RELRO_END (SIZEOF (.got.plt) >= 24 ? 24 : 0, .);
@@ -155,8 +154,6 @@ SECTIONS
   .got.plt        : { *(.got.plt)  *(.igot.plt) }
   .data           :
   {
-    /* KEEP (*(.collector_enter)) */
-    /* KEEP (*(.collector_ehdr)) */
     *(.data .data.* .gnu.linkonce.d.*)
     SORT(CONSTRUCTORS)
   }

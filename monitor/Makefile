@@ -5,9 +5,10 @@
 
 INCLUDE_PATH := -I. -I../include
 CFLAGS := $(INCLUDE_PATH) -std=gnu11 -fPIC -O2
-LDFALGS := -nostartfiles -Wl,-zlazy -Wl,-Tscript_x86-64.ld #-nostdlib -Wl,-z,combreloc -Wl,-z,relro -Wl,--hash-style=both #-Wl,-z,defs
+LDFALGS := -nostartfiles -Wl,-znow -Wl,-Tscript_x86-64.ld #-Wl,--dynamic-linker=/lib64/ld-linux-x86-64.so.2 #-nostdlib -Wl,-z,combreloc -Wl,-z,relro -Wl,--hash-style=both #-Wl,-z,defs
 
 TARGET := hello
+MODULE := pinject
 C_FILES := hello.c context.c
 S_FILES := misc.S
 O_FILES := $(patsubst %.c,%.o,$(C_FILES)) 
@@ -15,7 +16,8 @@ O_FILES += $(patsubst %.S,%.o,$(S_FILES))
 
 all: $(TARGET) 
 
-$(TARGET): $(O_FILES) 
+$(TARGET): $(O_FILES)
+	sudo rmmod -f $(MODULE) 2> /dev/null || true
 	$(CC) $(LDFALGS) $^ -o $@ 
 
 %.o: %.S
@@ -25,4 +27,5 @@ $(TARGET): $(O_FILES)
 
 .PHONY: clean all
 clean:
+	sudo rmmod -f $(MODULE) 2> /dev/null || true
 	rm -f $(TARGET) $(O_FILES)

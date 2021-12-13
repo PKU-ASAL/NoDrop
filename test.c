@@ -19,12 +19,38 @@ ssize_t my_write(int fd, const void *buf, size_t size)
     return ret;
 }
 
+#define __NR_exit 60
+ssize_t my_exit(int code)
+{
+    ssize_t ret;
+    asm volatile
+    (
+        "syscall"
+        : "=a" (ret)
+        //                 EDI      RSI       RDX
+        : "0"(__NR_exit), "D"(code)
+        : "rcx", "r11", "memory"
+    );
+    return ret;
+}
+
 int main() { 
-    printf("hello, world1\n");
-    printf("hello, world2\n");
-    printf("hello, world3\n");
-    printf("hello, world4\n");
-    printf("hello, world5\n");
+    // fork();
+    int pid;
+    int i;
+    for(i = 0; i < 100; ++i) {
+        pid = fork();
+        if (pid < 0) continue;
+        if (pid == 0) {
+            printf("%d\n", getpid());
+            exit(0);
+        }
+    }
+    // printf("hello, world1\n");
+    // printf("hello, world2\n");
+    // printf("hello, world3\n");
+    // printf("hello, world4\n");
+    // printf("hello, world5\n");
     // my_write(1, "a.out1\n", 7);
     // my_write(1, "a.out2\n", 7);
     // my_write(1, "")
