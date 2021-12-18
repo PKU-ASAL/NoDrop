@@ -5,8 +5,8 @@
 
 #define MONITOR_FILE "monitor/hello"
 #define MONITOR_PATH "/mnt/hgfs/Projects/process_inject/"MONITOR_FILE
+// #define MONITOR_PATH "hello"
 
-#define MAX_LOG_LENGTH 128
 
 // kprobe.c
 int  kprobe_init(void);

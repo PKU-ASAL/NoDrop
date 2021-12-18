@@ -36,7 +36,6 @@ static struct file *monitor, *interpreter;
 static int
 __check_mapping(struct vm_area_struct const * const vma, void *arg) {
 	vm_flags_t flags = vma->vm_flags;
-
 	if (flags & VM_EXEC) {
 		*(unsigned long*)arg = vma->vm_start;
 		return 1;
@@ -73,8 +72,6 @@ __check_monitor_enter(struct vm_area_struct const * const vma, void *arg) {
     }
     *(int *)arg = monitor_enter;
 
-    printk(KERN_INFO "read from .monitor_enter=%d\n", monitor_enter);
-
     return 1;
 }
 
@@ -90,27 +87,15 @@ check_mapping(const char *filename,
     struct file *file;
 
     mm = current->mm;
-    vma = mm->mmap;
-
     down_read(&mm->mmap_sem);
-    for (vma = mm->mmap; vma; vma = vma->vm_next)
-    {
+    for (vma = mm->mmap; vma; vma = vma->vm_next) {
         file = vma->vm_file;
-        if (file)
-        {
-            char *p = d_path(&file->f_path, buf, sizeof(buf));
-            if (!IS_ERR(p)) 
-            {
-                char *end = mangle_path(buf, p, "\n");
-                *end = '\0';
-
-                if(!strcmp(filename, buf) && (*resolve)((struct vm_area_struct const * const)vma, arg))
-                {
-					up_read(&mm->mmap_sem);
-					return 0;
-                }
-            }
-        }
+		if (file == monitor) {
+			if ((*resolve)((struct vm_area_struct const * const)vma, arg)) {
+				up_read(&mm->mmap_sem);
+				return 0;
+			}	
+		}
     }
 
     up_read(&mm->mmap_sem);
@@ -363,6 +348,7 @@ create_elf_tbls(struct elfhdr *exec,
 				unsigned long interp_load_addr, 
 				unsigned long *target_sp,
 				const struct pt_regs *reg,
+				unsigned long *event_id,
 				char *argv[]) {
 
 #define STACK_ROUND(sp, items) 	(((unsigned long) (sp - (items))) &~ 15UL)
@@ -381,6 +367,7 @@ create_elf_tbls(struct elfhdr *exec,
 	unsigned char k_rand_bytes[16];
 
 	struct context_struct context = {
+		.eid = *event_id,
 		.fsbase = current->thread.fsbase,
 		.gsbase = current->thread.gsbase,
 	};
@@ -514,7 +501,6 @@ create_elf_tbls(struct elfhdr *exec,
 			return -EFAULT;
 		kfree(elf_info);
 	}
-
 	return 0;
 err:
 	*target_sp = original_rsp;
@@ -523,11 +509,12 @@ err:
 	return -EFAULT;
 }
 
-static int
+int
 __load_monitor(const char *filename, 
 			   const struct pt_regs *reg,
 			   unsigned long *target_entry, 
-			   unsigned long *target_sp, 
+			   unsigned long *target_sp,
+			   unsigned long *event_id,
 			   char *argv[]) {
 	int retval;
  	unsigned long load_addr = 0;
@@ -536,10 +523,10 @@ __load_monitor(const char *filename,
 	unsigned long interp_map_addr = 0;
 
 	if(check_mapping(filename, __check_mapping, (void *)&interp_entry) == 0) {
-		retval = create_elf_tbls(NULL, 0, 0, target_sp, reg, argv);
+		retval = create_elf_tbls(NULL, 0, 0, target_sp, reg, event_id, argv);
 		if (!retval) {
 			*target_entry = interp_entry + monitor_elf_ex.e_entry;
-			printk(KERN_INFO "%s alread mapped at %08lx\n", filename, *target_entry);
+			// printk(KERN_INFO "%s alread mapped at %08lx\n", filename, *target_entry);
 		}
 		goto out;
     }
@@ -572,7 +559,7 @@ __load_monitor(const char *filename,
         goto out;
     }
 
-	retval = create_elf_tbls(&monitor_elf_ex, load_addr, interp_load_addr, target_sp, reg, argv);
+	retval = create_elf_tbls(&monitor_elf_ex, load_addr, interp_load_addr, target_sp, reg, event_id, argv);
 	if(retval < 0) {
 		// TODO: if create_elf_tbls failed, we need to unmap collector and its interp
 		goto out_unmmap;
@@ -584,7 +571,7 @@ __load_monitor(const char *filename,
 	}
 
 	*target_entry = interp_entry;
-	printk(KERN_INFO "load collector at %lx\nload interp at %lx\nentry = %lx", load_addr, interp_load_addr, interp_entry);
+	printk(KERN_INFO "[%d] load collector at %lx\nload interp at %lx\nentry = %lx", current->pid, load_addr, interp_load_addr, interp_entry);
 out:
 	return retval;
 
@@ -599,8 +586,7 @@ do_load_monitor(const struct pt_regs *reg,
 				unsigned long *target_sp, 
 				unsigned long *event_id) {
 	int retval;
-	char buf[MAX_LOG_LENGTH];
-	char *argv[2] = { buf, NULL };
+	char *argv[1] = { NULL };
 
 	// Monitor called syscall
     if (check_mapping(MONITOR_PATH, __check_monitor_enter, (void *)&retval) == 0) {
@@ -612,17 +598,10 @@ do_load_monitor(const struct pt_regs *reg,
         }
     }
 
-	sprintf(buf, "eid=%lu,proc=%s,pid=%d,nr=%lx,ret=%lx,rdi=%lx,rsi=%lx,rdx=%lx,r10=%lx,r8=%lx,r9=%lx", (*event_id)++, current->comm, current->pid,
-			reg->orig_ax, reg->ax, reg->di, reg->si, reg->dx, reg->r10, reg->r8, reg->r9);
-	printk("%d %lx", current->pid, buf);
-	// sprintf(buf, "eid=%lu,proc=%s,pid=%d,nr=%lx,ret=%lx,rdi=%lx,rsi=%lx,rdx=%lx", (*event_id)++, current->comm, current->pid,
-			// reg->orig_ax, reg->ax, reg->di, reg->si, reg->dx);
-	// sprintf(buf, "eid=%lu,proc=%s,pid=%d,nr=%lx,ret=%lx", (*event_id)++, current->comm, current->pid,
-	// 		reg->orig_ax, reg->ax);
-
 	// otherwise it is the first time
 	// we need to load the collector
-	retval = __load_monitor(MONITOR_PATH, reg, target_entry, target_sp, argv);
+	retval = __load_monitor(MONITOR_PATH, reg, target_entry, target_sp, event_id, argv);
+	
 out:
 	return retval;
 }

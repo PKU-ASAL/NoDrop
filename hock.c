@@ -13,7 +13,7 @@ typedef long (*sys_call_ptr_t)(const struct pt_regs *);
 
 sys_call_ptr_t *syscall_table;
 sys_call_ptr_t syscall_table_bak[__NR_syscall_max + 1];
-int filtered_syscall[] = { __NR_write, __NR_clone /*__NR_write, __NR_read*/ };
+int filtered_syscall[] = { /*__NR_write, __NR_clone*/ __NR_write, __NR_read };
 
 static unsigned long event_id;
 
@@ -44,6 +44,7 @@ __hocked_syscall_entry(struct pt_regs *reg) {
     _sp = reg->sp;
 
     if (!do_load_monitor(reg, &_ip, &_sp, &event_id)) {
+        event_id++;
         reg->ip = _ip;
         reg->sp = _sp;
         reg->cx = _ip;
@@ -75,7 +76,7 @@ make_rw(unsigned long _addr) {
 
 	pte = lookup_address(_addr, &level);
 	if(pte == NULL) {
-		printk(KERN_INFO "%s: get pte failed\n", __func__);
+		printk(KERN_ERR "%s: get pte failed\n", __func__);
 		return -1;
 	} 
 	
@@ -92,7 +93,7 @@ make_ro(unsigned long _addr) {
 
 	pte = lookup_address(_addr, &level);
 	if(pte == NULL) {
-		printk(KERN_INFO "%s: get pte failed\n", __func__);
+		printk(KERN_ERR "%s: get pte failed\n", __func__);
 		return -1;
 	} 
 	
@@ -108,6 +109,7 @@ int hock_init() {
     if (syscall_table == 0)
         return -EINVAL;
 
+    printk(KERN_INFO "syscall_table=%lx  hock_entry=%lx\n", syscall_table, __hocked_syscall_entry);
     retval = make_rw((unsigned long)syscall_table);
 
     if (!retval)
