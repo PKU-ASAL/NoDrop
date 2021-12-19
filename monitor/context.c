@@ -1,4 +1,5 @@
 #include <string.h>
+#include <signal.h>
 #include <linux/elf.h>
 #include <linux/ptrace.h>
 #include <sys/mman.h>
@@ -13,6 +14,7 @@ extern void __restore_registers(struct pt_regs *reg);
 
 int __attribute__((section(".monitor.enter"))) __collector_enter;
 int need_prctl = 0;
+sigset_t oldsig;
 
 char buf[MAX_LOG_LENGTH];
 
@@ -20,6 +22,7 @@ void __l_restore_context(struct context_struct *context);
 
 void __l_start_main(int argc, char *argv[]) {
     char **env;
+    sigset_t newsig;
 
     // Save context
     memcpy((char *)&_l_context, argv[argc - 1], sizeof(struct context_struct));
@@ -35,6 +38,11 @@ void __l_start_main(int argc, char *argv[]) {
     // Mark that we are in collector
     __collector_enter = 1;
 
+    // clear SIGNAL
+    sigemptyset(&newsig);
+    sigprocmask(SIG_SETMASK, &newsig, &oldsig);
+
+    // generate log
     sprintf(buf, "eid=%lu,nr=%lx,ret=%lx,rdi=%lx,rsi=%lx,rdx=%lx,r10=%lx,r8=%lx,r9=%lx", _l_context.eid, 
 			_l_context.reg.orig_rax, _l_context.reg.rax, _l_context.reg.rdi, _l_context.reg.rsi, _l_context.reg.rdx, _l_context.reg.r10, _l_context.reg.r8, _l_context.reg.r9);
 
@@ -54,6 +62,8 @@ void __l_restore_context(struct context_struct *context) {
         arch_prctl(ARCH_SET_FS, context->fsbase);
         arch_prctl(ARCH_SET_GS, context->gsbase);
     }
+
+    sigprocmask(SIG_SETMASK, &oldsig, NULL);
 
     // Leaving the collector, clear the mark
     __collector_enter = 0;

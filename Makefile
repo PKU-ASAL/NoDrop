@@ -8,7 +8,7 @@ obj-m  += $(MODULE).o
 $(MODULE)-objs := \
 	pinject_main.o \
 	loader.o \
-	hock.o \
+	hook.o \
 	# kprobe.o \
 
 all:

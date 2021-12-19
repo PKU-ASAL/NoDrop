@@ -22,8 +22,8 @@ static int pinject_init(void)
         goto out;
     }
 
-    if((err = hock_init())) {
-        printk(KERN_ERR "hock syscall_table failed (%d)\n", err);
+    if((err = hook_init())) {
+        printk(KERN_ERR "hook syscall_table failed (%d)\n", err);
         goto out;
     }
 
@@ -36,8 +36,8 @@ out:
 static void pinject_exit(void)
 {
     // kprobe_destroy();
-    hock_destory();
     loader_destory();
+    hook_destory();
 }
 
 module_init(pinject_init);

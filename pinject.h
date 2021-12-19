@@ -12,10 +12,10 @@
 int  kprobe_init(void);
 void kprobe_destroy(void);
 
-// hock.c
+// hook.c
 typedef long (*sys_call_ptr_t)(const struct pt_regs *);
-int  hock_init(void);
-void hock_destory(void);
+int  hook_init(void);
+void hook_destory(void);
 
 // loader.c
 int check_mapping(const char *filename, 
