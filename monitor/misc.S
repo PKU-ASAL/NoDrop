@@ -15,7 +15,7 @@ ENTRY (_start)
 	/* Push garbage because we push 8 more bytes.  */
     pushq %rax
 
-    call __l_start_main
+    call __m_start_main
 
     hlt /* Crash if somehow we do not return to the original address.	 */
 END (_start)

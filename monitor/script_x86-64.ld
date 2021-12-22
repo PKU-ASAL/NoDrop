@@ -146,7 +146,7 @@ SECTIONS
   .data.rel.ro : { *(.data.rel.ro.local* .gnu.linkonce.d.rel.ro.local.*) *(.data.rel.ro .data.rel.ro.* .gnu.linkonce.d.rel.ro.*) }
   . = ALIGN(0x1000);
   .monitor.info : {
-    KEEP (*(.monitor.enter))
+    KEEP (*(.monitor.infopack))
   }
   .dynamic        : { *(.dynamic) }
   . = DATA_SEGMENT_RELRO_END (SIZEOF (.got.plt) >= 24 ? 24 : 0, .);

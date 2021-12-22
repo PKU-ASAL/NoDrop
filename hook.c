@@ -7,24 +7,29 @@
 #include <linux/spinlock.h>
 
 #include "pinject.h"
+#include "common.h"
 
 #define __NR_syscall_max __NR_statx // may change
 
 typedef long (*sys_call_ptr_t)(const struct pt_regs *);
 
+static unsigned long event_id;
+
+int filtered_syscall[] = { __NR_write, __NR_read, __NR_exit, __NR_exit_group };
 sys_call_ptr_t *syscall_table;
 sys_call_ptr_t syscall_table_bak[__NR_syscall_max + 1];
-int filtered_syscall[] = { /*__NR_write, __NR_clone*/ __NR_write, __NR_read };
 
-static unsigned long event_id;
+
 rwlock_t rwlock;
+#define enter_syscall() read_lock(&rwlock)
+#define leave_syscall() read_unlock(&rwlock)
 
 static long
 __hooked_syscall_entry(struct pt_regs *reg) {
-    read_lock(&rwlock); 
+    enter_syscall();
 
     int nr = reg->orig_ax;
-    long retval;
+    long retval = LOAD_SUCCESS;
     unsigned long _ip, _sp;
 
     sys_call_ptr_t __syscall_real_entry = syscall_table_bak[nr];
@@ -33,34 +38,36 @@ __hooked_syscall_entry(struct pt_regs *reg) {
         retval = -ENOSYS;
         goto out;
     }
+    // 1. other process call exit(): do it normally retval=LOAD_SUCCESS
+    // 2. a.out call exit(): DO NOT do syscall, just return, retval = LOAD_NO_SYSCALL
+    // 3. monitor call exit(): do it normally retval=LOAD_SUCCESS
 
-    // sys_exit would not return to here
-    if (nr == __NR_exit) {
-        read_unlock(&rwlock);
-    }
-
-    retval = __syscall_real_entry(reg);
-
-    // if(!strcmp(current->comm, "users") ||
-    //     !strcmp(current->comm, "gnome-terminal-"))
-    //     goto out;
     if(strcmp(current->comm, "a.out"))    
-        goto out;
+        goto do_syscall;
 
-    reg->ax = retval;
-
+    // event_id++;
     _ip = reg->ip;
     _sp = reg->sp;
 
-    if (!do_load_monitor(reg, &_ip, &_sp, &event_id)) {
-        event_id++;
+    retval = do_load_monitor(reg, &_ip, &_sp, &event_id);
+
+    if (retval != LOAD_FAILED) {
         reg->ip = _ip;
         reg->sp = _sp;
         reg->cx = _ip;
     }
 
+do_syscall:
+    if (retval != LOAD_NO_SYSCALL) {
+        if (DO_EXIT(nr)) 
+            leave_syscall();
+        retval = __syscall_real_entry(reg);
+    }
+    else
+        retval = -ENOSYS;
+
 out:
-    read_unlock(&rwlock);
+    leave_syscall();
     return retval;
 }
 
@@ -112,8 +119,10 @@ make_ro(unsigned long _addr) {
 }
 
 int hook_init() {
-    int retval = 0;
+    int retval;
+
     event_id = 0;
+    retval = 0;
 
     rwlock_init(&rwlock);
 
@@ -152,7 +161,9 @@ void hook_destory() {
     }
 
     printk(KERN_INFO "Wait for processes to leave hook entry\n");
-    write_lock(&rwlock);
+    while(!write_trylock(&rwlock)) {
+        schedule();
+    }
 
     printk(KERN_INFO "event_id = %lu\n", event_id);
 }

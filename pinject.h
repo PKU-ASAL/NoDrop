@@ -1,12 +1,12 @@
 #ifndef PINJECT_H_
 #define PINJECT_H_
 
+#define __KERNEL__
+
 #include <linux/ptrace.h>
 
 #define MONITOR_FILE "monitor/hello"
 #define MONITOR_PATH "/mnt/hgfs/Projects/process_inject/"MONITOR_FILE
-// #define MONITOR_PATH "hello"
-
 
 // kprobe.c
 int  kprobe_init(void);
@@ -18,8 +18,13 @@ int  hook_init(void);
 void hook_destory(void);
 
 // loader.c
-int check_mapping(const char *filename, 
-                  int (*resolve) (struct vm_area_struct const * const vma, void *arg),
+#define LOAD_SUCCESS        0
+#define LOAD_FAILED         1
+#define LOAD_NO_SYSCALL     2 // DO NOT do syscall, goto monitor directly!
+#define LOAD_FROM_MONITOR   3
+
+
+int check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg),
                   void *arg);
 int do_load_monitor(const struct pt_regs *reg, 
                       unsigned long *target_entry, 
