@@ -5,32 +5,43 @@
 #include <linux/unistd.h>
 #include <linux/mm.h>
 #include <linux/spinlock.h>
+#include <linux/version.h>
 
 #include "pinject.h"
 #include "common.h"
 
 #define __NR_syscall_max __NR_statx // may change
 
-typedef long (*sys_call_ptr_t)(const struct pt_regs *);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17,0)
+#define SYSCALL_DEF   const struct pt_regs * _syscall_regs
+#define SYSCALL_ARGS  _syscall_regs
+#else
+#define SYSCALL_DEF  long _di, long _si, long _dx, long _r10, long _r8, long _r9
+#define SYSCALL_ARGS _di, _si, _dx, _r10, _r8, _r9
+#endif // LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17,0)
 
-static unsigned long event_id;
+typedef long (*sys_call_ptr_t)(SYSCALL_DEF);
 
 int filtered_syscall[] = { __NR_write, __NR_read, __NR_exit, __NR_exit_group };
 sys_call_ptr_t *syscall_table;
 sys_call_ptr_t syscall_table_bak[__NR_syscall_max + 1];
 
+static unsigned long event_id;
 
 rwlock_t rwlock;
 #define enter_syscall() read_lock(&rwlock)
 #define leave_syscall() read_unlock(&rwlock)
 
 static long
-__hooked_syscall_entry(struct pt_regs *reg) {
+__hooked_syscall_entry(SYSCALL_DEF) {
     enter_syscall();
 
-    int nr = reg->orig_ax;
+    int nr;
     long retval = LOAD_SUCCESS;
     unsigned long _ip, _sp;
+    struct pt_regs *reg = current_pt_regs();
+
+    nr = reg->orig_ax;
 
     sys_call_ptr_t __syscall_real_entry = syscall_table_bak[nr];
     if (__syscall_real_entry == 0) {
@@ -46,6 +57,7 @@ __hooked_syscall_entry(struct pt_regs *reg) {
         goto do_syscall;
 
     // event_id++;
+
     _ip = reg->ip;
     _sp = reg->sp;
 
@@ -61,7 +73,7 @@ do_syscall:
     if (retval != LOAD_NO_SYSCALL) {
         if (DO_EXIT(nr)) 
             leave_syscall();
-        retval = __syscall_real_entry(reg);
+        retval = __syscall_real_entry(SYSCALL_ARGS);
     }
     else
         retval = -ENOSYS;
@@ -86,79 +98,48 @@ hook_syscall_table(void) {
     }
 }
 
-static int 
-make_rw(unsigned long _addr) {
-    unsigned int level = 0;	
-	pte_t *pte = NULL;
-
-	pte = lookup_address(_addr, &level);
-	if(pte == NULL) {
-		printk(KERN_ERR "%s: get pte failed\n", __func__);
-		return -1;
-	} 
-	
-	if(pte->pte & ~_PAGE_RW)
-		pte->pte |= _PAGE_RW;
-
-	return 0;
+static unsigned long __force_order;
+static void 
+write_cr0_native(unsigned long cr0) {
+    asm volatile("mov %0,%%cr0" : "+r"(cr0), "+m"(__force_order));
 }
-
-static int 
-make_ro(unsigned long _addr) {
-    unsigned int level = 0;	
-	pte_t *pte = NULL;
-
-	pte = lookup_address(_addr, &level);
-	if(pte == NULL) {
-		printk(KERN_ERR "%s: get pte failed\n", __func__);
-		return -1;
-	} 
-	
-    pte->pte &= ~_PAGE_RW;
-    return 0;
+static unsigned long 
+read_cr0_native(void) {
+    unsigned long val;
+    asm volatile("mov %%cr0,%0\n\t" : "=r" (val), "=m" (__force_order));
+    return val;
 }
+static void 
+make_rw(void) { write_cr0_native(read_cr0_native() & (~0x10000)); }
+static void 
+make_ro(void) { write_cr0_native(read_cr0_native() | 0x10000); }
 
 int hook_init() {
-    int retval;
-
-    event_id = 0;
-    retval = 0;
-
-    rwlock_init(&rwlock);
-
     syscall_table = (sys_call_ptr_t *)kallsyms_lookup_name("sys_call_table");
     if (syscall_table == 0)
         return -EINVAL;
 
-    retval = make_rw((unsigned long)syscall_table);
+    make_rw();
+    hook_syscall_table();
+    make_ro();
 
-    if (!retval) {
-        hook_syscall_table();
+    event_id = 0;
+    rwlock_init(&rwlock);
 
-        if (make_ro((unsigned long)syscall_table)) {
-            printk(KERN_ERR "err!! can not make syscall_table read only!!!!");
-        }
-    }
-
-    return retval;
+    return 0;
 }
 
 void hook_destory() {
-    int i, nr, sz;
+    int i = 0, sz = sizeof(filtered_syscall) / sizeof(int);
+    int nr;
 
-    if (make_rw((unsigned long)syscall_table)) {
-        panic("err!! can not make syscall_table writable!!!!");
-    }
-
-    for (i = 0, sz = sizeof(filtered_syscall) / sizeof(int); i < sz; ++i) {
+    make_rw();
+    for (; i < sz; ++i) {
         nr = filtered_syscall[i];
         syscall_table[nr] = syscall_table_bak[nr];
         printk(KERN_INFO "restore syscall %d [%lx]\n", nr, syscall_table[nr]);
     }
-
-    if (make_ro((unsigned long)syscall_table)) {
-        printk(KERN_ERR "err!! can not make syscall_table read only!!!!");
-    }
+    make_ro();
 
     printk(KERN_INFO "Wait for processes to leave hook entry\n");
     while(!write_trylock(&rwlock)) {
