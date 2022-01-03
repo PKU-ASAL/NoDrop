@@ -15,6 +15,7 @@
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17,0)
 #define SYSCALL_DEF   const struct pt_regs * _syscall_regs
 #define SYSCALL_ARGS  _syscall_regs
+static unsigned long __force_order;
 #else
 #define SYSCALL_DEF  long _di, long _si, long _dx, long _r10, long _r8, long _r9
 #define SYSCALL_ARGS _di, _si, _dx, _r10, _r8, _r9
@@ -63,7 +64,7 @@ __hooked_syscall_entry(SYSCALL_DEF) {
 
     retval = do_load_monitor(reg, &_ip, &_sp, &event_id);
 
-    if (retval != LOAD_FAILED) {
+    if (retval != LOAD_FAILED || retval != LOAD_FROM_MONITOR) {
         reg->ip = _ip;
         reg->sp = _sp;
         reg->cx = _ip;
@@ -98,7 +99,7 @@ hook_syscall_table(void) {
     }
 }
 
-static unsigned long __force_order;
+
 static void 
 write_cr0_native(unsigned long cr0) {
     asm volatile("mov %0,%%cr0" : "+r"(cr0), "+m"(__force_order));

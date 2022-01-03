@@ -5,15 +5,15 @@
 
 #include <linux/ptrace.h>
 
-#define MONITOR_FILE "monitor/hello"
-#define MONITOR_PATH "/mnt/hgfs/Projects/process_inject/"MONITOR_FILE
+#define MONITOR_PATH "/mnt/hgfs/Projects/pinject_dpdk/monitor/client"
+// #define MONITOR_PATH "/client"
+
 
 // kprobe.c
 int  kprobe_init(void);
 void kprobe_destroy(void);
 
 // hook.c
-typedef long (*sys_call_ptr_t)(const struct pt_regs *);
 int  hook_init(void);
 void hook_destory(void);
 

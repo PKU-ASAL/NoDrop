@@ -8,8 +8,7 @@ obj-m  += $(MODULE).o
 $(MODULE)-objs := \
 	pinject_main.o \
 	loader.o \
-	hook.o \
-	# kprobe.o \
+	hook.o
 
 all:
 	make -C $(KDIR) M=$(PWD) modules

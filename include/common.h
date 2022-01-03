@@ -8,13 +8,16 @@
 #include <sys/syscall.h>
 #endif
 
-#define MAX_LOG_LENGTH 128
-#define MAX_LOG_NR     512
+#define MAX_LOG_LENGTH  128
+#define MAX_LOG_NR		2
 #define MAX_LOG_BUFFER_SIZE (MAX_LOG_LENGTH * MAX_LOG_NR)
  
 #define _DO_EXIT(nr)		((nr) == __NR_exit)
 #define _DO_EXIT_GROUP(nr) 	((nr) == __NR_exit_group)
 #define DO_EXIT(nr)     	(_DO_EXIT(nr) || _DO_EXIT_GROUP(nr))
+
+#define likely(x) 	__builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
 
 struct context_struct {
 	struct pt_regs reg;

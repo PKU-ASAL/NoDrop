@@ -12,8 +12,13 @@ ENTRY (_start)
 
     /* make the stack 16-byte aligned */
     andq $~0x0f, %rsp
+    
 	/* Push garbage because we push 8 more bytes.  */
     pushq %rax
+
+    /* Provide the highest stack address to the user code (for stacks
+	   which grow downwards).  */
+    pushq %rsp
 
     call __m_start_main
 

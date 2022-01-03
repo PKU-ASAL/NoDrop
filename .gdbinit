@@ -1,4 +1,4 @@
+add-symbol-file monitor/client 0x7ffff75b1e80
 add-symbol-file /lib64/ld-linux-x86-64.so.2 0x7ffff77b6f10
-add-symbol-file monitor/hello 0x7ffff75b35a0
-set directories ~/glibc-2.27/elf/:hello/
+set directories /home/jeshrz/glibc-2.27/:/home/jeshrz/glibc-2.27/elf/:monitor/
 show directories

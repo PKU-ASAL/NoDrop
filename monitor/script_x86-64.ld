@@ -93,6 +93,10 @@ SECTIONS
   /* Thread Local Storage sections  */
   .tdata          : { *(.tdata .tdata.* .gnu.linkonce.td.*) }
   .tbss           : { *(.tbss .tbss.* .gnu.linkonce.tb.*) *(.tcommon) }
+  . = ALIGN(0x1000);
+  .monitor.info : {
+    KEEP (*(.monitor.infopack))
+  }
   .preinit_array     :
   {
     PROVIDE_HIDDEN (__preinit_array_start = .);
@@ -144,10 +148,7 @@ SECTIONS
   }
   .jcr            : { KEEP (*(.jcr)) }
   .data.rel.ro : { *(.data.rel.ro.local* .gnu.linkonce.d.rel.ro.local.*) *(.data.rel.ro .data.rel.ro.* .gnu.linkonce.d.rel.ro.*) }
-  . = ALIGN(0x1000);
-  .monitor.info : {
-    KEEP (*(.monitor.infopack))
-  }
+
   .dynamic        : { *(.dynamic) }
   . = DATA_SEGMENT_RELRO_END (SIZEOF (.got.plt) >= 24 ? 24 : 0, .);
   .got            : { *(.got) *(.igot) }

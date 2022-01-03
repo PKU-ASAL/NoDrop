@@ -393,9 +393,9 @@ create_elf_tbls(struct elfhdr *exec,
     for (argc = 0; argv[argc]; argc++);
 
     for(i = argc - 1; i >= 0; --i) {
-        int len = strlen(argv[i]);
-        p = STACK_ALLOC(p, len + 1);
-        copy_to_user((char __user *)p, argv[i], len + 1);
+        int len = strlen(argv[i]) + 1;
+        p = STACK_ALLOC(p, len);
+        copy_to_user((char __user *)p, argv[i], len);
     }
     arg_start = p;
     /*
@@ -477,11 +477,10 @@ create_elf_tbls(struct elfhdr *exec,
         goto err;
 
     // put argv
-    for (i = 0; i < argc - 1; ++i) {
-        size_t len = strlen(argv[i]);
+    for (i = 0; i < argc; ++i) {
         if(put_user((elf_addr_t)arg_start, sp++))
             goto err;
-        arg_start += len + 1;
+        arg_start += strlen(argv[i]) + 1;
     }
 
     // put NULL to mark the end of argv
@@ -593,23 +592,23 @@ do_load_monitor(const struct pt_regs *reg,
                 unsigned long *event_id) {
     int retval;
     int do_exit = DO_EXIT(reg->orig_ax);
-    char *argv[1] = { NULL };
+    char *argv[] = { MONITOR_PATH, "--proc-type=secondary", "--log-level=0", NULL };
 
     // Monitor called syscall
     if (check_mapping(__check_monitor_enter, (void *)&retval) == 0) {
         if (retval == 1) {
+            retval = LOAD_FROM_MONITOR;
             goto out;
         } else if (retval < 0) {
-            printk(KERN_ERR "!!can not get monitor's status!!\n");
-            return LOAD_FROM_MONITOR;
+            printk(KERN_ERR "!!can not get monitor's status!! ip: %lx sp: %lx\n", *target_entry, *target_sp);
+            retval = LOAD_FAILED;
             goto out;
         }
     }
 
-    retval = 1;
+    retval = LOAD_FAILED;
 
     enter_critical();
-    // printk(KERN_INFO "logmsg.nr=%d\n", logmsg.nr);
 
     if (logmsg.nr >= MAX_LOG_NR) {
         printk(KERN_ERR "buffer is full but logmsg is not sent\nyou lost it");
