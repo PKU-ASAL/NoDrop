@@ -9,7 +9,7 @@
 #endif
 
 #define MAX_LOG_LENGTH  128
-#define MAX_LOG_NR		2
+#define MAX_LOG_NR		32
 #define MAX_LOG_BUFFER_SIZE (MAX_LOG_LENGTH * MAX_LOG_NR)
  
 #define _DO_EXIT(nr)		((nr) == __NR_exit)

@@ -15,7 +15,7 @@
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17,0)
 #define SYSCALL_DEF   const struct pt_regs * _syscall_regs
 #define SYSCALL_ARGS  _syscall_regs
-static unsigned long __force_order;
+unsigned long __force_order;
 #else
 #define SYSCALL_DEF  long _di, long _si, long _dx, long _r10, long _r8, long _r9
 #define SYSCALL_ARGS _di, _si, _dx, _r10, _r8, _r9
@@ -27,7 +27,8 @@ int filtered_syscall[] = { __NR_write, __NR_read, __NR_exit, __NR_exit_group };
 sys_call_ptr_t *syscall_table;
 sys_call_ptr_t syscall_table_bak[__NR_syscall_max + 1];
 
-static unsigned long event_id;
+unsigned long event_id;
+int released;
 
 rwlock_t rwlock;
 #define enter_syscall() read_lock(&rwlock)
@@ -84,22 +85,6 @@ out:
     return retval;
 }
 
-static void
-hook_syscall_table(void) {
-    int sz, nr, i;
-
-    for (i = 0; i <= __NR_syscall_max; ++i)
-        syscall_table_bak[i] = 0;
-
-    for (i = 0, sz = sizeof(filtered_syscall) / sizeof(int); i < sz; ++i) {
-        nr = filtered_syscall[i];
-        syscall_table_bak[nr] = syscall_table[nr];
-        syscall_table[nr] = (sys_call_ptr_t)__hooked_syscall_entry;
-        printk(KERN_INFO "hook syscall %d [%lx]\n", nr, syscall_table_bak[nr]);
-    }
-}
-
-
 static void 
 write_cr0_native(unsigned long cr0) {
     asm volatile("mov %0,%%cr0" : "+r"(cr0), "+m"(__force_order));
@@ -115,32 +100,61 @@ make_rw(void) { write_cr0_native(read_cr0_native() & (~0x10000)); }
 static void 
 make_ro(void) { write_cr0_native(read_cr0_native() | 0x10000); }
 
-int hook_init() {
-    syscall_table = (sys_call_ptr_t *)kallsyms_lookup_name("sys_call_table");
-    if (syscall_table == 0)
-        return -EINVAL;
+void hook_syscall(void) {
+    int sz, nr, i;
+
+    if (released == 0)
+        return;
 
     make_rw();
-    hook_syscall_table();
+    for (i = 0, sz = sizeof(filtered_syscall) / sizeof(int); i < sz; ++i) {
+        nr = filtered_syscall[i];
+        syscall_table_bak[nr] = syscall_table[nr];
+        syscall_table[nr] = (sys_call_ptr_t)__hooked_syscall_entry;
+        printk(KERN_INFO "hook syscall %d [%lx]\n", nr, syscall_table_bak[nr]);
+    }
     make_ro();
-
-    event_id = 0;
-    rwlock_init(&rwlock);
-
-    return 0;
+    released = 0;
 }
 
-void hook_destory() {
-    int i = 0, sz = sizeof(filtered_syscall) / sizeof(int);
+void restore_syscall(void) {
     int nr;
+    int i = 0, sz = sizeof(filtered_syscall) / sizeof(int);
+    if (released == 1)
+        return;
 
     make_rw();
     for (; i < sz; ++i) {
         nr = filtered_syscall[i];
         syscall_table[nr] = syscall_table_bak[nr];
+        syscall_table_bak[nr] = 0;
         printk(KERN_INFO "restore syscall %d [%lx]\n", nr, syscall_table[nr]);
     }
     make_ro();
+    released = 1;
+}
+
+int hook_init() {
+    int i;
+
+    syscall_table = (sys_call_ptr_t *)kallsyms_lookup_name("sys_call_table");
+    if (syscall_table == 0)
+        return -EINVAL;
+
+    event_id = 0;
+    released = 1;
+    rwlock_init(&rwlock);
+
+    for (i = 0; i <= __NR_syscall_max; ++i)
+        syscall_table_bak[i] = 0;
+
+    hook_syscall();
+
+    return 0;
+}
+
+void hook_destory() {
+    restore_syscall();
 
     printk(KERN_INFO "Wait for processes to leave hook entry\n");
     while(!write_trylock(&rwlock)) {

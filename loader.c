@@ -83,7 +83,7 @@ __check_monitor_enter(struct vm_area_struct const * const vma, void *arg) {
     int monitor_enter;
     vm_flags_t flags = vma->vm_flags;
 
-    if (!(flags & VM_WRITE))
+    if (flags & VM_EXEC)
         return 0;
 
     // get data from collector's section `.monitor_enter`
@@ -592,7 +592,7 @@ do_load_monitor(const struct pt_regs *reg,
                 unsigned long *event_id) {
     int retval;
     int do_exit = DO_EXIT(reg->orig_ax);
-    char *argv[] = { MONITOR_PATH, "--proc-type=secondary", "--log-level=0", NULL };
+    char *argv[] = { MONITOR_PATH, "--proc-type=secondary", "--log-level=1", NULL };
 
     // Monitor called syscall
     if (check_mapping(__check_monitor_enter, (void *)&retval) == 0) {

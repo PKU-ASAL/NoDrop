@@ -8,7 +8,8 @@ obj-m  += $(MODULE).o
 $(MODULE)-objs := \
 	pinject_main.o \
 	loader.o \
-	hook.o
+	hook.o \
+	proc.o
 
 all:
 	make -C $(KDIR) M=$(PWD) modules
@@ -22,4 +23,6 @@ load: all
 debug:
 	make -C $(KDIR-debug) M=$(PWD) modules
 	cp pinject.ko $(PWD)/../kernel-dbg/busybox-1.34.0/initramfs/
+	cp a.out $(PWD)/../kernel-dbg/busybox-1.34.0/initramfs/
+	cp monitor/monitor $(PWD)/../kernel-dbg/busybox-1.34.0/initramfs/
 	cd $(PWD)/../kernel-dbg/busybox-1.34.0/initramfs/; find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs.cpio.gz

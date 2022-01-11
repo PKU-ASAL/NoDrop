@@ -5,15 +5,17 @@
 
 #include <linux/ptrace.h>
 
-#define MONITOR_PATH "/mnt/hgfs/Projects/pinject_dpdk/monitor/client"
-// #define MONITOR_PATH "/client"
+#define MONITOR_PATH "/mnt/hgfs/Projects/pinject_dpdk/monitor/monitor"
+// #define MONITOR_PATH "/monitor"
 
 
-// kprobe.c
-int  kprobe_init(void);
-void kprobe_destroy(void);
+// proc.c
+int  proc_init(void);
+void proc_destroy(void);
 
 // hook.c
+void hook_syscall(void);
+void restore_syscall(void);
 int  hook_init(void);
 void hook_destory(void);
 
