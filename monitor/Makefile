@@ -1,5 +1,5 @@
 MODULE := pinject
-TARGET := client
+TARGET := monitor client server
 
 PRIM_C_FILES := main.c
 C_FILES := $(PRIM_C_FILES) context.c
@@ -22,14 +22,17 @@ DPDK_LDFLAGS := $(shell $(PKGCONF) --libs libdpdk)
 O_FILES := $(patsubst %.c,%.o,$(C_FILES)) 
 O_FILES += $(patsubst %.S,%.o,$(S_FILES))
 
-all: $(TARGET) $(TARGET)-prim
+all: $(TARGET)
 
-$(TARGET): $(O_FILES)
+monitor: $(O_FILES)
 	sudo rmmod -f $(MODULE) 2> /dev/null || true
 	$(CC) $^ -o $@ $(LDFLAGS) $(DPDK_LDFLAGS)
 
-$(TARGET)-prim: $(PRIM_C_FILES)
-	$(CC) $^ -o $@ $(DPDK_CFLAGS) -DPRIMARY $(DPDK_LDFLAGS)
+client: $(PRIM_C_FILES)
+	$(CC) $^ -o $@ $(DPDK_CFLAGS) -DCLIENT $(DPDK_LDFLAGS)
+
+server: $(PRIM_C_FILES)
+	$(CC) $^ -o $@ $(CFLAGS) $(DPDK_CFLAGS) -DSERVER $(DPDK_LDFLAGS)
 
 %.o: %.S
 	$(CC) $< -c $(CFLAGS) $(DPDK_CFLAGS) -o $@ $(LDFLAGS) $(DPDK_LDFLAGS)
@@ -39,4 +42,4 @@ $(TARGET)-prim: $(PRIM_C_FILES)
 .PHONY: clean all
 clean:
 	sudo rmmod -f $(MODULE) 2> /dev/null || true
-	rm -f $(TARGET) $(TARGET)-prim $(O_FILES)
+	rm -f $(TARGET) $(O_FILES)
