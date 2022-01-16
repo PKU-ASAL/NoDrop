@@ -20,7 +20,7 @@ int *__m_enter = &infopack.m_enter;
 struct context_struct *__m_context = &infopack.m_context;
 struct logmsg_block *__m_log = &infopack.m_logmsg;
 
-unsigned long orig_fsbase, my_fsbase;
+unsigned long my_fsbase;
 
 int first_come_in = 0;
 sigset_t oldsig;
@@ -33,7 +33,6 @@ void __m_start_main(int argc, char *argv[], void (*rtld_fini) (void)) {
     // We should make this page writable manually because ld.so call mprotect during initialization.
     if (unlikely(*__m_enter == 1)) {
         mprotect(&infopack, sizeof(infopack), PROT_READ|PROT_WRITE);
-        // orig_fsbase = __m_context->fsbase;
         arch_prctl(ARCH_GET_FS, &my_fsbase);
         first_come_in = 1;
     }
@@ -43,11 +42,11 @@ void __m_start_main(int argc, char *argv[], void (*rtld_fini) (void)) {
 
     if (!first_come_in) {
         arch_prctl(ARCH_SET_FS, my_fsbase);
+        if (rtld_fini) {
+            atexit(rtld_fini);
+        }
     }
 
-    if (rtld_fini) {
-        atexit(rtld_fini);
-    }
 
     // clear SIGNAL
     sigemptyset(&newsig);
@@ -55,7 +54,9 @@ void __m_start_main(int argc, char *argv[], void (*rtld_fini) (void)) {
 
     main(argc, argv, (char **)argv[argc + 1]);
 
-    atexit(__m_real_exit);
+    if (!first_come_in) {
+        atexit(__m_real_exit);
+    }
 
     // Restore the context
     __m_restore_context(__m_context);
