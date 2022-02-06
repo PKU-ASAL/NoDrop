@@ -10,17 +10,17 @@ static int pinject_init(void)
     int err;
 
     if ((err = loader_init())) {
-        printk(KERN_ERR "load monitor failed (%d)\n", err);
+        pr_err("load monitor failed (%d)\n", err);
         goto out;
     }
 
     if((err = hook_init())) {
-        printk(KERN_ERR "hook syscall_table failed (%d)\n", err);
+        pr_err("hook syscall_table failed (%d)\n", err);
         goto out_hook;
     }
 
     if ((err = proc_init())) {
-        printk(KERN_ERR "create proc failed (%d)\n", err);
+        pr_err("create proc failed (%d)\n", err);
         goto out_proc;
     }
 

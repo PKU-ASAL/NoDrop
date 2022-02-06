@@ -1,5 +1,5 @@
 MODULE := pinject
-TARGET := monitor client server
+TARGET := monitor #client server
 
 PRIM_C_FILES := main.c
 C_FILES := $(PRIM_C_FILES) context.c
@@ -16,8 +16,10 @@ ifneq ($(shell $(PKGCONF) --exists libdpdk && echo 0),0)
 $(error "no installation of DPDK found")
 endif
 
-DPDK_CFLAGS  := $(shell $(PKGCONF) --cflags libdpdk) -DALLOW_EXPERIMENTAL_API
-DPDK_LDFLAGS := $(shell $(PKGCONF) --libs libdpdk)
+# DPDK_CFLAGS  := $(shell $(PKGCONF) --cflags libdpdk) -DALLOW_EXPERIMENTAL_API
+# DPDK_LDFLAGS := $(shell $(PKGCONF) --libs libdpdk)
+DPDK_CFLAGS  := 
+DPDK_LDFLAGS :=
 
 O_FILES := $(patsubst %.c,%.o,$(C_FILES)) 
 O_FILES += $(patsubst %.S,%.o,$(S_FILES))

@@ -13,6 +13,7 @@
 #include <linux/uaccess.h>
 #include <linux/random.h>
 #include <linux/spinlock.h>
+#include <linux/ktime.h>
 
 #include "pinject.h"
 #include "common.h"
@@ -34,12 +35,23 @@ static struct elf_phdr *monitor_elf_phdata, *interp_elf_phdata;
 static struct elfhdr   monitor_elf_ex, interp_elf_ex;
 static struct file *monitor, *interpreter;
 
-struct mutex mutex;
-#define enter_critical() mutex_lock(&mutex)
-#define leave_critical() mutex_unlock(&mutex)
+static DEFINE_PER_CPU(struct klogmsg_block, logmsg);
+DEFINE_SPINLOCK(mutex);
 
-static struct logmsg_block logmsg;
-static char *p;
+static int
+_do_adjust_retval(struct vm_area_struct const * const vma, void *arg) {
+    m_infopack *infopack = (m_infopack *)vma->vm_start;
+    vm_flags_t flags = vma->vm_flags;
+
+    if (flags & VM_EXEC)
+        return 0;
+    
+    if (put_user((unsigned long)arg, (unsigned long __user *)&infopack->m_context.reg.ax)) {
+        pr_err("cannot write context.reg.ax @ %lx\n", &infopack->m_context.reg.ax);
+        return 0;
+    }
+    return 1;
+}
 
 static int
 __check_mapping(struct vm_area_struct const * const vma, void *arg) {
@@ -62,17 +74,23 @@ __put_monitor_info(struct vm_area_struct const * const vma, void *arg) {
         return 0;
 
     if (put_user((int)arr[0], (int __user *)&infopack->m_enter)) {
-        printk(KERN_ERR "cannot write __monitor_enter @ %lx\n", &infopack->m_enter);
+        pr_err("cannot write __monitor_enter @ %lx\n", &infopack->m_enter);
         return 0;
     }
 
     if (copy_to_user((void __user *)&infopack->m_context, (void *)arr[1], sizeof(infopack->m_context))) {
-        printk(KERN_ERR "cannot write __monitor_context @ %lx\n", &infopack->m_context);
+        pr_err("cannot write __monitor_context @ %lx\n", &infopack->m_context);
         return 0;
     }
 
-    if (copy_to_user((void __user *)&infopack->m_logmsg, (void *)arr[2], sizeof(infopack->m_logmsg))) {
-        printk(KERN_ERR "cannot write __monitor_logmsg @ %lx\n", &infopack->m_logmsg);
+    if (copy_to_user((void __user *)&infopack->m_logmsg.log_buf, (void *)((struct klogmsg_block *)arr[2])->log_buf, sizeof(infopack->m_logmsg.log_buf))) {
+        pr_err("cannot write __monitor_logmsg @ %lx\n", &infopack->m_logmsg);
+        return 0;
+    }
+
+    if (copy_to_user((void __user *)&infopack->m_logmsg.nr, (void *)&((struct klogmsg_block *)arr[2])->nr, 
+        (unsigned long)((long)sizeof(infopack->m_logmsg) - (long)((long)&infopack->m_logmsg.nr - (long)&infopack->m_logmsg)))) {
+        pr_err("cannot write __monitor_logmsg @ %lx\n", &infopack->m_logmsg);
         return 0;
     }
     return 1;
@@ -86,7 +104,7 @@ __check_monitor_enter(struct vm_area_struct const * const vma, void *arg) {
     if (flags & VM_EXEC)
         return 0;
 
-    // get data from collector's section `.monitor_enter`
+    // get data from monitor's section `.monitor.info`
     if(get_user(monitor_enter, (int __user *)vma->vm_start)) {
         monitor_enter = -1;
     }
@@ -103,6 +121,7 @@ check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg
     struct file *file;
 
     mm = current->mm;
+
     down_read(&mm->mmap_sem);
     for (vma = mm->mmap; vma; vma = vma->vm_next) {
         file = vma->vm_file;
@@ -113,8 +132,8 @@ check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg
             }
         }
     }
-
     up_read(&mm->mmap_sem);
+
     return -1;
 }
 
@@ -364,6 +383,7 @@ create_elf_tbls(struct elfhdr *exec,
                 unsigned long interp_load_addr,
                 unsigned long *target_sp,
                 const struct pt_regs *reg,
+                const struct klogmsg_block *log,
                 char *argv[]) {
 
 #define STACK_ROUND(sp, items) 	(((unsigned long) (sp - (items))) &~ 15UL)
@@ -505,7 +525,7 @@ create_elf_tbls(struct elfhdr *exec,
     void *arg[] = {
         (void *)(exec != NULL ? 1 : 0),
         (void *)&context,
-        (void *)&logmsg
+        (void *)log
     };
     if (check_mapping(__put_monitor_info, (void *)arg)) {
         goto err;
@@ -524,6 +544,7 @@ __load_monitor(const char *filename,
                const struct pt_regs *reg,
                unsigned long *target_entry,
                unsigned long *target_sp,
+               const struct klogmsg_block *log,
                char *argv[]) {
     int retval;
     unsigned long load_addr = 0;
@@ -532,11 +553,10 @@ __load_monitor(const char *filename,
     unsigned long interp_map_addr = 0;
 
     if(check_mapping(__check_mapping, (void *)&interp_entry) == 0) {
-        retval = create_elf_tbls(NULL, 0, 0, target_sp, reg, argv);
+        retval = create_elf_tbls(NULL, 0, 0, target_sp, reg, log, argv);
         if (!retval) {
             *target_entry = interp_entry + monitor_elf_ex.e_entry;
             retval = LOAD_SUCCESS;
-            // printk(KERN_INFO "%s alread mapped at %08lx\n", filename, *target_entry);
         }
         goto out;
     }
@@ -547,9 +567,7 @@ __load_monitor(const char *filename,
                     ELF_ET_DYN_BASE, interp_elf_phdata);
 
     if (!IS_ERR((void *)interp_entry)) {
-        /*
-        * load_elf_interp() returns relocation adjustment
-        */
+        /* load_elf_interp() returns relocation adjustment */
         interp_load_addr = interp_entry;
         interp_entry += interp_elf_ex.e_entry;
     }
@@ -568,7 +586,7 @@ __load_monitor(const char *filename,
                 (int)load_addr : -EINVAL;
         goto out;
     }
-    retval = create_elf_tbls(&monitor_elf_ex, load_addr, interp_load_addr, target_sp, reg, argv);
+    retval = create_elf_tbls(&monitor_elf_ex, load_addr, interp_load_addr, target_sp, reg, log, argv);
     if(retval < 0) {
         // TODO: if create_elf_tbls failed, we need to unmap collector and its interp
         goto out_unmmap;
@@ -576,7 +594,7 @@ __load_monitor(const char *filename,
 
     *target_entry = interp_entry;
     retval = LOAD_SUCCESS;
-    printk(KERN_INFO "[%d] load collector at %lx\nload interp at %lx\nentry = %lx", current->pid, load_addr, interp_load_addr, interp_entry);
+    pr_info("[%d] load monitor at %lx\nload interp at %lx\nentry = %lx", current->pid, load_addr, interp_load_addr, interp_entry);
 out:
     return retval;
 
@@ -584,6 +602,27 @@ out_unmmap:
     goto out;
 }
 
+static void
+fill_event_data(struct klogmsg_block *logp, unsigned long *event_id, struct pt_regs *reg) {
+    event_data_t *e = &logp->log_buf[logp->nr++];
+
+    struct timespec64 ts;
+    ktime_get_real_ts64(&ts);
+    e->timestamp.tv_sec = ts.tv_sec;
+    e->timestamp.tv_usec = ts.tv_nsec / 1000;
+
+    e->who = current->pid;
+    memcpy(&e->reg, reg, sizeof(e->reg));
+
+    // CONCERN: IS EVENT_ID NEEDED?
+    spin_lock(&mutex);
+    e->id = (*event_id)++;
+    spin_unlock(&mutex);
+}
+
+void adjust_retval(long retval) {
+    check_mapping(_do_adjust_retval, (void *)retval);
+}
 
 int
 do_load_monitor(const struct pt_regs *reg,
@@ -600,7 +639,7 @@ do_load_monitor(const struct pt_regs *reg,
             retval = LOAD_FROM_MONITOR;
             goto out;
         } else if (retval < 0) {
-            printk(KERN_ERR "!!can not get monitor's status!! ip: %lx sp: %lx\n", *target_entry, *target_sp);
+            pr_crit("!!cannot get monitor's status!! ip: %lx sp: %lx\n", *target_entry, *target_sp);
             retval = LOAD_FAILED;
             goto out;
         }
@@ -608,31 +647,27 @@ do_load_monitor(const struct pt_regs *reg,
 
     retval = LOAD_FAILED;
 
-    enter_critical();
+    struct klogmsg_block *logp = &get_cpu_var(logmsg);
 
-    if (logmsg.nr >= MAX_LOG_NR) {
-        printk(KERN_ERR "buffer is full but logmsg is not sent\nyou lost it");
-        p = logmsg.buf;
-        logmsg.nr = 0;
+    if (logp->nr >= MAX_LOG_NR) {
+        pr_err("buffer is full but logmsg is not sent\nyou lost it\n");
+        logp->nr = 0;
     }
 
-    sprintf(p, "eid=%lu,comm=%s,pid=%d,nr=%lx,ret=%lx,rdi=%lx,rsi=%lx,rdx=%lx,r10=%lx,r8=%lx,r9=%lx", (*event_id)++, current->comm, current->pid,
-        reg->orig_ax, reg->ax, reg->di, reg->si, reg->dx, reg->r10, reg->r8, reg->r9);
-    p += MAX_LOG_LENGTH;
-    logmsg.nr++;
+    fill_event_data(logp, event_id, reg);
 
-    if (do_exit || logmsg.nr >= (MAX_LOG_NR >> 1)) {
-        retval = __load_monitor(MONITOR_PATH, reg, target_entry, target_sp, argv);
+    if (do_exit || logp->nr >= (MAX_LOG_NR >> 1)) {
+        retval = __load_monitor(MONITOR_PATH, reg, target_entry, target_sp, logp, argv);
         if (retval != LOAD_SUCCESS) {
-            printk(KERN_WARNING "can not send logmsg\n");
+            pr_warning("cannot send logmsg\n");
         } else {
-            printk(KERN_INFO "send %d logmsg\n", logmsg.nr);
-            p = logmsg.buf;
-            logmsg.nr = 0;
+            // pr_info("send %d logmsg\n", logp->nr);
+            logp->nr = 0;
             retval = do_exit ? LOAD_NO_SYSCALL : retval;
         }
     }
-    leave_critical();
+    
+    put_cpu_var(logmsg);
 
 out:
     return retval;
@@ -741,10 +776,12 @@ int loader_init(void) {
 
 
     // init logmsg_block
-    p = logmsg.buf;
-    logmsg.nr = 0;
-    // init mutex
-    mutex_init(&mutex);
+    unsigned int cpu;
+    for_each_present_cpu(cpu) {
+        struct klogmsg_block *logmsgp = &per_cpu(logmsg, cpu);
+        logmsgp->log_buf = kmalloc(sizeof(event_data_t) * MAX_LOG_NR, GFP_KERNEL);
+        logmsgp->nr = 0;
+    }
 
     retval = 0;
 
@@ -782,4 +819,9 @@ void loader_destory(void) {
         kfree(monitor_elf_phdata);
     if (interp_elf_phdata)
         kfree(interp_elf_phdata);
+
+    unsigned int cpu;
+    for_each_present_cpu(cpu) {
+        kfree(per_cpu(logmsg, cpu).log_buf);
+    }
 }

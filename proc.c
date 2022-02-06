@@ -1,4 +1,5 @@
 #include <linux/module.h>
+#include <linux/uaccess.h>
 #include <linux/proc_fs.h>
 #include <linux/kernel.h>
 #include <linux/types.h>
@@ -40,13 +41,13 @@ pinject_write(struct file *filp, const char __user *buf, size_t count, loff_t *o
         return -EFAULT;
 
     if (op == 0) { //clean
-        printk(KERN_INFO "proc.c: clean event_id = %d\n", event_id);
+        pr_info("proc.c: clean event_id = %d\n", event_id);
         event_id = 0;
     } else if (op == 1) {
-        printk(KERN_INFO "proc.c: hook syscall\n");
+        pr_info("proc.c: hook syscall\n");
         hook_syscall();
     } else if (op == 2) {
-        printk(KERN_INFO "proc.c: release syscall hook\n");
+        pr_info("proc.c: release syscall hook\n");
         restore_syscall();
     } else {
         return -EINVAL;

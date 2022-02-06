@@ -39,6 +39,7 @@ __hooked_syscall_entry(SYSCALL_DEF) {
     enter_syscall();
 
     int nr;
+    long syscall_ret;
     long retval = LOAD_SUCCESS;
     unsigned long _ip, _sp;
     struct pt_regs *reg = current_pt_regs();
@@ -47,7 +48,7 @@ __hooked_syscall_entry(SYSCALL_DEF) {
 
     sys_call_ptr_t __syscall_real_entry = syscall_table_bak[nr];
     if (__syscall_real_entry == 0) {
-        printk(KERN_ERR "unexpect syscall_nr=%d\n", nr);
+        pr_err("unexpect syscall_nr=%d\n", nr);
         retval = -ENOSYS;
         goto out;
     }
@@ -65,7 +66,7 @@ __hooked_syscall_entry(SYSCALL_DEF) {
 
     retval = do_load_monitor(reg, &_ip, &_sp, &event_id);
 
-    if (retval != LOAD_FAILED || retval != LOAD_FROM_MONITOR) {
+    if (retval == LOAD_SUCCESS || retval == LOAD_NO_SYSCALL) {
         reg->ip = _ip;
         reg->sp = _sp;
         reg->cx = _ip;
@@ -75,14 +76,20 @@ do_syscall:
     if (retval != LOAD_NO_SYSCALL) {
         if (DO_EXIT(nr)) 
             leave_syscall();
-        retval = __syscall_real_entry(SYSCALL_ARGS);
+        syscall_ret = __syscall_real_entry(SYSCALL_ARGS);
     }
-    else
-        retval = -ENOSYS;
+    else {
+        syscall_ret = -ENOSYS;
+    }
+
+    if (!strcmp(current->comm, "a.out")) {
+        if (retval == LOAD_SUCCESS)
+            adjust_retval(syscall_ret);
+    }
 
 out:
     leave_syscall();
-    return retval;
+    return syscall_ret;
 }
 
 static void 
@@ -111,7 +118,7 @@ void hook_syscall(void) {
         nr = filtered_syscall[i];
         syscall_table_bak[nr] = syscall_table[nr];
         syscall_table[nr] = (sys_call_ptr_t)__hooked_syscall_entry;
-        printk(KERN_INFO "hook syscall %d [%lx]\n", nr, syscall_table_bak[nr]);
+        pr_info("hook syscall %d [%lx]\n", nr, syscall_table_bak[nr]);
     }
     make_ro();
     released = 0;
@@ -128,7 +135,7 @@ void restore_syscall(void) {
         nr = filtered_syscall[i];
         syscall_table[nr] = syscall_table_bak[nr];
         syscall_table_bak[nr] = 0;
-        printk(KERN_INFO "restore syscall %d [%lx]\n", nr, syscall_table[nr]);
+        pr_info("restore syscall %d [%lx]\n", nr, syscall_table[nr]);
     }
     make_ro();
     released = 1;
@@ -156,10 +163,10 @@ int hook_init() {
 void hook_destory() {
     restore_syscall();
 
-    printk(KERN_INFO "Wait for processes to leave hook entry\n");
+    pr_info("Wait for processes to leave hook entry\n");
     while(!write_trylock(&rwlock)) {
         schedule();
     }
 
-    printk(KERN_INFO "event_id = %lu\n", event_id);
+    pr_info("event_id = %lu\n", event_id);
 }

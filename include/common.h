@@ -2,6 +2,8 @@
 #define _COMMON_H_
 
 #include <linux/ptrace.h>
+#include <linux/time.h>
+
 #ifdef __KERNEL__
 #include <linux/syscalls.h>
 #else
@@ -9,7 +11,7 @@
 #endif
 
 #define MAX_LOG_LENGTH  128
-#define MAX_LOG_NR		32
+#define MAX_LOG_NR		128
 #define MAX_LOG_BUFFER_SIZE (MAX_LOG_LENGTH * MAX_LOG_NR)
  
 #define _DO_EXIT(nr)		((nr) == __NR_exit)
@@ -25,10 +27,24 @@ struct context_struct {
 	unsigned long gsbase;	
 };
 
+typedef struct {
+	struct pt_regs reg;
+	struct timeval timestamp;
+	long who;
+	unsigned long id;
+} event_data_t;
+
 struct logmsg_block {
+	event_data_t log_buf[MAX_LOG_NR];
 	int nr;
-	char buf[MAX_LOG_BUFFER_SIZE];
 };
+
+#ifdef __KERNEL__
+struct klogmsg_block {
+	event_data_t *log_buf;
+	int nr;
+};
+#endif //__KERNEL__
 
 typedef struct {
 	int m_enter;

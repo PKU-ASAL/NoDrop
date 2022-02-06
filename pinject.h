@@ -1,7 +1,9 @@
 #ifndef PINJECT_H_
 #define PINJECT_H_
 
+#ifndef __KERNEL__
 #define __KERNEL__
+#endif
 
 #include <linux/ptrace.h>
 
@@ -32,6 +34,7 @@ int do_load_monitor(const struct pt_regs *reg,
                       unsigned long *target_entry, 
                       unsigned long *target_sp, 
                       unsigned long *event_id);
+void adjust_retval(long retval); // adjust syscall return value
 int  loader_init(void);
 void loader_destory(void);
 

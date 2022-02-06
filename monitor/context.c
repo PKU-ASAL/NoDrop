@@ -25,10 +25,13 @@ unsigned long my_fsbase;
 int first_come_in = 0;
 sigset_t oldsig;
 
+void __attribute__((weak)) on_init() {};
+void __attribute__((weak)) on_exit() {};
+
 void __m_start_main(int argc, char *argv[], void (*rtld_fini) (void)) {
     sigset_t newsig;
 
-    // Because we are first loaded, OS set __collector_enter to be 1.
+    // Because we are first loaded, OSsset __collector_enter to be 1.
     // In other case, __collector_enter should always be 0 here.
     // We should make this page writable manually because ld.so call mprotect during initialization.
     if (unlikely(*__m_enter == 1)) {
@@ -40,21 +43,22 @@ void __m_start_main(int argc, char *argv[], void (*rtld_fini) (void)) {
     // Mark that we are in collector
     *__m_enter = 1;
 
-    if (!first_come_in) {
-        arch_prctl(ARCH_SET_FS, my_fsbase);
-        if (rtld_fini) {
-            atexit(rtld_fini);
-        }
-    }
-
-
     // clear SIGNAL
     sigemptyset(&newsig);
     sigprocmask(SIG_SETMASK, &newsig, &oldsig);
 
+    if (!first_come_in) {
+        arch_prctl(ARCH_SET_FS, my_fsbase);
+    } else {
+        if (rtld_fini) {
+            atexit(rtld_fini);
+        }
+        on_init();
+    }
+
     main(argc, argv, (char **)argv[argc + 1]);
 
-    if (!first_come_in) {
+    if (first_come_in) {
         atexit(__m_real_exit);
     }
 
@@ -74,6 +78,7 @@ __m_real_exit(void) {
 static void 
 __m_restore_context(struct context_struct *context) {
     if (unlikely(DO_EXIT(infopack.m_context.reg.orig_rax))) {
+        on_exit();
         while(1) {
             exit(infopack.m_context.reg.rdi);
         }
