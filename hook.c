@@ -23,12 +23,15 @@ unsigned long __force_order;
 
 typedef long (*sys_call_ptr_t)(SYSCALL_DEF);
 
-int filtered_syscall[] = { __NR_write, __NR_read, __NR_exit, __NR_exit_group };
-sys_call_ptr_t *syscall_table;
-sys_call_ptr_t syscall_table_bak[__NR_syscall_max + 1];
+#define ALL_SYSCALL 0
+#define TEST
 
-unsigned long event_id;
+static int filtered_syscall[] = { __NR_write, __NR_read, __NR_exit, __NR_exit_group };
+static sys_call_ptr_t *syscall_table;
+static sys_call_ptr_t syscall_table_bak[__NR_syscall_max + 1];
+
 int released;
+unsigned long event_id;
 
 rwlock_t rwlock;
 #define enter_syscall() read_lock(&rwlock)
@@ -52,14 +55,15 @@ __hooked_syscall_entry(SYSCALL_DEF) {
         retval = -ENOSYS;
         goto out;
     }
+
     // 1. other process call exit(): do it normally retval=LOAD_SUCCESS
     // 2. a.out call exit(): DO NOT do syscall, just return, retval = LOAD_NO_SYSCALL
     // 3. monitor call exit(): do it normally retval=LOAD_SUCCESS
 
-    if(strcmp(current->comm, "a.out"))    
+#ifdef TEST
+    if(strcmp(current->comm, "a.out"))
         goto do_syscall;
-
-    // event_id++;
+#endif
 
     _ip = reg->ip;
     _sp = reg->sp;
@@ -82,10 +86,11 @@ do_syscall:
         syscall_ret = -ENOSYS;
     }
 
-    if (!strcmp(current->comm, "a.out")) {
+#ifdef TEST
+    if (!strcmp(current->comm, "a.out")) 
+#endif
         if (retval == LOAD_SUCCESS)
             adjust_retval(syscall_ret);
-    }
 
 out:
     leave_syscall();
@@ -114,29 +119,46 @@ void hook_syscall(void) {
         return;
 
     make_rw();
+#if ALL_SYSCALL == 1
+    for (i = 0; i <= __NR_syscall_max; ++i) {
+        nr = i;
+        syscall_table_bak[nr] = syscall_table[nr];
+        syscall_table[nr] = (sys_call_ptr_t)__hooked_syscall_entry;
+    }
+    pr_info("hook all syscalls\n");
+#else
     for (i = 0, sz = sizeof(filtered_syscall) / sizeof(int); i < sz; ++i) {
         nr = filtered_syscall[i];
         syscall_table_bak[nr] = syscall_table[nr];
         syscall_table[nr] = (sys_call_ptr_t)__hooked_syscall_entry;
         pr_info("hook syscall %d [%lx]\n", nr, syscall_table_bak[nr]);
     }
+#endif
     make_ro();
     released = 0;
 }
 
 void restore_syscall(void) {
-    int nr;
-    int i = 0, sz = sizeof(filtered_syscall) / sizeof(int);
+    int nr, sz, i;
     if (released == 1)
         return;
 
     make_rw();
-    for (; i < sz; ++i) {
+#if ALL_SYSCALL == 1
+    for (i = 0; i <= __NR_syscall_max; ++i) {
+        nr = i;
+        syscall_table[nr] = syscall_table_bak[nr];
+        syscall_table_bak[nr] = 0;
+    }
+    pr_info("restore all syscalls\n");
+#else
+    for (i = 0, sz = sizeof(filtered_syscall) / sizeof(int); i < sz; ++i) {
         nr = filtered_syscall[i];
         syscall_table[nr] = syscall_table_bak[nr];
         syscall_table_bak[nr] = 0;
         pr_info("restore syscall %d [%lx]\n", nr, syscall_table[nr]);
     }
+#endif
     make_ro();
     released = 1;
 }

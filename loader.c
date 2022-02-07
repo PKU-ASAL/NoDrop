@@ -656,7 +656,7 @@ do_load_monitor(const struct pt_regs *reg,
 
     fill_event_data(logp, event_id, reg);
 
-    if (do_exit || logp->nr >= (MAX_LOG_NR >> 1)) {
+    if (do_exit || logp->nr >= (MAX_LOG_NR - 8)) {
         retval = __load_monitor(MONITOR_PATH, reg, target_entry, target_sp, logp, argv);
         if (retval != LOAD_SUCCESS) {
             pr_warning("cannot send logmsg\n");

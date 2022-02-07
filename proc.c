@@ -29,31 +29,37 @@ pinject_read(struct file *filp, char __user *buf, size_t count, loff_t *off) {
 
 static ssize_t
 pinject_write(struct file *filp, const char __user *buf, size_t count, loff_t *off) {
+    int i;
     char kbuf[BUFSIZE];
-    int op;
+
     if (*off > 0 || count > BUFSIZE)
-        return -EFAULT;
+        return -EINVAL;
 
     if (copy_from_user(kbuf, buf, count))
-        return -EFAULT;
+        return -EINVAL;
+    
+    for (i = count - 1; i >= 0;) {
+        if (kbuf[i] == '\n' || kbuf[i] == '\t' || kbuf[i] == '\r') {
+            kbuf[i--] = 0;
+            continue;
+        }
+        break;
+    }
 
-    if (sscanf(kbuf, "%d", &op) != 1)
-        return -EFAULT;
-
-    if (op == 0) { //clean
+    if (!strcmp(kbuf, "clean")) { //clean
         pr_info("proc.c: clean event_id = %d\n", event_id);
         event_id = 0;
-    } else if (op == 1) {
+    } else if (!strcmp(kbuf, "hook")) {
         pr_info("proc.c: hook syscall\n");
         hook_syscall();
-    } else if (op == 2) {
+    } else if (!strcmp(kbuf, "release")) {
         pr_info("proc.c: release syscall hook\n");
         restore_syscall();
     } else {
+        pr_info("proc.c: invalid op \"%s\"\n", kbuf);
         return -EINVAL;
     }
 
-    count = strlen(kbuf);
     *off = count;
     return count;
 }
