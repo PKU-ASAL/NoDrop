@@ -39,17 +39,19 @@ rwlock_t rwlock;
 
 static long
 __hooked_syscall_entry(SYSCALL_DEF) {
-    enter_syscall();
-
     int nr;
     long syscall_ret;
     long retval = LOAD_SUCCESS;
     unsigned long _ip, _sp;
-    struct pt_regs *reg = current_pt_regs();
+    sys_call_ptr_t __syscall_real_entry;
+    struct pt_regs *reg;
+
+    enter_syscall();
+
+    reg = current_pt_regs();
 
     nr = reg->orig_ax;
-
-    sys_call_ptr_t __syscall_real_entry = syscall_table_bak[nr];
+    __syscall_real_entry = syscall_table_bak[nr];
     if (__syscall_real_entry == 0) {
         pr_err("unexpect syscall_nr=%d\n", nr);
         retval = -ENOSYS;
@@ -131,7 +133,7 @@ void hook_syscall(void) {
         nr = filtered_syscall[i];
         syscall_table_bak[nr] = syscall_table[nr];
         syscall_table[nr] = (sys_call_ptr_t)__hooked_syscall_entry;
-        pr_info("hook syscall %d [%lx]\n", nr, syscall_table_bak[nr]);
+        pr_info("hook syscall %d [%lx]\n", nr, (unsigned long)syscall_table_bak[nr]);
     }
 #endif
     make_ro();
@@ -156,7 +158,7 @@ void restore_syscall(void) {
         nr = filtered_syscall[i];
         syscall_table[nr] = syscall_table_bak[nr];
         syscall_table_bak[nr] = 0;
-        pr_info("restore syscall %d [%lx]\n", nr, syscall_table[nr]);
+        pr_info("restore syscall %d [%lx]\n", nr, (unsigned long)syscall_table[nr]);
     }
 #endif
     make_ro();
