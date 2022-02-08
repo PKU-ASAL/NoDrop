@@ -32,8 +32,7 @@ int check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void 
                   void *arg);
 int do_load_monitor(const struct pt_regs *reg, 
                       unsigned long *target_entry, 
-                      unsigned long *target_sp, 
-                      unsigned long *event_id);
+                      unsigned long *target_sp);
 void adjust_retval(long retval); // adjust syscall return value
 int  loader_init(void);
 void loader_destory(void);

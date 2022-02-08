@@ -38,7 +38,7 @@ name:
 #define oCs  0x88
 #define oFlg 0x90
 #define oRsp 0x98
-#define oSS  0xa0
+#define oSs  0xa0
 
 #define RESTORE_REG(e, Reg, reg) \
     movq o##Reg##(%##e), %##reg

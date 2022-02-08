@@ -312,7 +312,7 @@ void on_exit() {
         file = stdin;
     }
 
-    fprintf(file, "\n%d", count);
+    fprintf(file, "%d", count);
     fclose(file);
 }
 
@@ -333,12 +333,12 @@ int main(int argc, char *argv[], char *env[]) {
     count += __m_log->nr;
     for (i = 0; i < __m_log->nr; i++) {
         event_data_t *logp = &__m_log->log_buf[i];
-        // fprintf(file, "%lu ", logp->id);
+        // fprintf(file, "%lu ", logp->id); //30,000 us = 30ms = 0.3 bms
 
         // fprintf(file, "%lu,%lu,%lu\n", logp->id, logp->timestamp.tv_sec, logp->timestamp.tv_usec);
 
-        fprintf(file, "[%lu+%lu]eid=%lu,pid=%d,nr=%lx,ret=%lx,rdi=%lx,rsi=%lx,rdx=%lx,r10=%lx,r8=%lx,r9=%lx\n", 
-            logp->timestamp.tv_sec, logp->timestamp.tv_usec, logp->id, logp->who,
+        fprintf(file, "[%lu+%lu] (core %d) eid=%lu,pid=%d,nr=%lx,ret=%lx,rdi=%lx,rsi=%lx,rdx=%lx,r10=%lx,r8=%lx,r9=%lx\n", 
+            logp->timestamp.tv_sec, logp->timestamp.tv_usec, logp->cpu, logp->id, logp->who,
             logp->reg.orig_rax, logp->reg.rax, logp->reg.rdi, logp->reg.rsi, logp->reg.rdx, logp->reg.r10, logp->reg.r8, logp->reg.r9);
     }
 

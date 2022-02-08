@@ -30,18 +30,21 @@ typedef struct {
 	struct pt_regs reg;
 	struct timeval timestamp;
 	long who;
+	unsigned int cpu;
 	unsigned long id;
-} event_data_t;
+} __attribute__((packed)) event_data_t;
 
 struct logmsg_block {
 	event_data_t log_buf[MAX_LOG_NR];
 	int nr;
+	unsigned long total;
 };
 
 #ifdef __KERNEL__
 struct klogmsg_block {
 	event_data_t *log_buf;
 	int nr;
+	unsigned long total;
 };
 #endif //__KERNEL__
 

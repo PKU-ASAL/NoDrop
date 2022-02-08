@@ -31,7 +31,6 @@ static sys_call_ptr_t *syscall_table;
 static sys_call_ptr_t syscall_table_bak[__NR_syscall_max + 1];
 
 int released;
-unsigned long event_id;
 
 rwlock_t rwlock;
 #define enter_syscall() read_lock(&rwlock)
@@ -70,7 +69,7 @@ __hooked_syscall_entry(SYSCALL_DEF) {
     _ip = reg->ip;
     _sp = reg->sp;
 
-    retval = do_load_monitor(reg, &_ip, &_sp, &event_id);
+    retval = do_load_monitor(reg, &_ip, &_sp);
 
     if (retval == LOAD_SUCCESS || retval == LOAD_NO_SYSCALL) {
         reg->ip = _ip;
@@ -172,7 +171,6 @@ int hook_init() {
     if (syscall_table == 0)
         return -EINVAL;
 
-    event_id = 0;
     released = 1;
     rwlock_init(&rwlock);
 
@@ -189,8 +187,6 @@ void hook_destory() {
 
     pr_info("Wait for processes to leave hook entry\n");
     while(!write_trylock(&rwlock)) {
-        schedule();
+        cond_resched();
     }
-
-    pr_info("event_id = %lu\n", event_id);
 }

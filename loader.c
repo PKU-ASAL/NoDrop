@@ -35,7 +35,8 @@ static struct elf_phdr *monitor_elf_phdata, *interp_elf_phdata;
 static struct elfhdr   monitor_elf_ex, interp_elf_ex;
 static struct file *monitor, *interpreter;
 
-static DEFINE_PER_CPU(struct klogmsg_block, logmsg);
+DEFINE_PER_CPU(struct klogmsg_block, logmsg);
+EXPORT_PER_CPU_SYMBOL(logmsg);
 DEFINE_SPINLOCK(mutex);
 
 static int
@@ -104,7 +105,7 @@ __check_monitor_enter(struct vm_area_struct const * const vma, void *arg) {
     if (flags & VM_EXEC)
         return 0;
 
-    // get data from monitor's section `.monitor.info`
+    // get data from monitor's section `.monitor`
     if(get_user(monitor_enter, (int __user *)vma->vm_start)) {
         monitor_enter = -1;
     }
@@ -603,7 +604,7 @@ out_unmmap:
 }
 
 static void
-fill_event_data(struct klogmsg_block *logp, unsigned long *event_id, struct pt_regs *reg) {
+fill_event_data(struct klogmsg_block *logp, struct pt_regs *reg) {
     event_data_t *e = &logp->log_buf[logp->nr++];
 
     struct timespec64 ts;
@@ -612,12 +613,10 @@ fill_event_data(struct klogmsg_block *logp, unsigned long *event_id, struct pt_r
     e->timestamp.tv_usec = ts.tv_nsec / 1000;
 
     e->who = current->pid;
-    memcpy(&e->reg, reg, sizeof(e->reg));
+    e->id = logp->total++;
+    e->cpu = smp_processor_id();
 
-    // CONCERN: IS EVENT_ID NEEDED?
-    spin_lock(&mutex);
-    e->id = (*event_id)++;
-    spin_unlock(&mutex);
+    memcpy(&e->reg, reg, sizeof(e->reg));
 }
 
 void adjust_retval(long retval) {
@@ -627,8 +626,7 @@ void adjust_retval(long retval) {
 int
 do_load_monitor(const struct pt_regs *reg,
                 unsigned long *target_entry,
-                unsigned long *target_sp,
-                unsigned long *event_id) {
+                unsigned long *target_sp) {
     int retval;
     int do_exit = DO_EXIT(reg->orig_ax);
     char *argv[] = { MONITOR_PATH, "--proc-type=secondary", "--log-level=1", NULL };
@@ -654,7 +652,7 @@ do_load_monitor(const struct pt_regs *reg,
         logp->nr = 0;
     }
 
-    fill_event_data(logp, event_id, reg);
+    fill_event_data(logp, reg);
 
     if (do_exit || logp->nr >= (MAX_LOG_NR - 8)) {
         retval = __load_monitor(MONITOR_PATH, reg, target_entry, target_sp, logp, argv);
@@ -703,7 +701,6 @@ int loader_init(void) {
         goto out_free_monitor;
     if (!monitor->f_op->mmap)
         goto out_free_monitor;
-
     if (load_elf_phdrs(&monitor_elf_ex, monitor, &monitor_elf_phdata))
         goto out_free_monitor;
 
@@ -778,9 +775,10 @@ int loader_init(void) {
     // init logmsg_block
     unsigned int cpu;
     for_each_present_cpu(cpu) {
-        struct klogmsg_block *logmsgp = &per_cpu(logmsg, cpu);
-        logmsgp->log_buf = kmalloc(sizeof(event_data_t) * MAX_LOG_NR, GFP_KERNEL);
-        logmsgp->nr = 0;
+        struct klogmsg_block *logp = &per_cpu(logmsg, cpu);
+        logp->log_buf = kmalloc(sizeof(event_data_t) * MAX_LOG_NR, GFP_KERNEL);
+        logp->nr = 0;
+        logp->total = 0;
     }
 
     retval = 0;
