@@ -14,6 +14,11 @@ static int pinject_init(void)
         goto out;
     }
 
+    if ((err = event_buffer_init())) {
+        pr_err("buffer initialization failed (%d)\n", err);
+        goto out_buffer;
+    }
+
     if((err = hook_init())) {
         pr_err("hook syscall_table failed (%d)\n", err);
         goto out_hook;
@@ -29,17 +34,22 @@ out:
     return err;
 
 out_proc:
-    hook_destory();
+    proc_destroy();
 out_hook:
+    hook_destory();
+out_buffer:
+    event_buffer_destory();
+out_loader:
     loader_destory();
     goto out;
 }
 
 static void pinject_exit(void)
 {
-    proc_destroy();
     loader_destory();
+    event_buffer_destory();
     hook_destory();
+    proc_destroy();
 }
 
 module_init(pinject_init);

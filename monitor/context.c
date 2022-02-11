@@ -1,11 +1,12 @@
 #include <signal.h>
 #include <unistd.h>
 #include <asm/prctl.h>
-#include <sys/syscall.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
 #include <linux/ptrace.h>
 
-#include "common.h"
+#include "../include/events.h"
+#include "../include/common.h"
 
 extern int main(int argc, char *argv[], char *env[]);
 extern void __restore_registers(struct pt_regs *reg);
@@ -16,9 +17,8 @@ void __attribute__((weak)) on_init() {};
 void __attribute__((weak)) on_exit() {};
 
 m_infopack __attribute__((section(".monitor.infopack"))) infopack;
-int *__m_enter = &infopack.m_enter;
-struct context_struct *__m_context = &infopack.m_context;
-struct logmsg_block *__m_log = &infopack.m_logmsg;
+int *enterp = &infopack.m_enter;
+struct spr_buffer *bufp = &infopack.m_buffer;
 
 sigset_t oldsig;
 unsigned long my_fsbase;
@@ -32,14 +32,14 @@ void __m_start_main(int argc, char *argv[], void (*rtld_fini) (void)) {
     // Because we are first loaded, OS sets __m_enter to be 1.
     // In other case, __m_enter should always be 0 here.
     // We should make this page writable manually because ld.so call mprotect during initialization.
-    if (unlikely(*__m_enter == 1)) {
+    if (unlikely(*enterp == 1)) {
         mprotect(&infopack, sizeof(infopack), PROT_READ|PROT_WRITE);
         arch_prctl(ARCH_GET_FS, &my_fsbase);
         first_come_in = 1;
     }
 
     // Mark that we are in collector
-    *__m_enter = 1;
+    *enterp = 1;
 
     // block all SIGNALs
     sigfillset(&newsig);
@@ -58,7 +58,7 @@ void __m_start_main(int argc, char *argv[], void (*rtld_fini) (void)) {
     main(argc, argv, (char **)argv[argc + 1]);
 
     // Restore the context
-    __m_restore_context(__m_context);
+    __m_restore_context(&infopack.m_context);
 }
 
 static void
@@ -72,7 +72,7 @@ __m_real_exit(void) {
 
 static void 
 __m_restore_context(struct context_struct *context) {
-    if (unlikely(DO_EXIT(infopack.m_context.reg.orig_rax))) {
+    if (unlikely(SYSCALL_EXIT_FAMILT(infopack.m_context.reg.orig_rax))) {
         on_exit();
         exit(infopack.m_context.reg.rdi);
         /* !!!NOT REACHABLE!!! */
@@ -90,7 +90,7 @@ __m_restore_context(struct context_struct *context) {
     sigprocmask(SIG_SETMASK, &oldsig, 0);
 
     // Leaving the collector, clear the mark
-    *__m_enter = 0;
+    *enterp = 0;
 
     // Restore context registers
     __restore_registers(&context->reg);

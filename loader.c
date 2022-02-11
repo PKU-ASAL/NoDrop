@@ -16,7 +16,8 @@
 #include <linux/ktime.h>
 
 #include "pinject.h"
-#include "common.h"
+#include "include/common.h"
+#include "include/events.h"
 
 
 #if ELF_EXEC_PAGESIZE > PAGE_SIZE
@@ -35,8 +36,8 @@ static struct elf_phdr *monitor_elf_phdata, *interp_elf_phdata;
 static struct elfhdr   monitor_elf_ex, interp_elf_ex;
 static struct file *monitor, *interpreter;
 
-DEFINE_PER_CPU(struct klogmsg_block, logmsg);
-EXPORT_PER_CPU_SYMBOL(logmsg);
+DEFINE_PER_CPU(struct spr_kbuffer, buffer);
+EXPORT_PER_CPU_SYMBOL(buffer);
 DEFINE_SPINLOCK(mutex);
 
 static int
@@ -84,16 +85,12 @@ __put_monitor_info(struct vm_area_struct const * const vma, void *arg) {
         return 0;
     }
 
-    if (copy_to_user((void __user *)&infopack->m_logmsg.log_buf, (void *)((struct klogmsg_block *)arr[2])->log_buf, sizeof(infopack->m_logmsg.log_buf))) {
-        pr_err("cannot write __monitor_logmsg @ %lx\n", &infopack->m_logmsg);
+    if (copy_to_user((void __user *)&infopack->m_buffer.buffer, (void *)((struct spr_kbuffer *)arr[2])->buffer, sizeof(infopack->m_buffer.buffer)) ||
+        copy_to_user((void __user *)&infopack->m_buffer.info, (void *)&((struct spr_kbuffer *)arr[2])->info, sizeof(struct spr_buffer_info))) {
+        pr_err("cannot write __monitor_logmsg @ %lx\n", &infopack->m_buffer);
         return 0;
     }
 
-    if (copy_to_user((void __user *)&infopack->m_logmsg.nr, (void *)&((struct klogmsg_block *)arr[2])->nr, 
-        (unsigned long)((long)sizeof(infopack->m_logmsg) - (long)((long)&infopack->m_logmsg.nr - (long)&infopack->m_logmsg)))) {
-        pr_err("cannot write __monitor_logmsg @ %lx\n", &infopack->m_logmsg);
-        return 0;
-    }
     return 1;
 }
 
@@ -384,7 +381,7 @@ create_elf_tbls(struct elfhdr *exec,
                 unsigned long interp_load_addr,
                 unsigned long *target_sp,
                 const struct pt_regs *reg,
-                const struct klogmsg_block *log,
+                const struct spr_kbuffer *log,
                 char *argv[]) {
 
 #define STACK_ROUND(sp, items) 	(((unsigned long) (sp - (items))) &~ 15UL)
@@ -541,26 +538,16 @@ err:
 }
 
 static int
-__load_monitor(const char *filename,
-               const struct pt_regs *reg,
-               unsigned long *target_entry,
-               unsigned long *target_sp,
-               const struct klogmsg_block *log,
-               char *argv[]) {
+do_load_monitor(const struct pt_regs *reg,
+               uint64_t *entry,
+               uint64_t *load,
+               uint64_t *interp_load) {
     int retval;
-    unsigned long load_addr = 0;
-    unsigned long interp_entry;
-    unsigned long interp_load_addr = 0;
-    unsigned long interp_map_addr = 0;
-
-    if(check_mapping(__check_mapping, (void *)&interp_entry) == 0) {
-        retval = create_elf_tbls(NULL, 0, 0, target_sp, reg, log, argv);
-        if (!retval) {
-            *target_entry = interp_entry + monitor_elf_ex.e_entry;
-            retval = LOAD_SUCCESS;
-        }
-        goto out;
-    }
+    uint64_t load_addr = 0;
+    uint64_t interp_entry;
+    uint64_t interp_load_addr = 0;
+    uint64_t interp_map_addr = 0;
+    
 
     interp_entry = load_elf_binary(&interp_elf_ex,
                     interpreter,
@@ -587,88 +574,108 @@ __load_monitor(const char *filename,
                 (int)load_addr : -EINVAL;
         goto out;
     }
-    retval = create_elf_tbls(&monitor_elf_ex, load_addr, interp_load_addr, target_sp, reg, log, argv);
-    if(retval < 0) {
-        // TODO: if create_elf_tbls failed, we need to unmap collector and its interp
-        goto out_unmmap;
-    }
 
-    *target_entry = interp_entry;
-    retval = LOAD_SUCCESS;
     pr_info("[%d] load monitor at %lx\nload interp at %lx\nentry = %lx", current->pid, load_addr, interp_load_addr, interp_entry);
+
+    if (entry)  *entry = interp_entry;
+    if (load)   *load = load_addr;
+    if (interp_load) *interp_load = interp_load_addr;
+
+    retval = LOAD_SUCCESS;
+
 out:
     return retval;
-
-out_unmmap:
-    goto out;
 }
 
-static void
-fill_event_data(struct klogmsg_block *logp, struct pt_regs *reg) {
-    event_data_t *e = &logp->log_buf[logp->nr++];
-
-    struct timespec64 ts;
-    ktime_get_real_ts64(&ts);
-    e->timestamp.tv_sec = ts.tv_sec;
-    e->timestamp.tv_usec = ts.tv_nsec / 1000;
-
-    e->who = current->pid;
-    e->id = logp->total++;
-    e->cpu = smp_processor_id();
-
-    memcpy(&e->reg, reg, sizeof(e->reg));
-}
-
-void adjust_retval(long retval) {
-    check_mapping(_do_adjust_retval, (void *)retval);
-}
-
-int
-do_load_monitor(const struct pt_regs *reg,
-                unsigned long *target_entry,
-                unsigned long *target_sp) {
-    int retval;
-    int do_exit = DO_EXIT(reg->orig_ax);
-    char *argv[] = { MONITOR_PATH, "--proc-type=secondary", "--log-level=1", NULL };
-
+int event_from_monitor(void) {
+    int retval = SPR_FAILURE_BUG;
     // Monitor called syscall
     if (check_mapping(__check_monitor_enter, (void *)&retval) == 0) {
         if (retval == 1) {
-            retval = LOAD_FROM_MONITOR;
-            goto out;
-        } else if (retval < 0) {
-            pr_crit("!!cannot get monitor's status!! ip: %lx sp: %lx\n", *target_entry, *target_sp);
-            retval = LOAD_FAILED;
-            goto out;
-        }
-    }
-
-    retval = LOAD_FAILED;
-
-    struct klogmsg_block *logp = &get_cpu_var(logmsg);
-
-    if (logp->nr >= MAX_LOG_NR) {
-        pr_err("buffer is full but logmsg is not sent\nyou lost it\n");
-        logp->nr = 0;
-    }
-
-    fill_event_data(logp, reg);
-
-    if (do_exit || logp->nr >= (MAX_LOG_NR - 8)) {
-        retval = __load_monitor(MONITOR_PATH, reg, target_entry, target_sp, logp, argv);
-        if (retval != LOAD_SUCCESS) {
-            pr_warning("cannot send logmsg\n");
+            retval = SPR_EVENT_FROM_MONITOR; // syscall from monitor
+        } else if (retval == 0) {
+            retval = SPR_EVENT_FROM_APPLICATION; // syscall from application
         } else {
-            // pr_info("send %d logmsg\n", logp->nr);
-            logp->nr = 0;
-            retval = do_exit ? LOAD_NO_SYSCALL : retval;
+            pr_err("corrupted: cannot get monitor status!!\n");
+            ASSERT(false);
         }
     }
-    
-    put_cpu_var(logmsg);
+    return retval;
+}
+
+int
+load_monitor(const struct spr_kbuffer *buffer) {
+    int retval;
+    uint64_t entry, sp, load_addr, interp_load_addr;
+    struct pt_regs *reg;
+    char *argv[] = { MONITOR_PATH, "--proc-type=secondary", "--log-level=1", NULL };
+
+    reg = current_pt_regs();
+
+    if(check_mapping(__check_mapping, (void *)&entry) == 0) {
+        retval = create_elf_tbls(NULL, 0, 0, &sp, reg, buffer, argv);
+        if (retval == LOAD_SUCCESS) {
+            entry += monitor_elf_ex.e_entry;
+            goto success;
+        } else {
+            goto out;
+        }
+    }
+
+    retval = do_load_monitor(reg, &entry, &load_addr, &interp_load_addr);
+    if (retval != LOAD_SUCCESS) {
+        goto out;
+    }
+
+    retval = create_elf_tbls(&monitor_elf_ex, load_addr, interp_load_addr, &sp, reg, buffer, argv);
+    if(retval != LOAD_SUCCESS) {
+        goto out;
+    }
+
+success:
+    reg->sp = sp;
+    reg->cx = reg->ip = entry;
+    retval = LOAD_SUCCESS;
 
 out:
+    if (retval != LOAD_SUCCESS) {
+        pr_err("(%d)load_monitor: cannot transfer logging buffer", smp_processor_id());
+    }
     return retval;
+//     int retval;
+//     int cpu;
+//     int do_exit = SYSCALL_EXIT_FAMILT(reg->orig_ax);
+
+
+
+//     cpu = get_cpu();
+//     struct spr_kbuffer *bufp = &per_cpu(buffer, cpu);
+
+
+
+//     retval = LOAD_FAILED;
+
+
+//     if (logp->nr >= MAX_LOG_NR) {
+//         pr_err("buffer is full but logmsg is not sent\nyou lost it\n");
+//         logp->nr = 0;
+//     }
+
+//     if (do_exit || logp->nr >= (MAX_LOG_NR - 8)) {
+//         retval = __load_monitor(bufp, reg, target_entry, target_sp);
+//         if (retval != LOAD_SUCCESS) {
+//             pr_warning("cannot send logmsg\n");
+//         } else {
+//             // pr_info("send %d logmsg\n", logp->nr);
+//             logp->nr = 0;
+//             retval = do_exit ? LOAD_NO_SYSCALL : retval;
+//         }
+//     }
+    
+//     put_cpu();
+
+// out:
+//     return retval;
 }
 
 int loader_init(void) {
@@ -772,13 +779,12 @@ int loader_init(void) {
         goto out_free_dentry;
 
 
-    // init logmsg_block
+    // init event buffer 
     unsigned int cpu;
     for_each_present_cpu(cpu) {
-        struct klogmsg_block *logp = &per_cpu(logmsg, cpu);
-        logp->log_buf = kmalloc(sizeof(event_data_t) * MAX_LOG_NR, GFP_KERNEL);
-        logp->nr = 0;
-        logp->total = 0;
+        struct spr_kbuffer *bufp = &per_cpu(buffer, cpu);
+        bufp->buffer = vmalloc(BUFFER_SIZE);
+        spr_init_buffer_info(&bufp->info);
     }
 
     retval = 0;
@@ -817,9 +823,4 @@ void loader_destory(void) {
         kfree(monitor_elf_phdata);
     if (interp_elf_phdata)
         kfree(interp_elf_phdata);
-
-    unsigned int cpu;
-    for_each_present_cpu(cpu) {
-        kfree(per_cpu(logmsg, cpu).log_buf);
-    }
 }

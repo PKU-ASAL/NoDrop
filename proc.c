@@ -5,12 +5,12 @@
 #include <linux/types.h>
 
 #include "pinject.h"
-#include "common.h"
+#include "include/common.h"
+#include "include/events.h"
 
 #define BUFSIZE 30
 
 static struct proc_dir_entry *ent;
-DECLARE_PER_CPU(struct klogmsg_block, logmsg);
 
 static ssize_t
 pinject_read(struct file *filp, char __user *buf, size_t count, loff_t *off) {
@@ -23,8 +23,8 @@ pinject_read(struct file *filp, char __user *buf, size_t count, loff_t *off) {
 
     event_id = 0;
     for_each_present_cpu(cpu) {
-        struct klogmsg_block *logp = &per_cpu(logmsg, cpu);
-        event_id += logp->total;
+        struct spr_kbuffer *bufp = &per_cpu(buffer, cpu);
+        event_id += bufp->info.nevents;
     }
 
     len += sprintf(kbuf, "%u", event_id);
@@ -58,8 +58,7 @@ pinject_write(struct file *filp, const char __user *buf, size_t count, loff_t *o
     if (!strcmp(kbuf, "clean")) { //clean
         pr_info("proc.c: clean event_id\n");
         for_each_possible_cpu(cpu) {
-            struct klogmsg_block *logp = &per_cpu(logmsg, cpu);
-            logp->total = logp->nr = 0;
+            spr_init_buffer_info(&per_cpu(buffer, cpu).info);
         }
     } else if (!strcmp(kbuf, "hook")) {
         pr_info("proc.c: hook syscall\n");

@@ -1,117 +1,133 @@
 #include <linux/kernel.h>
-#include <linux/syscalls.h>
 #include <linux/kallsyms.h>
 #include <linux/ptrace.h>
+#include <asm/unistd.h>
+#include <asm/syscall.h>
 #include <linux/unistd.h>
 #include <linux/mm.h>
 #include <linux/spinlock.h>
 #include <linux/version.h>
 
 #include "pinject.h"
-#include "common.h"
+#include "syscall.h"
+#include "include/common.h"
+#include "include/events.h"
 
-#define __NR_syscall_max __NR_statx // may change
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17,0)
-#define SYSCALL_DEF   const struct pt_regs * _syscall_regs
-#define SYSCALL_ARGS  _syscall_regs
-unsigned long __force_order;
-#else
-#define SYSCALL_DEF  long _di, long _si, long _dx, long _r10, long _r8, long _r9
-#define SYSCALL_ARGS _di, _si, _dx, _r10, _r8, _r9
-#endif // LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17,0)
-
-typedef long (*sys_call_ptr_t)(SYSCALL_DEF);
 
 #define ALL_SYSCALL 0
 #define TEST
 
-static int filtered_syscall[] = { __NR_write, __NR_read, __NR_exit, __NR_exit_group };
-static sys_call_ptr_t *syscall_table;
-static sys_call_ptr_t syscall_table_bak[__NR_syscall_max + 1];
-
 int released;
 
-rwlock_t rwlock;
-#define enter_syscall() read_lock(&rwlock)
-#define leave_syscall() read_unlock(&rwlock)
+static int filtered_syscall[] = { __NR_write, __NR_read, __NR_exit, __NR_exit_group };
+static sys_call_ptr_t *syscall_table;
+static sys_call_ptr_t syscall_table_bak[NR_syscalls];
+
+static  DEFINE_RWLOCK(syscall_lock);
+#define enter_syscall() read_lock(&syscall_lock)
+#define leave_syscall() read_unlock(&syscall_lock)
+
+static int
+syscall_probe(struct pt_regs *reg, long id) {
+    int retval;
+    long table_index;
+    enum spr_event_type type;
+    struct spr_event_data event_data;
+
+    table_index = id - SYSCALL_TABLE_ID0;
+    if (likely(table_index >= 0 && table_index < SYSCALL_TABLE_SIZE)) {
+        type = g_syscall_event_table[table_index];
+
+        event_data.category = SPRC_SYSCALL;
+        event_data.event_info.syscall_data.reg = reg;
+        event_data.event_info.syscall_data.id = id;
+
+        retval = record_one_event(type, &event_data);
+    } else {
+        retval = SPR_FAILURE_INVALID_EVENT;
+    }
+
+    return retval;
+}
 
 static long
 __hooked_syscall_entry(SYSCALL_DEF) {
-    int nr;
-    long syscall_ret;
-    long retval = LOAD_SUCCESS;
-    unsigned long _ip, _sp;
-    sys_call_ptr_t __syscall_real_entry;
+    long nr, retval;
     struct pt_regs *reg;
+    sys_call_ptr_t __syscall_real_entry;
 
     enter_syscall();
-
     reg = current_pt_regs();
 
-    nr = reg->orig_ax;
+    nr = syscall_get_nr(current, reg);
     __syscall_real_entry = syscall_table_bak[nr];
     if (__syscall_real_entry == 0) {
         pr_err("unexpect syscall_nr=%d\n", nr);
-        retval = -ENOSYS;
+        reg->ax = -ENOSYS;
         goto out;
     }
-
-    // 1. other process call exit(): do it normally retval=LOAD_SUCCESS
-    // 2. a.out call exit(): DO NOT do syscall, just return, retval = LOAD_NO_SYSCALL
-    // 3. monitor call exit(): do it normally retval=LOAD_SUCCESS
 
 #ifdef TEST
     if(strcmp(current->comm, "a.out"))
         goto do_syscall;
 #endif
 
-    _ip = reg->ip;
-    _sp = reg->sp;
-
-    retval = do_load_monitor(reg, &_ip, &_sp);
-
-    if (retval == LOAD_SUCCESS || retval == LOAD_NO_SYSCALL) {
-        reg->ip = _ip;
-        reg->sp = _sp;
-        reg->cx = _ip;
+    /* 
+     * Record event immidiately if syscall exit() or exit_group() is invoked from application
+     * Otherwise we should delay event recording until syscall returned
+     */
+    if (SYSCALL_EXIT_FAMILY(nr) && event_from_monitor() == SPR_EVENT_FROM_APPLICATION) {
+        /* escape syscall routine */
+        if (syscall_probe(reg, nr) == SPR_SUCCESS) {
+            reg->ax = 0;
+            goto out;
+        }
     }
 
 do_syscall:
-    if (retval != LOAD_NO_SYSCALL) {
-        if (DO_EXIT(nr)) 
-            leave_syscall();
-        syscall_ret = __syscall_real_entry(SYSCALL_ARGS);
-    }
-    else {
-        syscall_ret = -ENOSYS;
-    }
+    if (SYSCALL_EXIT_FAMILY(nr))
+        leave_syscall();
+    retval = __syscall_real_entry(SYSCALL_ARGS);
+    syscall_set_return_value(current, reg, retval, retval);
 
 #ifdef TEST
-    if (!strcmp(current->comm, "a.out")) 
+    if(strcmp(current->comm, "a.out"))
+        goto out;
 #endif
-        if (retval == LOAD_SUCCESS)
-            adjust_retval(syscall_ret);
+
+    syscall_probe(reg, nr);
 
 out:
     leave_syscall();
-    return syscall_ret;
+    return syscall_get_return_value(current, reg);
 }
 
-static void 
-write_cr0_native(unsigned long cr0) {
-    asm volatile("mov %0,%%cr0" : "+r"(cr0), "+m"(__force_order));
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,3,0)
+inline void spr_write_cr0(unsigned long cr0) {
+    unsigned long __force_order;
+	asm volatile("mov %0,%%cr0" : "+r"(cr0), "+m"(__force_order));
 }
-static unsigned long 
-read_cr0_native(void) {
-    unsigned long val;
-    asm volatile("mov %%cr0,%0\n\t" : "=r" (val), "=m" (__force_order));
-    return val;
-}
-static void 
-make_rw(void) { write_cr0_native(read_cr0_native() & (~0x10000)); }
-static void 
-make_ro(void) { write_cr0_native(read_cr0_native() | 0x10000); }
+#else
+#define spr_write_cr0 write_cr0 
+#endif
+
+#define WPOFF do { spr_write_cr0(read_cr0() & (~0x10000)); } while (0)
+#define WPON  do { spr_write_cr0(read_cr0() | 0x10000);    } while (0)
+
+// static void 
+// write_cr0_native(unsigned long cr0) {
+//     asm volatile("mov %0,%%cr0" : "+r"(cr0), "+m"(__force_order));
+// }
+// static unsigned long 
+// read_cr0_native(void) {
+//     unsigned long val;
+//     asm volatile("mov %%cr0,%0\n\t" : "=r" (val), "=m" (__force_order));
+//     return val;
+// }
+// static void 
+// make_rw(void) { write_cr0_native(read_cr0_native() & (~0x10000)); }
+// static void 
+// make_ro(void) { write_cr0_native(read_cr0_native() | 0x10000); }
 
 void hook_syscall(void) {
     int sz, nr, i;
@@ -119,9 +135,9 @@ void hook_syscall(void) {
     if (released == 0)
         return;
 
-    make_rw();
+    WPOFF;
 #if ALL_SYSCALL == 1
-    for (i = 0; i <= __NR_syscall_max; ++i) {
+    for (i = 0; i < NR_syscalls; ++i) {
         nr = i;
         syscall_table_bak[nr] = syscall_table[nr];
         syscall_table[nr] = (sys_call_ptr_t)__hooked_syscall_entry;
@@ -135,7 +151,7 @@ void hook_syscall(void) {
         pr_info("hook syscall %d [%lx]\n", nr, (unsigned long)syscall_table_bak[nr]);
     }
 #endif
-    make_ro();
+    WPON;
     released = 0;
 }
 
@@ -144,9 +160,9 @@ void restore_syscall(void) {
     if (released == 1)
         return;
 
-    make_rw();
+    WPOFF;
 #if ALL_SYSCALL == 1
-    for (i = 0; i <= __NR_syscall_max; ++i) {
+    for (i = 0; i < NR_syscalls; ++i) {
         nr = i;
         syscall_table[nr] = syscall_table_bak[nr];
         syscall_table_bak[nr] = 0;
@@ -160,7 +176,7 @@ void restore_syscall(void) {
         pr_info("restore syscall %d [%lx]\n", nr, (unsigned long)syscall_table[nr]);
     }
 #endif
-    make_ro();
+    WPON;
     released = 1;
 }
 
@@ -171,12 +187,10 @@ int hook_init() {
     if (syscall_table == 0)
         return -EINVAL;
 
-    released = 1;
-    rwlock_init(&rwlock);
-
-    for (i = 0; i <= __NR_syscall_max; ++i)
+    for (i = 0; i < NR_syscalls; ++i)
         syscall_table_bak[i] = 0;
 
+    released = 1;
     hook_syscall();
 
     return 0;

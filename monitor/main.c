@@ -301,7 +301,8 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include "common.h"
+#include "include/events.h"
+#include "include/common.h"
 
 int count;
 char path[10];
@@ -321,7 +322,7 @@ void on_init() {
     sprintf(path, "%d.txt", getpid());
 }
 
-extern struct logmsg_block *__m_log;
+extern struct spr_buffer *bufp;
 int main(int argc, char *argv[], char *env[]) {
     int i;
     FILE *file;
@@ -330,17 +331,17 @@ int main(int argc, char *argv[], char *env[]) {
         file = stdin;
     }
 
-    count += __m_log->nr;
-    for (i = 0; i < __m_log->nr; i++) {
-        event_data_t *logp = &__m_log->log_buf[i];
-        // fprintf(file, "%lu ", logp->id); //30,000 us = 30ms = 0.3 bms
+    // count += __m_log->nr;
+    // for (i = 0; i < __m_log->nr; i++) {
+    //     event_data_t *logp = &__m_log->log_buf[i];
+    //     // fprintf(file, "%lu ", logp->id); //30,000 us = 30ms = 0.3 bms
 
-        // fprintf(file, "%lu,%lu,%lu\n", logp->id, logp->timestamp.tv_sec, logp->timestamp.tv_usec);
+    //     // fprintf(file, "%lu,%lu,%lu\n", logp->id, logp->timestamp.tv_sec, logp->timestamp.tv_usec);
 
-        fprintf(file, "[%lu+%lu] (core %d) eid=%lu,pid=%d,nr=%lx,ret=%lx,rdi=%lx,rsi=%lx,rdx=%lx,r10=%lx,r8=%lx,r9=%lx\n", 
-            logp->timestamp.tv_sec, logp->timestamp.tv_usec, logp->cpu, logp->id, logp->who,
-            logp->reg.orig_rax, logp->reg.rax, logp->reg.rdi, logp->reg.rsi, logp->reg.rdx, logp->reg.r10, logp->reg.r8, logp->reg.r9);
-    }
+    //     fprintf(file, "[%lu+%lu] (core %d) eid=%lu,pid=%d,nr=%lx,ret=%lx,rdi=%lx,rsi=%lx,rdx=%lx,r10=%lx,r8=%lx,r9=%lx\n", 
+    //         logp->timestamp.tv_sec, logp->timestamp.tv_usec, logp->cpu, logp->id, logp->who,
+    //         logp->reg.orig_rax, logp->reg.rax, logp->reg.rdi, logp->reg.rsi, logp->reg.rdx, logp->reg.r10, logp->reg.r8, logp->reg.r9);
+    // }
 
     fclose(file); 
     return 0;
