@@ -627,40 +627,6 @@ out:
         pr_err("(%d)load_monitor: cannot transfer logging buffer", smp_processor_id());
     }
     return retval;
-//     int retval;
-//     int cpu;
-//     int do_exit = SYSCALL_EXIT_FAMILY(reg->orig_ax);
-
-
-
-//     cpu = get_cpu();
-//     struct spr_kbuffer *bufp = &per_cpu(buffer, cpu);
-
-
-
-//     retval = LOAD_FAILED;
-
-
-//     if (logp->nr >= MAX_LOG_NR) {
-//         pr_err("buffer is full but logmsg is not sent\nyou lost it\n");
-//         logp->nr = 0;
-//     }
-
-//     if (do_exit || logp->nr >= (MAX_LOG_NR - 8)) {
-//         retval = __load_monitor(bufp, reg, target_entry, target_sp);
-//         if (retval != LOAD_SUCCESS) {
-//             pr_warning("cannot send logmsg\n");
-//         } else {
-//             // pr_info("send %d logmsg\n", logp->nr);
-//             logp->nr = 0;
-//             retval = do_exit ? LOAD_NO_SYSCALL : retval;
-//         }
-//     }
-    
-//     put_cpu();
-
-// out:
-//     return retval;
 }
 
 int loader_init(void) {
