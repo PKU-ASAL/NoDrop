@@ -9,7 +9,13 @@ $(MODULE)-objs := \
 	pinject_main.o \
 	loader.o \
 	hook.o \
-	proc.o
+	proc.o \
+	fillers.o \
+	events.o \
+	events_table.o \
+	fillers_table.o \
+	flags_table.o \
+	syscall_table.o
 
 all:
 	make -C $(KDIR) M=$(PWD) modules

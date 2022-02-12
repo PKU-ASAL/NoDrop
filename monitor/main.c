@@ -301,35 +301,55 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include "include/events.h"
-#include "include/common.h"
+#include "events.h"
+#include "common.h"
 
 int count;
 char path[10];
+struct spr_buffer_info *info;
+extern struct spr_buffer *bufp;
 
-void on_exit() {
+void spr_exit_monitor(int code) {
     FILE *file;
-    if (!(file = fopen(path, "a"))) {
-        file = stdin;
+    if (!(file = fopen(path, "ab+"))) {
+        return;
     }
 
-    fprintf(file, "%d", count);
+    fwrite(&count, sizeof(count), 1, file);
     fclose(file);
 }
 
-void on_init() {
+void spr_init_monitor() {
     count = 0;
-    sprintf(path, "%d.txt", getpid());
+    info = &bufp->info;
+    sprintf(path, "%d.buf", getpid());
 }
 
-extern struct spr_buffer *bufp;
 int main(int argc, char *argv[], char *env[]) {
-    int i;
+    int i, curarg;
     FILE *file;
+    char *next, *arg_data_ptr;
+    uint16_t *lens;
+    struct spr_event_hdr *hdr;
 
-    if(!(file = fopen(path, "a"))) {
-        file = stdin;
+    if(!(file = fopen(path, "ab+"))) {
+        return 0;
     }
+
+    count += info->nevents;
+    fwrite(bufp->buffer, info->tail, 1, file);
+    // next = bufp->buffer;
+    // for (i = 0; i < info->nevents; ++i) {
+    //     hdr = (struct spr_event_hdr *)next;
+    //     lens = next + sizeof(struct spr_event_hdr);
+    //     arg_data_ptr = (char *)lens + hdr->nargs * sizeof(uint16_t);
+    //     next += hdr->len;
+
+    //     for (curarg = 0; curarg < hdr->nargs; ++curarg) {
+
+    //         arg_data_ptr += lens[curarg];
+    //     }
+    // }
 
     // count += __m_log->nr;
     // for (i = 0; i < __m_log->nr; i++) {

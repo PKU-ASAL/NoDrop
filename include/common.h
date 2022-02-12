@@ -1,10 +1,13 @@
 #ifndef _COMMON_H_
 #define _COMMON_H_
 
+#include <linux/ptrace.h>
 
 #ifdef __KERNEL__
 #include <linux/syscalls.h>
 #include <linux/time.h>
+#else
+#include <stdint.h>
 #endif
 
 #define MAX_LOG_LENGTH  128

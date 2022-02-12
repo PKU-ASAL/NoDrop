@@ -3,10 +3,12 @@
 
 #ifdef __KERNEL__
 #include <linux/kernel.h>
+#else
+#include <stdint.h>
 #endif //__KERNEL__
 
 #include <linux/types.h>
-#include "include/filler.h"
+#include "fillers.h"
 
 typedef uint64_t nanoseconds;
 #define _packed __attribute__((packed))
@@ -684,7 +686,7 @@ enum spr_print_format {
 	PF_OCT = 6,	/* octal */
 };
 
-enum spr_event_category {
+enum spr_capture_category {
     SPRC_NONE = 0,
     SPRC_SYSCALL = 1
 };
@@ -719,13 +721,15 @@ struct spr_kbuffer {
 };
 #endif //__KERNEL__
 
+#define SPR_EVENT_HDR_MAGIC 0xCAFEBABE
 struct spr_event_hdr {
     nanoseconds ts;
     uint64_t tid;
     uint32_t len;
     uint32_t nargs;
-    uint16_t type;
-};
+    uint32_t type;
+    uint32_t magic;
+}_packed;
 
 struct spr_name_value {
     const char *name;
@@ -742,12 +746,12 @@ struct event_filler_arguments {
     uint32_t nargs;
     uint32_t arg_data_offset;
     uint32_t arg_data_size;
+    uint32_t snaplen;
     struct pt_regs *reg;
-    int fd;
 };
 
 struct spr_event_data {
-    enum spr_event_category category;
+    enum spr_capture_category category;
 
     union {
         struct {
@@ -773,7 +777,7 @@ struct spr_param_info {
 
 struct spr_event_info {
     char name[SPR_MAX_NAME_LEN];
-    enum spr_event_category category;
+    enum spr_capture_category category;
     enum spr_event_flags flags;
     uint32_t nparams;
     struct spr_param_info params[SPR_MAX_EVENT_PARAMS];

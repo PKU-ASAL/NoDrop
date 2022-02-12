@@ -2,6 +2,7 @@
 #define PINJECT_H_
 
 #include <linux/ptrace.h>
+#include "include/events.h"
 
 #define ASSERT(expr) BUG_ON(!(expr))
 #define MONITOR_PATH "/mnt/hgfs/Projects/pinject_dpdk/monitor/monitor"
@@ -60,42 +61,111 @@ extern const enum spr_event_type g_syscall_event_table[];
 // filler_table.c
 extern const struct spr_event_entry g_spr_events[];
 
+// event_table.c
+extern const struct spr_event_info g_event_info[];
+
 // flags_table.c
-extern const struct ppm_name_value socket_families[];
-extern const struct ppm_name_value file_flags[];
-extern const struct ppm_name_value flock_flags[];
-extern const struct ppm_name_value clone_flags[];
-extern const struct ppm_name_value futex_operations[];
-extern const struct ppm_name_value lseek_whence[];
-extern const struct ppm_name_value poll_flags[];
-extern const struct ppm_name_value mount_flags[];
-extern const struct ppm_name_value umount_flags[];
-extern const struct ppm_name_value shutdown_how[];
-extern const struct ppm_name_value rlimit_resources[];
-extern const struct ppm_name_value fcntl_commands[];
-extern const struct ppm_name_value sockopt_levels[];
-extern const struct ppm_name_value sockopt_options[];
-extern const struct ppm_name_value ptrace_requests[];
-extern const struct ppm_name_value prot_flags[];
-extern const struct ppm_name_value mmap_flags[];
-extern const struct ppm_name_value splice_flags[];
-extern const struct ppm_name_value quotactl_cmds[];
-extern const struct ppm_name_value quotactl_types[];
-extern const struct ppm_name_value quotactl_dqi_flags[];
-extern const struct ppm_name_value quotactl_quota_fmts[];
-extern const struct ppm_name_value semop_flags[];
-extern const struct ppm_name_value semget_flags[];
-extern const struct ppm_name_value semctl_commands[];
-extern const struct ppm_name_value access_flags[];
-extern const struct ppm_name_value pf_flags[];
-extern const struct ppm_name_value unlinkat_flags[];
-extern const struct ppm_name_value linkat_flags[];
-extern const struct ppm_name_value chmod_mode[];
-extern const struct ppm_name_value renameat2_flags[];
+extern const struct spr_name_value socket_families[];
+extern const struct spr_name_value file_flags[];
+extern const struct spr_name_value flock_flags[];
+extern const struct spr_name_value clone_flags[];
+extern const struct spr_name_value futex_operations[];
+extern const struct spr_name_value lseek_whence[];
+extern const struct spr_name_value poll_flags[];
+extern const struct spr_name_value mount_flags[];
+extern const struct spr_name_value umount_flags[];
+extern const struct spr_name_value shutdown_how[];
+extern const struct spr_name_value rlimit_resources[];
+extern const struct spr_name_value fcntl_commands[];
+extern const struct spr_name_value sockopt_levels[];
+extern const struct spr_name_value sockopt_options[];
+extern const struct spr_name_value ptrace_requests[];
+extern const struct spr_name_value prot_flags[];
+extern const struct spr_name_value mmap_flags[];
+extern const struct spr_name_value splice_flags[];
+extern const struct spr_name_value quotactl_cmds[];
+extern const struct spr_name_value quotactl_types[];
+extern const struct spr_name_value quotactl_dqi_flags[];
+extern const struct spr_name_value quotactl_quota_fmts[];
+extern const struct spr_name_value semop_flags[];
+extern const struct spr_name_value semget_flags[];
+extern const struct spr_name_value semctl_commands[];
+extern const struct spr_name_value access_flags[];
+extern const struct spr_name_value pf_flags[];
+extern const struct spr_name_value unlinkat_flags[];
+extern const struct spr_name_value linkat_flags[];
+extern const struct spr_name_value chmod_mode[];
+extern const struct spr_name_value renameat2_flags[];
 
-extern const struct ppm_param_info sockopt_dynamic_param[];
-extern const struct ppm_param_info ptrace_dynamic_param[];
-extern const struct ppm_param_info bpf_dynamic_param[];
+// kernel_hacks
+#include <linux/version.h>
 
+/* probe_kernel_read() only added in kernel 2.6.26, name changed in 5.8.0 */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 26)
+static inline long copy_from_kernel_nofault(void *dst, const void *src, size_t size)
+{
+	long ret;
+	mm_segment_t old_fs = get_fs();
+
+	set_fs(KERNEL_DS);
+	pagefault_disable();
+	ret = __copy_from_user_inatomic(dst, (__force const void __user *)src, size);
+	pagefault_enable();
+	set_fs(old_fs);
+
+	return ret ? -EFAULT : 0;
+}
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
+#define copy_from_kernel_nofault probe_kernel_read
+#endif
+
+
+/*
+ * Linux 5.6 kernels no longer include the old 32-bit timeval
+ * structures. But the syscalls (might) still use them.
+ */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
+#include <linux/time64.h>
+struct compat_timespec {
+	int32_t tv_sec;
+	int32_t tv_nsec;
+};
+
+struct timespec {
+	int32_t tv_sec;
+	int32_t tv_nsec;
+};
+
+struct timeval {
+	int32_t tv_sec;
+	int32_t tv_usec;
+};
+#else
+#define timeval64 timeval
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 9, 0)
+static inline struct inode *file_inode(struct file *f)
+{
+	return f->f_path.dentry->d_inode;
+}
+#endif
+
+/*
+ * Linux 5.1 kernels modify the syscall_get_arguments function to always
+ * return all arguments rather than allowing the caller to select which
+ * arguments are desired. This wrapper replicates the original
+ * functionality.
+ */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 0))
+#define syscall_get_arguments_deprecated syscall_get_arguments
+#else
+#define syscall_get_arguments_deprecated(_task, _reg, _start, _len, _args) \
+	do { \
+	    unsigned long _sga_args[6] = {}; \
+	    syscall_get_arguments(_task, _reg, _sga_args); \
+	    memcpy(_args, &_sga_args[_start], _len * sizeof(unsigned long)); \
+	} while(0)
+#endif
 
 #endif // PINJECT_H_

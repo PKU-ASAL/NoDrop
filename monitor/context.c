@@ -1,30 +1,34 @@
+#include <stdlib.h>
 #include <signal.h>
 #include <unistd.h>
 #include <asm/prctl.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
-#include <linux/ptrace.h>
+#include <sys/types.h>
 
-#include "../include/events.h"
-#include "../include/common.h"
+#include "events.h"
+#include "common.h"
 
 extern int main(int argc, char *argv[], char *env[]);
 extern void __restore_registers(struct pt_regs *reg);
 static void __m_restore_context(struct context_struct *context);
 static void __m_real_exit(void);
 
-void __attribute__((weak)) on_init() {};
-void __attribute__((weak)) on_exit() {};
-
 m_infopack __attribute__((section(".monitor.infopack"))) infopack;
 int *enterp = &infopack.m_enter;
 struct spr_buffer *bufp = &infopack.m_buffer;
 
-sigset_t oldsig;
-unsigned long my_fsbase;
+static sigset_t oldsig;
+static unsigned long my_fsbase;
 int first_come_in = 0;
 
 void *__dso_handle = 0;
+static inline int arch_prctl(int code, unsigned long addr) {
+    return syscall(SYS_arch_prctl, code, addr);
+}
+
+void __attribute__((weak)) spr_init_monitor() {};
+void __attribute__((weak)) spr_exit_monitor(int code) {};
 
 void __m_start_main(int argc, char *argv[], void (*rtld_fini) (void)) {
     sigset_t newsig;
@@ -34,7 +38,7 @@ void __m_start_main(int argc, char *argv[], void (*rtld_fini) (void)) {
     // We should make this page writable manually because ld.so call mprotect during initialization.
     if (unlikely(*enterp == 1)) {
         mprotect(&infopack, sizeof(infopack), PROT_READ|PROT_WRITE);
-        arch_prctl(ARCH_GET_FS, &my_fsbase);
+        arch_prctl(ARCH_GET_FS, (unsigned long)&my_fsbase);
         first_come_in = 1;
     }
 
@@ -50,7 +54,7 @@ void __m_start_main(int argc, char *argv[], void (*rtld_fini) (void)) {
         if (rtld_fini) {
             atexit(rtld_fini);
         }
-        on_init();
+        spr_init_monitor();
     } else {
         arch_prctl(ARCH_SET_FS, my_fsbase);
     }
@@ -72,9 +76,11 @@ __m_real_exit(void) {
 
 static void 
 __m_restore_context(struct context_struct *context) {
-    if (unlikely(SYSCALL_EXIT_FAMILT(infopack.m_context.reg.orig_rax))) {
-        on_exit();
-        exit(infopack.m_context.reg.rdi);
+    int code;
+    if (unlikely(SYSCALL_EXIT_FAMILY(infopack.m_context.reg.orig_rax))) {
+        code = infopack.m_context.reg.rdi;
+        spr_exit_monitor(code);
+        exit(code);
         /* !!!NOT REACHABLE!!! */
         __m_real_exit();
     }

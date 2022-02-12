@@ -41,21 +41,6 @@ EXPORT_PER_CPU_SYMBOL(buffer);
 DEFINE_SPINLOCK(mutex);
 
 static int
-_do_adjust_retval(struct vm_area_struct const * const vma, void *arg) {
-    m_infopack *infopack = (m_infopack *)vma->vm_start;
-    vm_flags_t flags = vma->vm_flags;
-
-    if (flags & VM_EXEC)
-        return 0;
-    
-    if (put_user((unsigned long)arg, (unsigned long __user *)&infopack->m_context.reg.ax)) {
-        pr_err("cannot write context.reg.ax @ %lx\n", &infopack->m_context.reg.ax);
-        return 0;
-    }
-    return 1;
-}
-
-static int
 __check_mapping(struct vm_area_struct const * const vma, void *arg) {
     vm_flags_t flags = vma->vm_flags;
     if (flags & VM_EXEC) {
@@ -256,14 +241,14 @@ out:
 
 static unsigned long
 load_elf_binary(struct elfhdr *elf_ex,
-        struct file *binary, unsigned long *map_addr,
+        struct file *binary, uint64_t *map_addr,
         unsigned long no_base, struct elf_phdr *elf_phdrs) {
     int i;
     int load_addr_set = 0;
     int bss_prot = 0;
     struct elf_phdr *eppnt;
-    unsigned long load_addr = 0;
-    unsigned long last_bss = 0, elf_bss = 0;
+    uint64_t load_addr = 0;
+    uint64_t last_bss = 0, elf_bss = 0;
     unsigned long error = ~0UL;
     unsigned long total_size;
 
@@ -377,21 +362,22 @@ out:
 
 static int
 create_elf_tbls(struct elfhdr *exec,
-                unsigned long load_addr,
-                unsigned long interp_load_addr,
-                unsigned long *target_sp,
+                uint64_t load_addr,
+                uint64_t interp_load_addr,
+                uint64_t *target_sp,
                 const struct pt_regs *reg,
                 const struct spr_kbuffer *log,
                 char *argv[]) {
 
-#define STACK_ROUND(sp, items) 	(((unsigned long) (sp - (items))) &~ 15UL)
+#define STACK_ROUND(sp, items) 	(((uint64_t) (sp - (items))) &~ 15UL)
 #define STACK_ADD(sp, items) ((elf_addr_t __user *)(sp) - (items))
 #define STACK_ALLOC(sp, len) ({sp -= (len); sp;})
 
     int i, argc, envc;
     int elf_info_idx;
-    unsigned long p;
-    unsigned long arg_start, env_start, original_rsp;
+    int items;
+    uint64_t p;
+    uint64_t arg_start, env_start, original_rsp;
 
     elf_addr_t __user *sp;
     elf_addr_t __user *u_rand_bytes;
@@ -404,8 +390,7 @@ create_elf_tbls(struct elfhdr *exec,
     };
     memcpy(&context.reg, reg, sizeof(struct pt_regs));
 
-    original_rsp = *target_sp;
-    p = *target_sp;
+    p = original_rsp = reg->sp;
 
     // get the number of arg vector and env vector
     for (argc = 0; argv[argc]; argc++);
@@ -485,7 +470,7 @@ create_elf_tbls(struct elfhdr *exec,
     }
 
     // make stack 16-byte aligned
-    int items = (argc + 1) + (envc + 1) + 1;
+    items = (argc + 1) + (envc + 1) + 1;
     sp = STACK_ADD(p, elf_info_idx);
     sp = STACK_ROUND(sp, items);
     *target_sp = (unsigned long)sp;
@@ -521,7 +506,7 @@ create_elf_tbls(struct elfhdr *exec,
     }
 
     void *arg[] = {
-        (void *)(exec != NULL ? 1 : 0),
+        (void *)((exec != NULL) ? (int)1 : (int)0),
         (void *)&context,
         (void *)log
     };
@@ -547,6 +532,7 @@ do_load_monitor(const struct pt_regs *reg,
     uint64_t interp_entry;
     uint64_t interp_load_addr = 0;
     uint64_t interp_map_addr = 0;
+    uint64_t monitor_map_addr;
     
 
     interp_entry = load_elf_binary(&interp_elf_ex,
@@ -564,7 +550,6 @@ do_load_monitor(const struct pt_regs *reg,
         goto out;
     }
 
-    unsigned long monitor_map_addr;
     load_addr = load_elf_binary(&monitor_elf_ex,
                     monitor,
                     &monitor_map_addr,
@@ -575,7 +560,7 @@ do_load_monitor(const struct pt_regs *reg,
         goto out;
     }
 
-    pr_info("[%d] load monitor at %lx\nload interp at %lx\nentry = %lx", current->pid, load_addr, interp_load_addr, interp_entry);
+    pr_info("[%d] load monitor at %llx\nload interp at %llx\nentry = %llx", current->pid, load_addr, interp_load_addr, interp_entry);
 
     if (entry)  *entry = interp_entry;
     if (load)   *load = load_addr;
@@ -588,16 +573,16 @@ out:
 }
 
 int event_from_monitor(void) {
-    int retval = SPR_FAILURE_BUG;
+    int enter = 0;
+    int retval = SPR_EVENT_FROM_APPLICATION; // syscall from application
     // Monitor called syscall
-    if (check_mapping(__check_monitor_enter, (void *)&retval) == 0) {
-        if (retval == 1) {
+    if (check_mapping(__check_monitor_enter, (void *)&enter) == 0) {
+        if (enter == 1) {
             retval = SPR_EVENT_FROM_MONITOR; // syscall from monitor
-        } else if (retval == 0) {
-            retval = SPR_EVENT_FROM_APPLICATION; // syscall from application
         } else {
             pr_err("corrupted: cannot get monitor status!!\n");
             ASSERT(false);
+            retval = SPR_FAILURE_BUG;
         }
     }
     return retval;
@@ -644,7 +629,7 @@ out:
     return retval;
 //     int retval;
 //     int cpu;
-//     int do_exit = SYSCALL_EXIT_FAMILT(reg->orig_ax);
+//     int do_exit = SYSCALL_EXIT_FAMILY(reg->orig_ax);
 
 
 
@@ -777,15 +762,6 @@ int loader_init(void) {
     /* Load the interpreter program headers */
     if (load_elf_phdrs(&interp_elf_ex, interpreter, &interp_elf_phdata))
         goto out_free_dentry;
-
-
-    // init event buffer 
-    unsigned int cpu;
-    for_each_present_cpu(cpu) {
-        struct spr_kbuffer *bufp = &per_cpu(buffer, cpu);
-        bufp->buffer = vmalloc(BUFFER_SIZE);
-        spr_init_buffer_info(&bufp->info);
-    }
 
     retval = 0;
 

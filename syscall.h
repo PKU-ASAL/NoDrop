@@ -1,6 +1,19 @@
 #ifndef SPR_SYSCALL_H
 #define SPR_SYSCALL_H
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17,0)
+#define SYSCALL_DEF   const struct pt_regs * _syscall_regs
+#define SYSCALL_ARGS  _syscall_regs
+#else
+#define SYSCALL_DEF  long _di, long _si, long _dx, long _r10, long _r8, long _r9
+#define SYSCALL_ARGS _di, _si, _dx, _r10, _r8, _r9
+#endif // LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17,0)
+
+typedef long (*sys_call_ptr_t)(SYSCALL_DEF);
+
+#ifndef _ASM_X86_SYSCALL_H
+#define _ASM_X86_SYSCALL_H
+
 //#include <uapi/linux/audit.h>
 #include <linux/sched.h>
 #include <linux/version.h>
@@ -12,16 +25,6 @@
 #ifndef NR_syscalls
 #define NR_syscalls (__NR_syscall_max + 1)
 #endif
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17,0)
-#define SYSCALL_DEF   const struct pt_regs * _syscall_regs
-#define SYSCALL_ARGS  _syscall_regs
-#else
-#define SYSCALL_DEF  long _di, long _si, long _dx, long _r10, long _r8, long _r9
-#define SYSCALL_ARGS _di, _si, _dx, _r10, _r8, _r9
-#endif // LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17,0)
-
-typedef long (*sys_call_ptr_t)(SYSCALL_DEF);
 
 /*
  * Only the low 32 bits of orig_ax are meaningful, so we return int.
@@ -223,3 +226,5 @@ static inline void syscall_set_arguments(struct task_struct *task,
 #endif	/* CONFIG_X86_32 */
 
 #endif	/* SPR_SYSCALL_H */
+
+#endif /* SPR_SYSCALL_H */

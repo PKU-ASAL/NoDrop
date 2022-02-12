@@ -62,7 +62,7 @@ __hooked_syscall_entry(SYSCALL_DEF) {
     nr = syscall_get_nr(current, reg);
     __syscall_real_entry = syscall_table_bak[nr];
     if (__syscall_real_entry == 0) {
-        pr_err("unexpect syscall_nr=%d\n", nr);
+        pr_err("unexpect syscall_nr=%ld\n", nr);
         reg->ax = -ENOSYS;
         goto out;
     }
@@ -200,7 +200,7 @@ void hook_destory() {
     restore_syscall();
 
     pr_info("Wait for processes to leave hook entry\n");
-    while(!write_trylock(&rwlock)) {
+    while(!write_trylock(&syscall_lock)) {
         cond_resched();
     }
 }

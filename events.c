@@ -2,8 +2,10 @@
 #include <linux/kernel.h>
 
 
-#include "include/events.h"
 #include "pinject.h"
+#include "syscall.h"
+#include "include/events.h"
+#include "include/common.h"
 
 
 static int 
@@ -12,7 +14,8 @@ do_record_one_event(struct spr_kbuffer *buffer,
         nanoseconds ts,
         struct spr_event_data *event_datap)
 {
-    int cbret;
+    int cbret, restart;
+    int do_exit_syscall = 0;
     size_t event_size;
     uint32_t freespace; 
     struct event_filler_arguments args;
@@ -28,6 +31,7 @@ start:
     args.arg_data_offset = args.nargs * sizeof(uint16_t);
 
     if (freespace < args.arg_data_offset + sizeof(struct spr_event_hdr)) {
+        restart = 1;
         goto loading;
     }
 
@@ -35,18 +39,29 @@ start:
     hdr->ts = ts;
     hdr->tid = current->pid;
     hdr->type = event_type;
+    hdr->nargs = args.nargs;
+    hdr->magic = SPR_EVENT_HDR_MAGIC & 0xFFFFFFFF;
 
     args.buf_ptr = buffer->buffer + buffer_info->tail + sizeof(struct spr_event_hdr);
     args.buffer_size = freespace - sizeof(struct spr_event_hdr);
-    args.nevents = buffer_info->nevents;
     args.event_type = event_type;
 
     if (event_datap->category == SPRC_SYSCALL) {
         args.reg = event_datap->event_info.syscall_data.reg;
         args.syscall_nr = event_datap->event_info.syscall_data.id;
+        do_exit_syscall = SYSCALL_EXIT_FAMILY(syscall_get_nr(current, args.reg));
     } else {
         args.reg = NULL;
         args.syscall_nr = -1;
+    }
+
+    args.curarg = 0;
+    args.arg_data_size = args.buffer_size - args.arg_data_offset;
+    args.nevents = buffer_info->nevents;
+    args.snaplen = 80; // temporary MAGIC number
+
+    for(cbret = 0; cbret < args.nargs; ++cbret) {
+        *(((uint16_t *)args.buf_ptr) + cbret) = 0;
     }
 
     cbret = g_spr_events[event_type].filler_callback(&args);
@@ -62,6 +77,11 @@ start:
             smp_wmb();
             buffer_info->tail += event_size;
             ++buffer_info->nevents;
+
+            if (do_exit_syscall) {
+                restart = 0;
+                goto loading;
+            }
         } else {
             pr_err("corrupted filler for event type %d (added %u args, should have added %u args)\n",
                     event_type,
@@ -69,6 +89,7 @@ start:
                     args.nargs);
         }
     } else if (cbret == SPR_FAILURE_BUFFER_FULL) {
+        restart = 1;
         goto loading;
     }
 
@@ -77,7 +98,9 @@ start:
 loading:
     if (load_monitor(buffer) == LOAD_SUCCESS) {
         spr_init_buffer_info(buffer_info);
-        goto start;
+        if (restart)
+            goto start;
+        return SPR_SUCCESS;
     } else {
         return SPR_FAILURE_BUG;
     }
@@ -100,7 +123,7 @@ int event_buffer_init(void) {
         struct spr_kbuffer *bufp = &per_cpu(buffer, cpu);
         bufp->buffer = vmalloc(BUFFER_SIZE);
         if (bufp->buffer == NULL) {
-            pr_err("event_buffer: cannot allocate buffer for cpu %d (size 0x%lxB)\n", cpu, BUFFER_SIZE);
+            pr_err("event_buffer: cannot allocate buffer for cpu %d (size 0x%xB)\n", cpu, BUFFER_SIZE);
             return -ENOMEM;
         }
         spr_init_buffer_info(&bufp->info);
@@ -128,7 +151,7 @@ int record_one_event(enum spr_event_type type, struct spr_event_data *event_data
     put_cpu();
 
     if (retval != SPR_SUCCESS) {
-        pr_warn("record_one_event: one event log dropped, reason=%d\nnevents=%d tail=0x%lx\n",
+        pr_warn("record_one_event: one event log dropped, reason=%d\nnevents=%lld tail=0x%x\n",
                 retval,
                 bufp->info.nevents, bufp->info.tail);
     }

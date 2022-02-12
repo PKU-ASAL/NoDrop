@@ -26,7 +26,8 @@
 #include "pinject.h"
 #include "include/common.h"
 #include "include/events.h"
-#include "include/filler.h"
+#include "include/fillers.h"
+#include "include/flags.h"
 
 /*
  * The kernel patched with grsecurity makes the default access_ok trigger a
@@ -41,6 +42,15 @@
 #define spr_access_ok(type, addr, size)	access_ok(type, addr, size)
 #endif
 #endif
+
+#define INVALID_USER_MEMORY \
+	do{\
+		len = (int)strlcpy(args->buf_ptr + args->arg_data_offset, \
+			"(INVAL)", \
+			max_arg_size); \
+		if (++len > (int)max_arg_size) \
+			len = max_arg_size;	\
+	} while(0)
 
 static void memory_dump(char *p, size_t size)
 {
@@ -180,7 +190,7 @@ int resolve_arguments(struct event_filler_arguments *args, uint64_t val, u32 val
 	u32 max_arg_size = args->arg_data_size;
 
 	if (unlikely(args->curarg >= args->nargs)) {
-		pr_err("(%u)resolve_arguments: too many arguments for event #%u, type=%u, curarg=%u, nargs=%u tid:%u\n",
+		pr_err("(%u)resolve_arguments: too many arguments for event #%llu, type=%u, curarg=%u, nargs=%u tid:%u\n",
 			smp_processor_id(),
 			args->nevents,
 			(u32)args->event_type,
@@ -197,7 +207,7 @@ int resolve_arguments(struct event_filler_arguments *args, uint64_t val, u32 val
 	if (max_arg_size > SPR_MAX_ARG_SIZE)
 		max_arg_size = SPR_MAX_ARG_SIZE;
 
-	param_info = &(g_event_info[args->event_type].args[args->curarg]);
+	param_info = &(g_event_info[args->event_type].params[args->curarg]);
 	if (param_info->type == PT_DYN && param_info->info != NULL) {
 		const struct spr_param_info *dyn_params;
 
@@ -228,16 +238,11 @@ int resolve_arguments(struct event_filler_arguments *args, uint64_t val, u32 val
 	case PT_FSRELPATH:
 		if (likely(val != 0)) {
 			if (fromuser) {
-				len = ppm_strncpy_from_user(args->buf_ptr + args->arg_data_offset,
+				len = spr_strncpy_from_user(args->buf_ptr + args->arg_data_offset,
 					(const char __user *)(syscall_arg_t)val, max_arg_size);
 
 				if (unlikely(len < 0)) {
-					len = (int)strlcpy(args->buf_ptr + args->arg_data_offset,
-						"(INVAL)",
-						max_arg_size);
-
-					if (++len > (int)max_arg_size)
-						len = max_arg_size;	
+					INVALID_USER_MEMORY;
 				}
 			} else {
 				len = (int)strlcpy(args->buf_ptr + args->arg_data_offset,
@@ -266,77 +271,79 @@ int resolve_arguments(struct event_filler_arguments *args, uint64_t val, u32 val
 
 		break;
 	case PT_BYTEBUF:
-		// if (likely(val != 0)) {
-		// 	if (fromuser) {
-		// 		/*
-		// 		 * Copy the lookahead portion of the buffer that we will use DPI-based
-		// 		 * snaplen calculation
-		// 		 */
-		// 		u32 dpi_lookahead_size = DPI_LOOKAHEAD_SIZE;
+		if (likely(val != 0)) {
+			if (fromuser) {
+				/*
+				 * Copy the lookahead portion of the buffer that we will use DPI-based
+				 * snaplen calculation
+				 */
+				u32 dpi_lookahead_size = 16; //temporary MAGIC number
 
-		// 		if (dpi_lookahead_size > val_len)
-		// 			dpi_lookahead_size = val_len;
+				if (dpi_lookahead_size > val_len)
+					dpi_lookahead_size = val_len;
 
-		// 		if (unlikely(dpi_lookahead_size >= max_arg_size))
-		// 			return SPR_FAILURE_BUFFER_FULL;
+				if (unlikely(dpi_lookahead_size >= max_arg_size))
+					return SPR_FAILURE_BUFFER_FULL;
 
-		// 		len = (int)ppm_copy_from_user(args->buf_ptr + args->arg_data_offset,
-		// 				(const void __user *)(syscall_arg_t)val,
-		// 				dpi_lookahead_size);
+				len = (int)spr_copy_from_user(args->buf_ptr + args->arg_data_offset,
+						(const void __user *)(syscall_arg_t)val,
+						dpi_lookahead_size);
 
-		// 		if (unlikely(len != 0))
-		// 			return SPR_FAILURE_INVALID_USER_MEMORY;
+				if (unlikely(len != 0)) {
+					INVALID_USER_MEMORY;
+					break;
+				}
 
-		// 		/*
-		// 		 * Check if there's more to copy
-		// 		 */
-		// 		if (likely((dpi_lookahead_size != val_len))) {
-		// 			/*
-		// 			 * Calculate the snaplen
-		// 			 */
-		// 			if (likely(args->enforce_snaplen)) {
-		// 				u32 sl = args->consumer->snaplen;
+				/*
+				 * Check if there's more to copy
+				 */
+				if (likely((dpi_lookahead_size != val_len))) {
+					/*
+					 * Calculate the snaplen
+					 */
+					if (likely(args->snaplen > 0)) {
+						u32 sl = args->snaplen;
 
-		// 				sl = compute_snaplen(args, args->buf_ptr + args->arg_data_offset, dpi_lookahead_size);
-		// 				if (val_len > sl)
-		// 					val_len = sl;
-		// 			}
+						if (val_len > sl)
+							val_len = sl;
+					}
 
-		// 			if (unlikely((val_len) >= max_arg_size))
-		// 				val_len = max_arg_size;
+					if (unlikely((val_len) >= max_arg_size))
+						val_len = max_arg_size;
 
-		// 			if (val_len > dpi_lookahead_size) {
-		// 				len = (int)ppm_copy_from_user(args->buf_ptr + args->arg_data_offset + dpi_lookahead_size,
-		// 						(const uint8_t __user *)(syscall_arg_t)val + dpi_lookahead_size,
-		// 						val_len - dpi_lookahead_size);
+					if (val_len > dpi_lookahead_size) {
+						len = (int)spr_copy_from_user(args->buf_ptr + args->arg_data_offset + dpi_lookahead_size,
+								(const uint8_t __user *)(syscall_arg_t)val + dpi_lookahead_size,
+								val_len - dpi_lookahead_size);
 
-		// 				if (unlikely(len != 0))
-		// 					return SPR_FAILURE_INVALID_USER_MEMORY;
-		// 			}
-		// 		}
+						if (unlikely(len != 0)) {
+							INVALID_USER_MEMORY;
+						}
+					}
+				}
 
-		// 		len = val_len;
-		// 	} else {
-		// 		if (likely(args->enforce_snaplen)) {
-		// 			u32 sl = compute_snaplen(args, (char *)(syscall_arg_t)val, val_len);
-		// 			if (val_len > sl)
-		// 				val_len = sl;
-		// 		}
+				len = val_len;
+			} else {
+				if (likely(args->snaplen > 0)) {
+					u32 sl = args->snaplen;
+					if (val_len > sl)
+						val_len = sl;
+				}
 
-		// 		if (unlikely(val_len >= max_arg_size))
-		// 			return SPR_FAILURE_BUFFER_FULL;
+				if (unlikely(val_len >= max_arg_size))
+					return SPR_FAILURE_BUFFER_FULL;
 
-		// 		memcpy(args->buf_ptr + args->arg_data_offset,
-		// 			(void *)(syscall_arg_t)val, val_len);
+				memcpy(args->buf_ptr + args->arg_data_offset,
+					(void *)(syscall_arg_t)val, val_len);
 
-		// 		len = val_len;
-		// 	}
-		// } else {
-		// 	/*
-		// 	 * Handle NULL pointers
-		// 	 */
-		// 	len = 0;
-		// }
+				len = val_len;
+			}
+		} else {
+			/*
+			 * Handle NULL pointers
+			 */
+			len = 0;
+		}
 
 		break;
 	case PT_SOCKADDR:
@@ -352,11 +359,7 @@ int resolve_arguments(struct event_filler_arguments *args, uint64_t val, u32 val
 						val_len);
 
 				if (unlikely(len != 0)) {
-					len = (int)strlcpy(args->buf_ptr + args->arg_data_offset,
-									   "(INVAL)",
-									   max_arg_size);
-					if (++len > max_arg_size)
-						len = max_arg_size;
+					INVALID_USER_MEMORY;
 				} else {
 					len = val_len;
 				}
@@ -463,7 +466,7 @@ int resolve_arguments(struct event_filler_arguments *args, uint64_t val, u32 val
 		break;
 	default:
 		pr_err("resolve_arguments: invalid argument type %d. Event %u (%s) might have less parameters than what has been declared in nargs\n",
-			(int)g_event_info[args->event_type].args[args->curarg].type,
+			(int)g_event_info[args->event_type].params[args->curarg].type,
 			(u32)args->event_type,
 			g_event_info[args->event_type].name);
 		return SPR_FAILURE_BUG;
@@ -480,13 +483,183 @@ int resolve_arguments(struct event_filler_arguments *args, uint64_t val, u32 val
 	return SPR_SUCCESS;
 }
 
-int f_sys_open(struct event_filler_arguments *args) {
-	int res;
-	int64_t retval;
+int f_sys_open(struct event_filler_arguments *args)
+{
 	syscall_arg_t val;
 	syscall_arg_t flags;
 	syscall_arg_t modes;
+	int res;
+	int64_t retval;
 
-	retval = syscall_get_return_value(current, args->reg);
-	res = resolve_arg(args, retval, 0, false, 0);
+	/*
+	 * fd
+	 */
+	retval = (int64_t)syscall_get_return_value(current, args->reg);
+	res = resolve_arguments(args, retval, 0, false, 0);
+	if (unlikely(res != SPR_SUCCESS))
+		return res;
+
+
+	/*
+	 * name
+	 */
+	syscall_get_arguments_deprecated(current, args->reg, 0, 1, &val);
+	res = resolve_arguments(args, val, 0, true, 0);
+	if (unlikely(res != SPR_SUCCESS))
+		return res;
+
+	/*
+	 * Flags
+	 * Note that we convert them into the ppm portable representation before pushing them to the ring
+	 */
+	syscall_get_arguments_deprecated(current, args->reg, 1, 1, &flags);
+	res = resolve_arguments(args, open_flags_to_scap(flags), 0, false, 0);
+	if (unlikely(res != SPR_SUCCESS))
+		return res;
+
+	/*
+	 *  mode
+	 */
+	syscall_get_arguments_deprecated(current, args->reg, 2, 1, &modes);
+	res = resolve_arguments(args, open_modes_to_scap(flags, modes), 0, false, 0);
+	if (unlikely(res != SPR_SUCCESS))
+		return res;
+
+	/*
+	 * dev
+	 */
+	res = resolve_arguments(args, get_fd_dev(retval), 0, false, 0);
+	if (unlikely(res != SPR_SUCCESS))
+		return res;
+
+	return SPR_SUCCESS;
+}
+
+int f_sys_read(struct event_filler_arguments *args)
+{
+	unsigned long val;
+	int res;
+	int64_t retval;
+	unsigned long bufsize;
+
+	/*
+	 * Retrieve the FD. It will be used for dynamic snaplen calculation.
+	 */
+	syscall_get_arguments_deprecated(current, args->reg, 0, 1, &val);
+	res = resolve_arguments(args, val, 0, false, 0);
+	if (unlikely(res != SPR_SUCCESS))
+		return res;
+
+	/*
+	 * size
+	 */
+	syscall_get_arguments_deprecated(current, args->reg, 2, 1, &val);
+	res = resolve_arguments(args, val, 0, false, 0);
+	if (unlikely(res != SPR_SUCCESS))
+		return res;
+
+	/*
+	 * res
+	 */
+	retval = (int64_t)(long)syscall_get_return_value(current, args->reg);
+	res = resolve_arguments(args, retval, 0, false, 0);
+	if (unlikely(res != SPR_SUCCESS))
+		return res;
+
+	/*
+	 * data
+	 */
+	if (retval < 0) {
+		/*
+		 * The operation failed, return an empty buffer
+		 */
+		val = 0;
+		bufsize = 0;
+	} else {
+		syscall_get_arguments_deprecated(current, args->reg, 1, 1, &val);
+
+		/*
+		 * The return value can be lower than the value provided by the user,
+		 * and we take that into account.
+		 */
+		bufsize = retval;
+	}
+
+	/*
+	 * Copy the buffer
+	 */
+	res = resolve_arguments(args, val, bufsize, true, 0);
+	if (unlikely(res != SPR_SUCCESS))
+		return res;
+
+	return SPR_SUCCESS;
+}
+
+int f_sys_write(struct event_filler_arguments *args)
+{
+	unsigned long val;
+	int res;
+	int64_t retval;
+	unsigned long bufsize;
+
+	/*
+	 * FD
+	 */
+	syscall_get_arguments_deprecated(current, args->reg, 0, 1, &val);
+	res = resolve_arguments(args, val, 0, false, 0);
+	if (unlikely(res != SPR_SUCCESS))
+		return res;
+
+	/*
+	 * data size
+	 */
+	syscall_get_arguments_deprecated(current, args->reg, 2, 1, &val);
+	bufsize = val;
+	res = resolve_arguments(args, val, 0, false, 0);
+	if (unlikely(res != SPR_SUCCESS))
+		return res;
+	
+	/*
+	 * res
+	 */
+	retval = (int64_t)(long)syscall_get_return_value(current, args->reg);
+
+	res = resolve_arguments(args, retval, 0, false, 0);
+	if (unlikely(res != SPR_SUCCESS))
+		return res;
+
+
+	/*
+	 * Copy the buffer
+	 */
+	syscall_get_arguments_deprecated(current, args->reg, 1, 1, &val);
+	res = resolve_arguments(args, val, bufsize, true, 0);
+	if (unlikely(res != SPR_SUCCESS))
+		return res;
+
+	return SPR_SUCCESS;
+}
+
+int f_sys_exit(struct event_filler_arguments *args) {
+	unsigned long val;
+	int res;
+
+	syscall_get_arguments_deprecated(current, args->reg, 0, 1, &val);
+	res = resolve_arguments(args, val, 0, false, 0);
+	if (unlikely(res != SPR_SUCCESS))
+		return res;
+	
+	return SPR_SUCCESS;
+}
+
+int f_sys_exit_group(struct event_filler_arguments *args) {
+	unsigned long val;
+	int res;
+
+	syscall_get_arguments_deprecated(current, args->reg, 0, 1, &val);
+	res = resolve_arguments(args, val, 0, false, 0);
+	if (unlikely(res != SPR_SUCCESS))
+		return res;
+	
+	return SPR_SUCCESS;
 }

@@ -11,7 +11,7 @@ static int pinject_init(void)
 
     if ((err = loader_init())) {
         pr_err("load monitor failed (%d)\n", err);
-        goto out;
+        goto out_loader;
     }
 
     if ((err = event_buffer_init())) {

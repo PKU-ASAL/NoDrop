@@ -29,5 +29,3 @@ const enum spr_event_type g_syscall_event_table[SYSCALL_TABLE_SIZE] = {
     [__NR_exit - SYSCALL_TABLE_ID0] = SPRE_SYSCALL_EXIT,
     [__NR_exit_group - SYSCALL_TABLE_ID0] = SPRE_SYSCALL_EXIT_GROUP,
 };
-
-#endif /* CONFIG_IA32_EMULATION */
