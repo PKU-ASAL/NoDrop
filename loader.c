@@ -70,7 +70,7 @@ __put_monitor_info(struct vm_area_struct const * const vma, void *arg) {
         return 0;
     }
 
-    if (copy_to_user((void __user *)&infopack->m_buffer.buffer, (void *)((struct spr_kbuffer *)arr[2])->buffer, sizeof(infopack->m_buffer.buffer)) ||
+    if (copy_to_user((void __user *)&infopack->m_buffer.buffer, (void *)((struct spr_kbuffer *)arr[2])->buffer, BUFFER_SIZE) ||
         copy_to_user((void __user *)&infopack->m_buffer.info, (void *)&((struct spr_kbuffer *)arr[2])->info, sizeof(struct spr_buffer_info))) {
         pr_err("cannot write __monitor_logmsg @ %lx\n", &infopack->m_buffer);
         return 0;
@@ -579,7 +579,7 @@ int event_from_monitor(void) {
     if (check_mapping(__check_monitor_enter, (void *)&enter) == 0) {
         if (enter == 1) {
             retval = SPR_EVENT_FROM_MONITOR; // syscall from monitor
-        } else {
+        } else if (enter == -1) {
             pr_err("corrupted: cannot get monitor status!!\n");
             ASSERT(false);
             retval = SPR_FAILURE_BUG;

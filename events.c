@@ -7,7 +7,6 @@
 #include "include/events.h"
 #include "include/common.h"
 
-
 static int 
 do_record_one_event(struct spr_kbuffer *buffer,
         enum spr_event_type event_type,
@@ -23,7 +22,6 @@ do_record_one_event(struct spr_kbuffer *buffer,
     struct spr_event_hdr *hdr;
 
     buffer_info = &buffer->info;
-
 start:
     freespace = BUFFER_SIZE - buffer_info->tail;
 
@@ -127,6 +125,7 @@ int event_buffer_init(void) {
             return -ENOMEM;
         }
         spr_init_buffer_info(&bufp->info);
+        spin_lock_init(&bufp->lock);
     }
     return 0;
 }
@@ -142,19 +141,27 @@ void event_buffer_destory(void) {
 
 int record_one_event(enum spr_event_type type, struct spr_event_data *event_datap) {
     int cpu, retval;
+    unsigned long flags;
     struct spr_kbuffer *bufp;
     nanoseconds ts = spr_nsecs();
 
     cpu = get_cpu();
     bufp = &per_cpu(buffer, cpu);
-    retval = do_record_one_event(bufp, type, ts, event_datap);
-    put_cpu();
+    spin_lock(&bufp->lock);
+    // pr_info("(%d) %d get buffer\n", smp_processor_id(), current->pid);
 
+    // spin_lock(&lock);
+    retval = do_record_one_event(bufp, type, ts, event_datap);
     if (retval != SPR_SUCCESS) {
         pr_warn("record_one_event: one event log dropped, reason=%d\nnevents=%lld tail=0x%x\n",
                 retval,
                 bufp->info.nevents, bufp->info.tail);
     }
+    // spin_unlock(&lock);
+
+    // pr_info("(%d) %d put buffer\n", smp_processor_id(), current->pid);
+    spin_unlock(&bufp->lock);
+    put_cpu();
     return retval;
 }
 
@@ -162,4 +169,6 @@ int record_one_event(enum spr_event_type type, struct spr_event_data *event_data
 void spr_init_buffer_info(struct spr_buffer_info *info) {
     info->nevents = 0;
     info->tail = 0;
+    smp_wmb();
+    pr_info("(%d) %d: init info", smp_processor_id(), current->pid);
 }

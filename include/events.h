@@ -3,6 +3,7 @@
 
 #ifdef __KERNEL__
 #include <linux/kernel.h>
+#include <linux/spinlock.h>
 #else
 #include <stdint.h>
 #endif //__KERNEL__
@@ -718,6 +719,7 @@ struct spr_buffer {
 struct spr_kbuffer {
     char *buffer;
     struct spr_buffer_info info;
+	spinlock_t lock;
 };
 #endif //__KERNEL__
 
