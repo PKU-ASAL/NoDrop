@@ -764,9 +764,9 @@ struct spr_event_data {
     } event_info;
 };
 
-typedef int (*filler_callback) (struct event_filler_arguments *args);
+typedef int (*filler_callback_t) (struct event_filler_arguments *args);
 struct spr_event_entry {
-    filler_callback filler_callback;
+    filler_callback_t filler_callback;
     enum spr_filler_id filler_id;
 } _packed;
 

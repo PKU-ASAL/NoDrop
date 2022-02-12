@@ -143,7 +143,6 @@ void event_buffer_destory(void) {
 
 int record_one_event(enum spr_event_type type, struct spr_event_data *event_datap) {
     int cpu, retval;
-    unsigned long flags;
     struct spr_kbuffer *bufp;
     nanoseconds ts = spr_nsecs();
 
