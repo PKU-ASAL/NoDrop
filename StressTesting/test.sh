@@ -1,80 +1,80 @@
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
-timeout -s SIGINT 30s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &
+# timeout -s SIGINT 10s `pwd`/StressTesting/a.out  &

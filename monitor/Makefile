@@ -12,9 +12,9 @@ LDFLAGS := -nostartfiles -Wl,-Tscript_x86-64.ld -Wl,-znow
 PKGCONF ?= pkg-config
 
 # Build using pkg-config variables if possible
-ifneq ($(shell $(PKGCONF) --exists libdpdk && echo 0),0)
-$(error "no installation of DPDK found")
-endif
+# ifneq ($(shell $(PKGCONF) --exists libdpdk && echo 0),0)
+# $(error "no installation of DPDK found")
+# endif
 
 # DPDK_CFLAGS  := $(shell $(PKGCONF) --cflags libdpdk) -DALLOW_EXPERIMENTAL_API
 # DPDK_LDFLAGS := $(shell $(PKGCONF) --libs libdpdk)

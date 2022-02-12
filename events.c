@@ -56,7 +56,7 @@ start:
     args.curarg = 0;
     args.arg_data_size = args.buffer_size - args.arg_data_offset;
     args.nevents = buffer_info->nevents;
-    args.snaplen = 80; // temporary MAGIC number
+    args.snaplen = 16; // temporary MAGIC number
 
     for(cbret = 0; cbret < args.nargs; ++cbret) {
         *(((uint16_t *)args.buf_ptr) + cbret) = 0;
@@ -75,7 +75,8 @@ start:
             smp_wmb();
             buffer_info->tail += event_size;
             ++buffer_info->nevents;
-
+            ++buffer->event_count;
+            
             if (do_exit_syscall) {
                 restart = 0;
                 goto loading;
@@ -125,6 +126,7 @@ int event_buffer_init(void) {
             return -ENOMEM;
         }
         spr_init_buffer_info(&bufp->info);
+        bufp->event_count = 0;
         spin_lock_init(&bufp->lock);
     }
     return 0;
@@ -170,5 +172,4 @@ void spr_init_buffer_info(struct spr_buffer_info *info) {
     info->nevents = 0;
     info->tail = 0;
     smp_wmb();
-    pr_info("(%d) %d: init info", smp_processor_id(), current->pid);
 }

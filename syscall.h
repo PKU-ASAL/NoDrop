@@ -9,8 +9,6 @@
 #define SYSCALL_ARGS _di, _si, _dx, _r10, _r8, _r9
 #endif // LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17,0)
 
-typedef long (*sys_call_ptr_t)(SYSCALL_DEF);
-
 #ifndef _ASM_X86_SYSCALL_H
 #define _ASM_X86_SYSCALL_H
 

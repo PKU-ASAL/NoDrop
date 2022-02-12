@@ -24,7 +24,7 @@ pinject_read(struct file *filp, char __user *buf, size_t count, loff_t *off) {
     event_id = 0;
     for_each_present_cpu(cpu) {
         struct spr_kbuffer *bufp = &per_cpu(buffer, cpu);
-        event_id += bufp->info.nevents;
+        event_id += bufp->event_count;
     }
 
     len += sprintf(kbuf, "%u", event_id);
@@ -39,6 +39,7 @@ static ssize_t
 pinject_write(struct file *filp, const char __user *buf, size_t count, loff_t *off) {
     int i;
     unsigned int cpu;
+    struct spr_kbuffer *bufp;
     char kbuf[BUFSIZE];
 
     if (*off > 0 || count > BUFSIZE)
@@ -58,7 +59,9 @@ pinject_write(struct file *filp, const char __user *buf, size_t count, loff_t *o
     if (!strcmp(kbuf, "clean")) { //clean
         pr_info("proc.c: clean event_id\n");
         for_each_possible_cpu(cpu) {
-            spr_init_buffer_info(&per_cpu(buffer, cpu).info);
+            bufp = &per_cpu(buffer, cpu);
+            spr_init_buffer_info(&bufp->info);
+            bufp->event_count = 0;
         }
     } else if (!strcmp(kbuf, "hook")) {
         pr_info("proc.c: hook syscall\n");

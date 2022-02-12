@@ -719,6 +719,7 @@ struct spr_buffer {
 struct spr_kbuffer {
     char *buffer;
     struct spr_buffer_info info;
+	uint64_t event_count;
 	spinlock_t lock;
 };
 #endif //__KERNEL__
