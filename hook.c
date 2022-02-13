@@ -52,6 +52,7 @@ syscall_probe(struct pt_regs *reg, long id) {
 
 static long
 __hooked_syscall_entry(SYSCALL_DEF) {
+    int evt_from;
     long nr, retval;
     struct pt_regs *reg;
     sys_call_ptr_t __syscall_real_entry;
@@ -76,7 +77,8 @@ __hooked_syscall_entry(SYSCALL_DEF) {
      * Record event immidiately if syscall exit() or exit_group() is invoked from application
      * Otherwise we should delay event recording until syscall returned
      */
-    if (SYSCALL_EXIT_FAMILY(nr) && event_from_monitor() == SPR_EVENT_FROM_APPLICATION) {
+    evt_from = event_from_monitor();
+    if (SYSCALL_EXIT_FAMILY(nr) && evt_from == SPR_EVENT_FROM_APPLICATION) {
         /* escape syscall routine */
         if (syscall_probe(reg, nr) == SPR_SUCCESS) {
             reg->ax = 0;
@@ -95,7 +97,9 @@ do_syscall:
         goto out;
 #endif
 
-    syscall_probe(reg, nr);
+    if (evt_from == SPR_EVENT_FROM_APPLICATION) {
+        syscall_probe(reg, nr);
+    }
 
 out:
     leave_syscall();
@@ -113,21 +117,6 @@ inline void spr_write_cr0(unsigned long cr0) {
 
 #define WPOFF do { spr_write_cr0(read_cr0() & (~0x10000)); } while (0)
 #define WPON  do { spr_write_cr0(read_cr0() | 0x10000);    } while (0)
-
-// static void 
-// write_cr0_native(unsigned long cr0) {
-//     asm volatile("mov %0,%%cr0" : "+r"(cr0), "+m"(__force_order));
-// }
-// static unsigned long 
-// read_cr0_native(void) {
-//     unsigned long val;
-//     asm volatile("mov %%cr0,%0\n\t" : "=r" (val), "=m" (__force_order));
-//     return val;
-// }
-// static void 
-// make_rw(void) { write_cr0_native(read_cr0_native() & (~0x10000)); }
-// static void 
-// make_ro(void) { write_cr0_native(read_cr0_native() | 0x10000); }
 
 void hook_syscall(void) {
     int sz, nr, i;
