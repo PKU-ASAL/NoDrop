@@ -17,21 +17,18 @@ struct MyStruct {
     std::map<nanoseconds, uint32_t> *mp;
 };
 
-std::string output_name = "data.png";
-std::string search_path = ".";
 std::vector<std::string> files;
 
 void * resolve_buf_file(void *arg) {
     int total;
     uint32_t count;
     uint32_t pos;
-    struct MyStruct *my_struct = (struct MyStruct *)arg;
-    std::string filename_str = search_path + "/" + std::string(my_struct->filename);
-    const char *filename = filename_str.c_str();
+    struct spr_event_hdr hdr;
 
+    struct MyStruct *my_struct = (struct MyStruct *)arg;
+    const char *filename = my_struct->filename;
     std::map<nanoseconds, uint32_t> *mp = my_struct->mp;
 
-    struct spr_event_hdr hdr;
 
     FILE *file = fopen(filename, "rb+");
     if (!file) {
@@ -39,32 +36,34 @@ void * resolve_buf_file(void *arg) {
         return (void *)0;
     }
 
-    fseek(file, -4, SEEK_END);
-    fread(&total, 4, 1, file);
-    fseek(file, 0, SEEK_SET);
-
     pos = 0;
     count = 0;
     mp->clear();
-    printf("%s: %d expected records\n", filename, total);
-    for (int i = 0; i < total; ++i) {
+
+    fseek(file, 0, SEEK_END);
+    total = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    for (int i = 0; ; ++i) {
         if(fread(&hdr, sizeof(hdr), 1, file) != 1) {
-            printf("%s: read failed\n", filename);
+            printf("%s: read %d event header failed (pos = 0x%x)\n", filename, i, pos);
             break;
         }
         if (hdr.magic != SPR_EVENT_HDR_MAGIC) {
-            printf("%s: corrupted magoc %d %x %x\n", filename, i, pos, hdr.magic);
+            printf("%s: corrupted event %d: pos = 0x%x, magic = 0x%08x\n", filename, i, pos, hdr.magic);
             break;
         }
+
         ++mp->operator[](hdr.ts / 100000000);
         ++count;
 
-        fseek(file, hdr.len - sizeof(hdr), SEEK_CUR);
         pos += hdr.len;
+        if (pos + sizeof(int) >= total)   break;
+        fseek(file, pos, SEEK_SET);
     }
 
     fclose(file);
-    printf("%s: done\n", filename);
+    printf("%s: done (%d records)\n", filename, count);
     return (void *)count;
 }
 
@@ -86,19 +85,17 @@ void traverse_dir(const char *dirname) {
     }
 
     while ((filename = readdir(dir)) != NULL) {
-        if (!strcmp(filename->d_name, ".") || !strcmp(filename->d_name, ".."))
-            continue;
         if (strstr(filename->d_name, ".buf"))
-            files.emplace_back(std::string(filename->d_name));
+            files.emplace_back(std::string(dirname) + "/" + std::string(filename->d_name));
     }
 }
 
 int main(int argc, char *argv[]) {
-
     if (argc > 1) {
-        search_path = std::string(argv[1]);
+        traverse_dir(argv[1]);
+    } else {
+        traverse_dir(".");
     }
-    traverse_dir(search_path.c_str());
 
     std::vector<pthread_t> tids(files.size());
     std::vector<std::map<nanoseconds, uint32_t>> mps(files.size());
@@ -123,7 +120,7 @@ int main(int argc, char *argv[]) {
     }
 
     printf("total_count = %u\n", total_count);
-    std::vector<nanoseconds> idx;
+
     nanoseconds start = evts.begin()->first;
     std::vector<nanoseconds> y;
     for (int i = 0; i < 100; ++i)
@@ -135,8 +132,7 @@ int main(int argc, char *argv[]) {
     plt::plot(y);
     if (argc > 2) {
         plt::save(argv[2]);
-    } else {
-        plt::save("data.png");
     }
+
     return 0;
 }

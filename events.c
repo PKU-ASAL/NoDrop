@@ -37,6 +37,7 @@ start:
     hdr->ts = ts;
     hdr->tid = current->pid;
     hdr->type = event_type;
+    hdr->cpuid = smp_processor_id();
     hdr->nargs = args.nargs;
     hdr->magic = SPR_EVENT_HDR_MAGIC & 0xFFFFFFFF;
 
@@ -62,14 +63,20 @@ start:
         *(((uint16_t *)args.buf_ptr) + cbret) = 0;
     }
 
-    cbret = g_spr_events[event_type].filler_callback(&args);
+    if (g_spr_events[event_type].filler_callback) {
+        cbret = g_spr_events[event_type].filler_callback(&args);
+    } else {
+        pr_err("corrupted filler for event type %d: NULL callback\n", event_type);
+        ASSERT(0);
+    }
+
     if (cbret == SPR_SUCCESS) {
         if (likely(args.curarg == args.nargs)) {
             event_size = sizeof(struct spr_event_hdr) + args.arg_data_offset;
             hdr->len = event_size;
             /*
             * Make sure all the memory has been written in real memory before
-            * we update the head and the user space process (on another CPU)
+            * we update the tail and the user space process (on another CPU)
             * can access the buffer.
             */
             smp_wmb();
@@ -143,25 +150,22 @@ void event_buffer_destory(void) {
 
 int record_one_event(enum spr_event_type type, struct spr_event_data *event_datap) {
     int cpu, retval;
+    unsigned long flags;
     struct spr_kbuffer *bufp;
     nanoseconds ts = spr_nsecs();
 
     cpu = get_cpu();
     bufp = &per_cpu(buffer, cpu);
-    spin_lock(&bufp->lock);
-    // pr_info("(%d) %d get buffer\n", smp_processor_id(), current->pid);
+    spin_lock_irqsave(&bufp->lock, flags);
 
-    // spin_lock(&lock);
     retval = do_record_one_event(bufp, type, ts, event_datap);
     if (retval != SPR_SUCCESS) {
         pr_warn("record_one_event: one event log dropped, reason=%d\nnevents=%lld tail=0x%x\n",
                 retval,
                 bufp->info.nevents, bufp->info.tail);
     }
-    // spin_unlock(&lock);
 
-    // pr_info("(%d) %d put buffer\n", smp_processor_id(), current->pid);
-    spin_unlock(&bufp->lock);
+    spin_unlock_irqrestore(&bufp->lock, flags);
     put_cpu();
     return retval;
 }

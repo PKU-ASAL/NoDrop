@@ -61,7 +61,7 @@ __put_monitor_info(struct vm_area_struct const * const vma, void *arg) {
         return 0;
 
     if (put_user((int)arr[0], (int __user *)&infopack->m_enter)) {
-        pr_err("cannot write __monitor_enter @ %lx\n", &infopack->m_enter);
+        pr_err("cannot write __monitor_enter @ %n\n", &infopack->m_enter);
         return 0;
     }
 

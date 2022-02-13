@@ -727,10 +727,11 @@ struct spr_kbuffer {
 #define SPR_EVENT_HDR_MAGIC 0xCAFEBABE
 struct spr_event_hdr {
     nanoseconds ts;
-    uint64_t tid;
+    uint32_t tid;
+	uint16_t cpuid;
+    uint16_t type;
     uint32_t len;
     uint32_t nargs;
-    uint32_t type;
     uint32_t magic;
 }_packed;
 
