@@ -483,6 +483,30 @@ int resolve_arguments(struct event_filler_arguments *args, uint64_t val, u32 val
 	return SPR_SUCCESS;
 }
 
+int f_sys_empty(struct event_filler_arguments *args)
+{
+	return SPR_SUCCESS;
+}
+
+int f_sys_single(struct event_filler_arguments *args)
+{
+	int res;
+	int64_t retval;
+	syscall_arg_t val;
+
+	syscall_get_arguments_deprecated(current, args->reg, 0, 1, &val);
+	res = resolve_arguments(args, val, 0, true, 0);
+	if (unlikely(res != SPR_SUCCESS))
+		return res;
+
+	retval = (int64_t)(long)syscall_get_return_value(current, args->reg);
+	res = resolve_arguments(args, retval, 0, false, 0);
+	if (unlikely(res != SPR_SUCCESS))
+		return res;
+
+	return SPR_SUCCESS;
+}
+
 int f_sys_open(struct event_filler_arguments *args)
 {
 	syscall_arg_t val;

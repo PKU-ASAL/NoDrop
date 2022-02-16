@@ -19,7 +19,7 @@
 
 int released;
 
-static int filtered_syscall[] = { __NR_write, __NR_read, __NR_exit, __NR_exit_group };
+static int filtered_syscall[] = { __NR_write, __NR_read, __NR_open, __NR_close, __NR_exit, __NR_exit_group };
 static sys_call_ptr_t *syscall_table;
 static sys_call_ptr_t syscall_table_bak[NR_syscalls];
 

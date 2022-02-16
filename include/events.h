@@ -694,10 +694,10 @@ enum spr_capture_category {
 
 enum spr_event_type {
     SPRE_GENERIC = 0,
-    SPRE_SYSCALL_OPEN = 1,
-    SPRE_SYSCALL_CLOSE = 2,
-    SPRE_SYSCALL_READ = 3,
-    SPRE_SYSCALL_WRITE = 4,
+    SPRE_SYSCALL_READ = 1,
+    SPRE_SYSCALL_WRITE = 2,
+    SPRE_SYSCALL_OPEN = 3,
+    SPRE_SYSCALL_CLOSE = 4,
     SPRE_SYSCALL_EXIT = 5,
     SPRE_SYSCALL_EXIT_GROUP = 6,
     SPRE_EVENT_MAX

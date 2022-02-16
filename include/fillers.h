@@ -4,10 +4,10 @@
 struct event_filler_arguments;
 
 #define FILLER_LIST_MAPPER(FN) \
-    FN(sys_open)        \
-    FN(sys_close)       \
     FN(sys_read)        \
     FN(sys_write)       \
+    FN(sys_open)        \
+    FN(sys_single)      \
     FN(sys_exit)        \
     FN(sys_exit_group) 
 
