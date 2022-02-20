@@ -54,11 +54,14 @@ __check_mapping(struct vm_area_struct const * const vma, void *arg) {
 static int
 __put_monitor_info(struct vm_area_struct const * const vma, void *arg) {
     void **arr = (void **)arg;
-    m_infopack *infopack = (m_infopack *)vma->vm_start;
-    vm_flags_t flags = vma->vm_flags;
+    m_infopack __user *infopack;
+    struct spr_kbuffer *buffer;
 
-    if (flags & VM_EXEC)
+    if (vma->vm_flags & VM_EXEC)
         return 0;
+
+    infopack = (m_infopack __user *)vma->vm_start;
+    buffer = (struct spr_kbuffer *)arr[2];
 
     if (put_user((int)arr[0], (int __user *)&infopack->m_enter)) {
         pr_err("cannot write __monitor_enter @ %n\n", &infopack->m_enter);
@@ -70,8 +73,8 @@ __put_monitor_info(struct vm_area_struct const * const vma, void *arg) {
         return 0;
     }
 
-    if (copy_to_user((void __user *)&infopack->m_buffer.buffer, (void *)((struct spr_kbuffer *)arr[2])->buffer, BUFFER_SIZE) ||
-        copy_to_user((void __user *)&infopack->m_buffer.info, (void *)&((struct spr_kbuffer *)arr[2])->info, sizeof(struct spr_buffer_info))) {
+    if (copy_to_user((void __user *)&infopack->m_buffer.buffer, (void *)buffer->buffer, BUFFER_SIZE) ||
+        copy_to_user((void __user *)&infopack->m_buffer.info, (void *)buffer->info, sizeof(struct spr_buffer_info))) {
         pr_err("cannot write __monitor_logmsg @ %lx\n", &infopack->m_buffer);
         return 0;
     }
@@ -365,7 +368,7 @@ create_elf_tbls(struct elfhdr *exec,
                 uint64_t load_addr,
                 uint64_t interp_load_addr,
                 uint64_t *target_sp,
-                const struct pt_regs *reg,
+                const struct pt_regs *regs,
                 const struct spr_kbuffer *log,
                 char *argv[]) {
 
@@ -388,9 +391,9 @@ create_elf_tbls(struct elfhdr *exec,
         .fsbase = current->thread.fsbase,
         .gsbase = current->thread.gsbase,
     };
-    memcpy(&context.reg, reg, sizeof(struct pt_regs));
+    memcpy(&context.regs, regs, sizeof(struct pt_regs));
 
-    p = original_rsp = reg->sp;
+    p = original_rsp = regs->sp;
 
     // get the number of arg vector and env vector
     for (argc = 0; argv[argc]; argc++);

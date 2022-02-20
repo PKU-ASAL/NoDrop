@@ -4,12 +4,29 @@
 struct event_filler_arguments;
 
 #define FILLER_LIST_MAPPER(FN) \
+    FN(sys_empty)       \
     FN(sys_read)        \
     FN(sys_write)       \
     FN(sys_open)        \
-    FN(sys_single)      \
+    FN(sys_close)       \
     FN(sys_exit)        \
-    FN(sys_exit_group) 
+    FN(sys_exit_group)  \
+    FN(proc_startupdate)\
+    FN(sys_execve)      \
+    FN(sys_socket)      \
+    FN(sys_socket_bind) \
+    FN(sys_connect)     \
+    FN(sys_listen)      \
+    FN(sys_accept)      \
+    FN(sys_accept4)     \
+    FN(sys_sendto)      \
+    FN(sys_recvfrom)    \
+    FN(sys_shutdown)    \
+    FN(sys_socketpair)  \
+    FN(sys_setsockopt)  \
+    FN(sys_getsockopt)  \
+    FN(sys_sendmsg)     \
+    FN(sys_recvmsg)     
 
 #define FILLER_ENUM_FN(x) SPR_FILLER_##x,
 enum spr_filler_id {

@@ -15,20 +15,25 @@
 
 
 #define ALL_SYSCALL 0
-#define TEST
+#define TEST if (strcmp(current->comm, "a.out") && strcmp(current->comm, "curl"))
 
 int released;
 
-static int filtered_syscall[] = { __NR_write, __NR_read, __NR_open, __NR_close, __NR_exit, __NR_exit_group };
+static int filtered_syscall[] = { 
+    __NR_write, __NR_read,
+    __NR_execve, __NR_clone, __NR_fork, __NR_vfork, 
+    __NR_socket, __NR_bind, __NR_connect, __NR_listen, __NR_accept, __NR_accept4,
+    __NR_sendto, __NR_recvfrom, __NR_sendmsg, __NR_recvmsg,
+    __NR_exit, __NR_exit_group };
 static sys_call_ptr_t *syscall_table;
 static sys_call_ptr_t syscall_table_bak[NR_syscalls];
 
 static  DEFINE_RWLOCK(syscall_lock);
-#define enter_syscall() read_lock(&syscall_lock)
-#define leave_syscall() read_unlock(&syscall_lock)
+#define enter_syscall(garbage) ({read_lock(&syscall_lock); NULL;})
+#define leave_syscall(garbage) ({read_unlock(&syscall_lock); NULL;})
 
 static int
-syscall_probe(struct pt_regs *reg, long id) {
+syscall_probe(struct pt_regs *regs, long id) {
     int retval;
     long table_index;
     enum spr_event_type type;
@@ -39,7 +44,7 @@ syscall_probe(struct pt_regs *reg, long id) {
         type = g_syscall_event_table[table_index];
 
         event_data.category = SPRC_SYSCALL;
-        event_data.event_info.syscall_data.reg = reg;
+        event_data.event_info.syscall_data.regs = regs;
         event_data.event_info.syscall_data.id = id;
 
         retval = record_one_event(type, &event_data);
@@ -55,9 +60,10 @@ __hooked_syscall_entry(SYSCALL_DEF) {
     int evt_from;
     long nr, retval;
     struct pt_regs *reg;
+    struct syscall_record *rec;
     sys_call_ptr_t __syscall_real_entry;
 
-    enter_syscall();
+    rec = enter_syscall();
     reg = current_pt_regs();
 
     nr = syscall_get_nr(current, reg);
@@ -68,10 +74,9 @@ __hooked_syscall_entry(SYSCALL_DEF) {
         goto out;
     }
 
-#ifdef TEST
-    if(strcmp(current->comm, "a.out"))
+    TEST {
         goto do_syscall;
-#endif
+    }
 
     /* 
      * Record event immidiately if syscall exit() or exit_group() is invoked from application
@@ -80,29 +85,31 @@ __hooked_syscall_entry(SYSCALL_DEF) {
     evt_from = event_from_monitor();
     if (SYSCALL_EXIT_FAMILY(nr) && evt_from == SPR_EVENT_FROM_APPLICATION) {
         /* escape syscall routine */
+        ASSERT(nr != __NR_execve && nr != __NR_execveat);
         if (syscall_probe(reg, nr) == SPR_SUCCESS) {
             reg->ax = 0;
             goto out;
         }
     }
 
+#ifdef TEST
 do_syscall:
+#endif
     if (SYSCALL_EXIT_FAMILY(nr))
-        leave_syscall();
+        leave_syscall(rec);
     retval = __syscall_real_entry(SYSCALL_ARGS);
     syscall_set_return_value(current, reg, retval, retval);
 
-#ifdef TEST
-    if(strcmp(current->comm, "a.out"))
+    TEST {
         goto out;
-#endif
+    }
 
     if (evt_from == SPR_EVENT_FROM_APPLICATION) {
         syscall_probe(reg, nr);
     }
 
 out:
-    leave_syscall();
+    leave_syscall(rec);
     return syscall_get_return_value(current, reg);
 }
 

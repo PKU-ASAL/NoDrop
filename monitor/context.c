@@ -67,8 +67,8 @@ void __m_start_main(int argc, char *argv[], void (*rtld_fini) (void)) {
 
 static void
 __m_real_exit(void) {
-    unsigned long nr = infopack.m_context.reg.orig_rax;
-    unsigned long status = infopack.m_context.reg.rdi;
+    unsigned long nr = infopack.m_context.regs.orig_rax;
+    unsigned long status = infopack.m_context.regs.rdi;
     while(1) {
         syscall(nr, status);
     }
@@ -77,8 +77,8 @@ __m_real_exit(void) {
 static void 
 __m_restore_context(struct context_struct *context) {
     int code;
-    if (unlikely(SYSCALL_EXIT_FAMILY(infopack.m_context.reg.orig_rax))) {
-        code = infopack.m_context.reg.rdi;
+    if (unlikely(SYSCALL_EXIT_FAMILY(infopack.m_context.regs.orig_rax))) {
+        code = infopack.m_context.regs.rdi;
         spr_exit_monitor(code);
         exit(code);
         /* !!!NOT REACHABLE!!! */
@@ -99,5 +99,5 @@ __m_restore_context(struct context_struct *context) {
     *enterp = 0;
 
     // Restore context registers
-    __restore_registers(&context->reg);
+    __restore_registers(&context->regs);
 }

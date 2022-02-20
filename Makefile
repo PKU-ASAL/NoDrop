@@ -15,7 +15,8 @@ $(MODULE)-objs := \
 	events_table.o \
 	fillers_table.o \
 	flags_table.o \
-	syscall_table.o
+	syscall_table.o \
+	dynamic_params_table.o
 
 all:
 	make -C $(KDIR) M=$(PWD) modules

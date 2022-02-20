@@ -5,12 +5,13 @@
 #include "include/events.h"
 
 #define ASSERT(expr) BUG_ON(!(expr))
-#define MONITOR_PATH "/mnt/hgfs/Projects/pinject_dpdk/monitor/monitor"
+#define MONITOR_PATH "./monitor/monitor"
 
 #define SPR_SUCCESS 0
 #define SPR_FAILURE_BUG -1
 #define SPR_FAILURE_BUFFER_FULL -2
 #define SPR_FAILURE_INVALID_EVENT -3
+#define SPR_FAILURE_INVALID_USER_MEMORY -4
 #define SPR_EVENT_FROM_MONITOR 1
 #define SPR_EVENT_FROM_APPLICATION 2
 
@@ -41,8 +42,6 @@ int check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void 
 int load_monitor(const struct spr_kbuffer *buffer);
 int event_from_monitor(void);
 
-
-
 // event.c
 #define NS_TO_SEC(_ns) ((_ns) / 1000000000)
 #define SECOND_IN_NS 1000000000 // 1s = 1e9ns
@@ -50,9 +49,19 @@ int event_from_monitor(void);
 int event_buffer_init(void);
 void event_buffer_destory(void);
 int record_one_event(enum spr_event_type type, struct spr_event_data *event_datap);
-void spr_init_buffer_info(struct spr_buffer_info *info);
+int init_buffer(struct spr_kbuffer *buffer);
+void free_buffer(struct spr_kbuffer *buffer);
+void reset_buffer(struct spr_kbuffer *buffer, int clean_count, int init_lock);
 
-// fillers.c
+/*
+ * Global functions - fillers.c
+ *
+ * These are analogous to get_user(), copy_from_user() and strncpy_from_user(),
+ * but they can't sleep, barf on page fault or be preempted
+ */
+#define spr_get_user(x, ptr) (spr_copy_from_user(&x, ptr, sizeof(x)) ? -EFAULT : 0)
+unsigned long spr_copy_from_user(void *to, const void __user *from, unsigned long n);
+long spr_strncpy_from_user(char *to, const char __user *from, unsigned long n);
 
 // syscall_table.c
 #define SYSCALL_TABLE_ID0 0
@@ -96,6 +105,8 @@ extern const struct spr_name_value unlinkat_flags[];
 extern const struct spr_name_value linkat_flags[];
 extern const struct spr_name_value chmod_mode[];
 extern const struct spr_name_value renameat2_flags[];
+
+extern const struct spr_param_info sockopt_dynamic_param[];
 
 // kernel_hacks
 #include <linux/version.h>

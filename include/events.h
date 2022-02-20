@@ -17,6 +17,7 @@ typedef uint64_t nanoseconds;
 #define BUFFER_SIZE   (8 * 1024 * 1024)
 #define MAX_EVENT_NUM 8192
 #define SYSCALL_TABLE_SIZE 512
+#define STR_STORAGE_SIZE PAGE_SIZE
 
 /*
  * Limits
@@ -586,6 +587,14 @@ typedef uint64_t nanoseconds;
 #define SPR_RENAME_WHITEOUT		(1 << 2)	/* Whiteout source */
 
 /*
+ * parse_readv_writev_bufs flags
+ */
+#define PRB_FLAG_PUSH_SIZE	1
+#define PRB_FLAG_PUSH_DATA	2
+#define PRB_FLAG_PUSH_ALL	(PRB_FLAG_PUSH_SIZE | PRB_FLAG_PUSH_DATA)
+#define PRB_FLAG_IS_WRITE	4
+
+/*
  * Event information enums
  */
 enum spr_event_category {
@@ -700,6 +709,28 @@ enum spr_event_type {
     SPRE_SYSCALL_CLOSE = 4,
     SPRE_SYSCALL_EXIT = 5,
     SPRE_SYSCALL_EXIT_GROUP = 6,
+	SPRE_SYSCALL_EXECVE = 7,
+	SPRE_SYSCALL_CLONE = 8,
+	SPRE_SYSCALL_FORK = 9,
+	SPRE_SYSCALL_VFORK = 10,
+	SPRE_SYSCALL_SOCKET = 11,
+	SPRE_SYSCALL_BIND = 12,
+	SPRE_SYSCALL_CONNECT = 13,
+	SPRE_SYSCALL_LISTEN = 14,
+	SPRE_SYSCALL_ACCEPT = 15,
+	SPRE_SYSCALL_GETSOCKNAME = 16,
+	SPRE_SYSCALL_GETPEERNAME = 17,
+	SPRE_SYSCALL_SOCKETPAIR = 18,
+	SPRE_SYSCALL_SENDTO = 19,
+	SPRE_SYSCALL_RECVFROM = 20,
+	SPRE_SYSCALL_SHUTDOWN = 21,
+	SPRE_SYSCALL_SETSOCKOPT = 22,
+	SPRE_SYSCALL_GETSOCKOPT = 23,
+	SPRE_SYSCALL_ACCEPT4 = 24,
+	SPRE_SYSCALL_SENDMSG = 25,
+	SPRE_SYSCALL_SENDMMSG = 26,
+	SPRE_SYSCALL_RECVMSG = 27,
+	SPRE_SYSCALL_RECVMMSG = 28,
     SPRE_EVENT_MAX
 };
 
@@ -718,7 +749,8 @@ struct spr_buffer {
 #ifdef __KERNEL__
 struct spr_kbuffer {
     char *buffer;
-    struct spr_buffer_info info;
+	char *str_storage;
+    struct spr_buffer_info *info;
 	uint64_t event_count;
 	spinlock_t lock;
 };
@@ -742,6 +774,7 @@ struct spr_name_value {
 
 struct event_filler_arguments {
     char *buf_ptr;
+	char *str_storage;
     enum spr_event_type event_type;
     uint64_t nevents;
     uint32_t buffer_size;
@@ -751,7 +784,7 @@ struct event_filler_arguments {
     uint32_t arg_data_offset;
     uint32_t arg_data_size;
     uint32_t snaplen;
-    struct pt_regs *reg;
+    struct pt_regs *regs;
 };
 
 struct spr_event_data {
@@ -759,7 +792,7 @@ struct spr_event_data {
 
     union {
         struct {
-            struct pt_regs *reg;
+            struct pt_regs *regs;
             long id;
         } syscall_data;
     } event_info;
