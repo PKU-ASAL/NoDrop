@@ -1,8 +1,9 @@
-.tmp_versions/*
-.vscode/*
+.tmp_versions/
+.vscode/
 .gdb_history/
 .log/
 monitor/*.o
+monitor/monitor
 *.o
 *.ko
 *.txt
@@ -11,9 +12,10 @@ monitor/*.o
 *.order
 *.module
 *.symvers
+*.d
 
 a.out
 .DS_Store
 
 *.png
-draw
+draw*

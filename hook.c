@@ -92,9 +92,7 @@ __hooked_syscall_entry(SYSCALL_DEF) {
         }
     }
 
-#ifdef TEST
 do_syscall:
-#endif
     if (SYSCALL_EXIT_FAMILY(nr))
         leave_syscall(rec);
     retval = __syscall_real_entry(SYSCALL_ARGS);

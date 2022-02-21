@@ -15,7 +15,6 @@ static struct proc_dir_entry *ent;
 static ssize_t
 pinject_read(struct file *filp, char __user *buf, size_t count, loff_t *off) {
     int len = 0;
-    unsigned long flags;
     unsigned int event_id, cpu;
     char kbuf[BUFSIZE];
 
@@ -25,9 +24,9 @@ pinject_read(struct file *filp, char __user *buf, size_t count, loff_t *off) {
     event_id = 0;
     for_each_present_cpu(cpu) {
         struct spr_kbuffer *bufp = &per_cpu(buffer, cpu);
-        spin_lock_irqsave(&bufp->lock, flags);
+        mutex_lock(&bufp->lock);
         event_id += bufp->event_count;
-        spin_unlock_irqrestore(&bufp->lock, flags);
+        mutex_unlock(&bufp->lock);
     }
 
     len += sprintf(kbuf, "%u", event_id);
@@ -42,7 +41,6 @@ static ssize_t
 pinject_write(struct file *filp, const char __user *buf, size_t count, loff_t *off) {
     int i;
     unsigned int cpu;
-    unsigned long flags;
     struct spr_kbuffer *bufp;
     char kbuf[BUFSIZE];
 
@@ -64,9 +62,9 @@ pinject_write(struct file *filp, const char __user *buf, size_t count, loff_t *o
         pr_info("proc.c: clean event_id\n");
         for_each_possible_cpu(cpu) {
             bufp = &per_cpu(buffer, cpu);
-            spin_lock_irqsave(&bufp->lock, flags);
+            mutex_lock(&bufp->lock);
             reset_buffer(bufp, 1, 0);
-            spin_unlock_irqrestore(&bufp->lock, flags);
+            mutex_unlock(&bufp->lock);
         }
     } else if (!strcmp(kbuf, "hook")) {
         pr_info("proc.c: hook syscall\n");

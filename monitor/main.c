@@ -297,21 +297,25 @@
 
 //     return EXIT_SUCCESS;
 // }
-
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <unistd.h>
+#include <sys/syscall.h>
 
 #include "events.h"
 #include "common.h"
 
+#define PATH_FMT "/tmp/pinject/%u.buf"
+
 int count;
-char path[10];
+char path[25];
 struct spr_buffer_info *info;
 extern struct spr_buffer *bufp;
 
 void spr_exit_monitor(int code) {
     FILE *file;
     if (!(file = fopen(path, "ab+"))) {
+        perror("Cannot open log file");
         return;
     }
 
@@ -322,24 +326,19 @@ void spr_exit_monitor(int code) {
 void spr_init_monitor() {
     count = 0;
     info = &bufp->info;
-    sprintf(path, "%d.buf", getpid());
+    sprintf(path, PATH_FMT, (unsigned int)syscall(SYS_gettid));
 }
 
 int main(int argc, char *argv[], char *env[]) {
-    int i, curarg;
     FILE *file;
-    char *next, *arg_data_ptr;
-    uint16_t *lens;
-    struct spr_event_hdr *hdr;
-
     if(!(file = fopen(path, "ab+"))) {
+        perror("Cannot open log file");
         return 0;
     }
 
     count += info->nevents;
     fwrite(bufp->buffer, info->tail, 1, file);
-
-
     fclose(file); 
+
     return 0;
 }

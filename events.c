@@ -185,7 +185,7 @@ void reset_buffer(struct spr_kbuffer *buffer, int clean_count, int clean_lock) {
     buffer->info->tail = 0;
 
     if (clean_lock) {
-        spin_lock_init(&buffer->lock);
+        mutex_init(&buffer->lock);
     }
 
     if (clean_count) {
@@ -215,13 +215,12 @@ void event_buffer_destory(void) {
 
 int record_one_event(enum spr_event_type type, struct spr_event_data *event_datap) {
     int cpu, retval;
-    unsigned long flags;
     struct spr_kbuffer *bufp;
     nanoseconds ts = spr_nsecs();
 
     cpu = get_cpu();
     bufp = &per_cpu(buffer, cpu);
-    spin_lock_irqsave(&bufp->lock, flags);
+    mutex_lock(&bufp->lock);
 
     retval = do_record_one_event(bufp, type, ts, event_datap);
     if (retval != SPR_SUCCESS) {
@@ -230,7 +229,7 @@ int record_one_event(enum spr_event_type type, struct spr_event_data *event_data
                 bufp->info->nevents, bufp->info->tail);
     }
 
-    spin_unlock_irqrestore(&bufp->lock, flags);
+    mutex_unlock(&bufp->lock);
     put_cpu();
     return retval;
 }

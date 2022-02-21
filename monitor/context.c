@@ -5,6 +5,7 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <malloc.h>
 
 #include "events.h"
 #include "common.h"
@@ -37,6 +38,7 @@ void __m_start_main(int argc, char *argv[], void (*rtld_fini) (void)) {
     // In other case, __m_enter should always be 0 here.
     // We should make this page writable manually because ld.so call mprotect during initialization.
     if (unlikely(*enterp == 1)) {
+        mallopt(M_MMAP_THRESHOLD, 0);
         mprotect(&infopack, sizeof(infopack), PROT_READ|PROT_WRITE);
         arch_prctl(ARCH_GET_FS, (unsigned long)&my_fsbase);
         first_come_in = 1;
