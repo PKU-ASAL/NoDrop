@@ -2,7 +2,7 @@ TARGET := draw
 CPP_FILES := draw.cpp
 
 PYCONF ?= python3-config
-ifneq ($(shell $(PYCONF) > /dev/null; echo $$?), 1)
+ifneq ($(shell $(PYCONF) > /dev/null 2>&1; echo $$?), 1)
 $(error "no installation of PYTHON3 found")
 endif
 
