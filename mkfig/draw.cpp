@@ -20,9 +20,8 @@ struct MyStruct {
 std::vector<std::string> files;
 
 void * resolve_buf_file(void *arg) {
-    int total;
-    uint32_t count;
-    uint32_t pos;
+    uint64_t count;
+    uint32_t total, pos;
     struct spr_event_hdr hdr;
 
     struct MyStruct *my_struct = (struct MyStruct *)arg;
@@ -63,7 +62,7 @@ void * resolve_buf_file(void *arg) {
     }
 
     fclose(file);
-    printf("%s: done (%d records)\n", filename, count);
+    printf("%s: done (%lu records)\n", filename, count);
     return (void *)count;
 }
 
@@ -100,7 +99,7 @@ int main(int argc, char *argv[]) {
     std::vector<pthread_t> tids(files.size());
     std::vector<std::map<nanoseconds, uint32_t>> mps(files.size());
     std::vector<struct MyStruct> params(files.size());
-    for (int i = 0; i < files.size(); ++i) {
+    for (size_t i = 0; i < files.size(); ++i) {
         params[i] = {files[i].c_str(), &mps[i]};
         if (pthread_create(&tids[i], NULL, resolve_buf_file, (void*)&params[i])) {
             printf("%s: create pthread failed\n", files[i].c_str());
@@ -108,9 +107,9 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    uint32_t total_count = 0;
+    uint64_t total_count = 0;
     std::map<nanoseconds, uint32_t> evts;
-    for (int i = 0; i < tids.size(); ++i) {
+    for (size_t i = 0; i < tids.size(); ++i) {
         uint32_t tmp_count;
         pthread_join(tids[i], (void **)&tmp_count);
         total_count += tmp_count;
@@ -119,17 +118,20 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    printf("total_count = %u\n", total_count);
+    printf("total_count = %lu\n", total_count);
 
     nanoseconds start = evts.begin()->first;
     std::vector<nanoseconds> y;
     for (int i = 0; i < 100; ++i)
-        y.emplace_back(evts[start + i]);
+        y.emplace_back(evts[start + i + 10]);
 
     plt::figure_size(1200, 500);
     plt::xlabel("Time (100ms)");
     plt::ylabel("Events number");
+    plt::ylim(0, int(*std::max_element(y.begin(), y.end()) * 1.1));
+
     plt::plot(y);
+
     if (argc > 2) {
         plt::save(argv[2]);
     }

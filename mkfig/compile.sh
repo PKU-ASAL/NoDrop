@@ -1,2 +1,0 @@
-#! /bin/bash
-g++ draw.cpp -std=c++11 -I/usr/include/python3.6 -L/usr/lib/python3.6/config-3.6m-x86_64-linux-gnu -L/usr/lib -lpython3.6m -lpthread -ldl  -lutil -lm  -Xlinker -export-dynamic -Wl,-O1 -Wl,-Bsymbolic-functions -o draw

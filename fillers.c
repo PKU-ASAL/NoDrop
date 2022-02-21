@@ -75,6 +75,15 @@ static struct pid_namespace *pid_ns_for_children(struct task_struct *task)
 #endif
 }
 
+inline void spr_syscall_get_arguments(struct task_struct *task, struct pt_regs *regs, unsigned long *args)
+{
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 0))
+    syscall_get_arguments(task, regs, 0, 6, args);
+#else
+    syscall_get_arguments(task, regs, args);
+#endif
+}
+
 /*
  * What this function does is basically a special memcpy
  * so that, if the page fault handler detects the address is invalid,
@@ -1181,7 +1190,7 @@ static int32_t parse_readv_writev_bufs(struct event_filler_arguments *args, cons
 			/*
 			 * Retrieve the FD. It will be used for dynamic snaplen calculation.
 			 */
-            syscall_get_arguments(current, args->regs, syscall_args);
+            spr_syscall_get_arguments(current, args->regs, syscall_args);
             val = syscall_args[0];
 
 			/*
@@ -1890,7 +1899,7 @@ int f_sys_socket(struct event_filler_arguments *args)
     syscall_arg_t val;
     syscall_arg_t syscall_args[6] = {0};
 
-    syscall_get_arguments(current, args->regs, syscall_args);
+    spr_syscall_get_arguments(current, args->regs, syscall_args);
 
     /*
      * domain
