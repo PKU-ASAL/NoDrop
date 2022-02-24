@@ -78,10 +78,12 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
     struct spr_kbuffer *bufp;
     spr_private_data_t *private = filp->private_data;
 
+
     switch(cmd) {
     case SPR_IOCTL_CLEAR_BUFFER:
-        for_each_possible_cpu(cpu) {
+        for_each_present_cpu(cpu) {
             bufp = &per_cpu(buffer, cpu);
+            pr_info("cpu %d bufp %lx info %lx\n", cpu, bufp, bufp->info);
             mutex_lock(&bufp->lock);
             reset_buffer(bufp, 1, 0);
             mutex_unlock(&bufp->lock);
@@ -89,16 +91,6 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
         pr_info("proc: clean buffer");
         break;
-    case SPR_IOCTL_RELEASE_SYSCAL_TABLE:
-        ret = -EINVAL;
-        pr_info("proc: release syscall table (DEPRECATED)");
-
-        goto out;
-    case SPR_IOCTL_HOOK_SYSCALL_TABLE:
-        ret = -EINVAL;
-        pr_info("proc: hook syscall table (DEPRECATED)");
-
-        goto out;
     case SPR_IOCTL_READ_BUFFER_COUNT:
         count = 0;
         for_each_present_cpu(cpu) {
@@ -112,6 +104,16 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
             ret = -EINVAL;
             goto out;
         }
+        break;
+    case SPR_IOCTL_STOP_RECORDING:
+        restore_syscall();
+
+        pr_info("proc: Stop recording");
+        break;
+    case SPR_IOCTL_START_RECORDING:
+        hook_syscall();
+
+        pr_info("proc: Start recording");
         break;
     case SPR_IOCTL_RESTORE_SECURITY:
         if (private->status != SPR_EVENT_FROM_MONITOR) {

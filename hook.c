@@ -14,12 +14,12 @@
 #include "include/events.h"
 
 #define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
-#define TEST if (!STR_EQU(current->comm, "a.out") && !STR_EQU(current->comm, "sshd"))
+#define SPR_TEST if (!STR_EQU(current->comm, "a.out") && !STR_EQU(current->comm, "sshd"))
 
 int released;
 
 static int filtered_syscall[] = { 
-    __NR_write, __NR_read,
+    __NR_write, __NR_read, 
     __NR_execve, __NR_clone, __NR_fork, __NR_vfork, 
     __NR_socket, __NR_bind, __NR_connect, __NR_listen, __NR_accept, __NR_accept4,
     __NR_sendto, __NR_recvfrom, __NR_sendmsg, __NR_recvmsg,
@@ -73,8 +73,8 @@ __hooked_syscall_entry(SYSCALL_DEF) {
         goto out;
     }
 
-#ifdef TEST
-    TEST {
+#ifdef SPR_TEST
+    SPR_TEST {
         goto do_syscall;
     }
 #endif
@@ -93,7 +93,7 @@ __hooked_syscall_entry(SYSCALL_DEF) {
         }
     }
 
-#ifdef TEST
+#ifdef SPR_TEST
 do_syscall:
 #endif
     if (SYSCALL_EXIT_FAMILY(nr))
@@ -101,8 +101,8 @@ do_syscall:
     retval = __syscall_real_entry(SYSCALL_ARGS);
     syscall_set_return_value(current, reg, retval, retval);
 
-#ifdef TEST
-    TEST {
+#ifdef SPR_TEST
+    SPR_TEST {
         goto out;
     }
 #endif

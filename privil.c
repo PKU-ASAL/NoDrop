@@ -67,7 +67,7 @@ void spr_cap_capset(u32 *permitted, u32 *effective) {
 void spr_write_fsbase(unsigned long fsbase) {
     preempt_disable();
     loadsegment(fs, 0);
-    x86_gsbase_write_cpu_inactive(fsbase);
+    wrmsrl(MSR_FS_BASE, fsbase);
     current->thread.fsbase = fsbase;
     preempt_enable();
 }
@@ -75,7 +75,7 @@ void spr_write_fsbase(unsigned long fsbase) {
 void spr_write_gsbase(unsigned long gsbase) {
     preempt_disable();
     load_gs_index(0);
-    x86_gsbase_write_cpu_inactive(gsbase);
+    wrmsrl(MSR_KERNEL_GS_BASE, gsbase);
     current->thread.gsbase = gsbase;
     preempt_enable();
 }
