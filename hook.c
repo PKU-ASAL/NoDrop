@@ -13,9 +13,8 @@
 #include "include/common.h"
 #include "include/events.h"
 
-
-#define ALL_SYSCALL 0
-#define TEST if (strcmp(current->comm, "a.out") && strcmp(current->comm, "curl"))
+#define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
+#define TEST if (!STR_EQU(current->comm, "a.out") && !STR_EQU(current->comm, "sshd"))
 
 int released;
 
@@ -74,9 +73,11 @@ __hooked_syscall_entry(SYSCALL_DEF) {
         goto out;
     }
 
+#ifdef TEST
     TEST {
         goto do_syscall;
     }
+#endif
 
     /* 
      * Record event immidiately if syscall exit() or exit_group() is invoked from application
@@ -92,15 +93,19 @@ __hooked_syscall_entry(SYSCALL_DEF) {
         }
     }
 
+#ifdef TEST
 do_syscall:
+#endif
     if (SYSCALL_EXIT_FAMILY(nr))
         leave_syscall(rec);
     retval = __syscall_real_entry(SYSCALL_ARGS);
     syscall_set_return_value(current, reg, retval, retval);
 
+#ifdef TEST
     TEST {
         goto out;
     }
+#endif
 
     if (evt_from == SPR_EVENT_FROM_APPLICATION) {
         syscall_probe(reg, nr);
@@ -120,8 +125,8 @@ inline void spr_write_cr0(unsigned long cr0) {
 #define spr_write_cr0 write_cr0 
 #endif
 
-#define WPOFF do { spr_write_cr0(read_cr0() & (~0x10000)); } while (0)
-#define WPON  do { spr_write_cr0(read_cr0() | 0x10000);    } while (0)
+#define WPOFF do { spr_write_cr0(read_cr0() & (~0x10000)); } while (0);
+#define WPON  do { spr_write_cr0(read_cr0() | 0x10000);    } while (0);
 
 void hook_syscall(void) {
     int sz, nr, i;
@@ -129,48 +134,33 @@ void hook_syscall(void) {
     if (released == 0)
         return;
 
-    WPOFF;
-#if ALL_SYSCALL == 1
-    for (i = 0; i < NR_syscalls; ++i) {
-        nr = i;
-        syscall_table_bak[nr] = syscall_table[nr];
-        syscall_table[nr] = (sys_call_ptr_t)__hooked_syscall_entry;
-    }
-    pr_info("hook all syscalls\n");
-#else
+    WPOFF
     for (i = 0, sz = sizeof(filtered_syscall) / sizeof(int); i < sz; ++i) {
         nr = filtered_syscall[i];
         syscall_table_bak[nr] = syscall_table[nr];
         syscall_table[nr] = (sys_call_ptr_t)__hooked_syscall_entry;
         pr_info("hook syscall %d [%lx]\n", nr, (unsigned long)syscall_table_bak[nr]);
     }
-#endif
-    WPON;
+    WPON
+
     released = 0;
 }
 
 void restore_syscall(void) {
     int nr, sz, i;
+
     if (released == 1)
         return;
 
-    WPOFF;
-#if ALL_SYSCALL == 1
-    for (i = 0; i < NR_syscalls; ++i) {
-        nr = i;
-        syscall_table[nr] = syscall_table_bak[nr];
-        syscall_table_bak[nr] = 0;
-    }
-    pr_info("restore all syscalls\n");
-#else
+    WPOFF
     for (i = 0, sz = sizeof(filtered_syscall) / sizeof(int); i < sz; ++i) {
         nr = filtered_syscall[i];
         syscall_table[nr] = syscall_table_bak[nr];
         syscall_table_bak[nr] = 0;
         pr_info("restore syscall %d [%lx]\n", nr, (unsigned long)syscall_table[nr]);
     }
-#endif
-    WPON;
+    WPON
+
     released = 1;
 }
 

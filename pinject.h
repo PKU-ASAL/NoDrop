@@ -2,6 +2,7 @@
 #define PINJECT_H_
 
 #include <linux/ptrace.h>
+#include "include/common.h"
 #include "include/events.h"
 
 #define ASSERT(expr) BUG_ON(!(expr))
@@ -20,6 +21,19 @@ typedef unsigned long syscall_arg_t;
 // proc.c
 int  proc_init(void);
 void proc_destroy(void);
+
+// privil.c
+unsigned int spr_get_seccomp(void);
+void spr_disable_seccomp(void);
+int spr_enable_seccomp(unsigned int mode);
+void spr_write_gsbase(unsigned long gsbase);
+void spr_write_fsbase(unsigned long fsbase);
+void spr_cap_raise(void);
+void spr_cap_capset(u32 *permitted, u32 *effective);
+void spr_prepare_security(void);
+int prepare_root_path(char *path);
+void prepare_rlimit_data(struct rlimit *rlims);
+void prepare_security_data(struct security_data *security);
 
 // hook.c
 void hook_syscall(void);

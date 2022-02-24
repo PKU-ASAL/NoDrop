@@ -297,22 +297,21 @@
 
 //     return EXIT_SUCCESS;
 // }
-#define _GNU_SOURCE
 #include <stdio.h>
 #include <unistd.h>
+#include <sys/time.h>
 #include <sys/syscall.h>
 
-#include "events.h"
-#include "common.h"
+#include "context.h"
 
-#define PATH_FMT "/tmp/pinject/%u.buf"
+#define PATH_FMT "/tmp/pinject/%u-%ld.buf"
+#define SECOND_IN_US 1000000
 
 int count;
-char path[25];
+char path[100];
 struct spr_buffer_info *info;
-extern struct spr_buffer *bufp;
 
-void spr_exit_monitor(int code) {
+void spr_monitor_exit(int code) {
     FILE *file;
     if (!(file = fopen(path, "ab+"))) {
         perror("Cannot open log file");
@@ -323,13 +322,15 @@ void spr_exit_monitor(int code) {
     fclose(file);
 }
 
-void spr_init_monitor() {
+void spr_monitor_init(int argc, char *argv[], char *env[]) {
+    struct timeval tv;
     count = 0;
-    info = &bufp->info;
-    sprintf(path, PATH_FMT, (unsigned int)syscall(SYS_gettid));
+    info = &g_bufp->info;
+    gettimeofday(&tv, NULL);
+    sprintf(path, PATH_FMT, (unsigned int)syscall(SYS_gettid), tv.tv_sec * SECOND_IN_US + tv.tv_usec);
 }
 
-int main(int argc, char *argv[], char *env[]) {
+int main() {
     FILE *file;
     if(!(file = fopen(path, "ab+"))) {
         perror("Cannot open log file");
@@ -337,7 +338,7 @@ int main(int argc, char *argv[], char *env[]) {
     }
 
     count += info->nevents;
-    fwrite(bufp->buffer, info->tail, 1, file);
+    fwrite(g_bufp->buffer, info->tail, 1, file);
     fclose(file); 
 
     return 0;

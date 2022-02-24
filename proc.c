@@ -3,17 +3,48 @@
 #include <linux/proc_fs.h>
 #include <linux/kernel.h>
 #include <linux/types.h>
+#include <linux/mutex.h>
+#include <asm/prctl.h>
+#include <asm/proto.h>
 
 #include "pinject.h"
 #include "include/common.h"
 #include "include/events.h"
+#include "include/ioctl.h"
+
 
 #define BUFSIZE 30
 
 static struct proc_dir_entry *ent;
+typedef struct  {
+    int status;
+} spr_private_data_t;
+
+static int spr_procopen(struct inode *inode, struct file *filp)
+{
+    int ret;
+    int status = event_from_monitor();
+    spr_private_data_t *private;
+
+    if (status == SPR_EVENT_FROM_APPLICATION || status == SPR_EVENT_FROM_MONITOR) {
+        private = vmalloc(sizeof(spr_private_data_t));
+        if (!private) {
+            ret = -ENOMEM;
+            pr_err("proc open: No memory for allocating private data");
+        } else {
+            ret = 0;
+            private->status = status;
+            filp->private_data = (void *)private;
+        }
+    } else {
+        ret = -ENODEV;
+    }
+
+    return ret;
+}
 
 static ssize_t
-pinject_read(struct file *filp, char __user *buf, size_t count, loff_t *off) {
+spr_procread(struct file *filp, char __user *buf, size_t count, loff_t *off) {
     int len = 0;
     unsigned int event_id, cpu;
     char kbuf[BUFSIZE];
@@ -37,61 +68,112 @@ pinject_read(struct file *filp, char __user *buf, size_t count, loff_t *off) {
     return len;
 }
 
-static ssize_t
-pinject_write(struct file *filp, const char __user *buf, size_t count, loff_t *off) {
-    int i;
+static long 
+spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+    int ret;
+    uint64_t count;
     unsigned int cpu;
+    struct security_data security;
     struct spr_kbuffer *bufp;
-    char kbuf[BUFSIZE];
+    spr_private_data_t *private = filp->private_data;
 
-    if (*off > 0 || count > BUFSIZE)
-        return -EINVAL;
-
-    if (copy_from_user(kbuf, buf, count))
-        return -EINVAL;
-    
-    for (i = count - 1; i >= 0;) {
-        if (kbuf[i] == '\n' || kbuf[i] == '\t' || kbuf[i] == '\r') {
-            kbuf[i--] = 0;
-            continue;
-        }
-        break;
-    }
-
-    if (!strcmp(kbuf, "clean")) { //clean
-        pr_info("proc.c: clean event_id\n");
+    switch(cmd) {
+    case SPR_IOCTL_CLEAR_BUFFER:
         for_each_possible_cpu(cpu) {
             bufp = &per_cpu(buffer, cpu);
             mutex_lock(&bufp->lock);
             reset_buffer(bufp, 1, 0);
             mutex_unlock(&bufp->lock);
         }
-    } else if (!strcmp(kbuf, "hook")) {
-        pr_info("proc.c: hook syscall\n");
-        hook_syscall();
-    } else if (!strcmp(kbuf, "release")) {
-        pr_info("proc.c: release syscall hook\n");
-        restore_syscall();
-    } else {
-        pr_info("proc.c: invalid op \"%s\"\n", kbuf);
-        return -EINVAL;
+
+        pr_info("proc: clean buffer");
+        break;
+    case SPR_IOCTL_RELEASE_SYSCAL_TABLE:
+        ret = -EINVAL;
+        pr_info("proc: release syscall table (DEPRECATED)");
+
+        goto out;
+    case SPR_IOCTL_HOOK_SYSCALL_TABLE:
+        ret = -EINVAL;
+        pr_info("proc: hook syscall table (DEPRECATED)");
+
+        goto out;
+    case SPR_IOCTL_READ_BUFFER_COUNT:
+        count = 0;
+        for_each_present_cpu(cpu) {
+            bufp = &per_cpu(buffer, cpu);
+            mutex_lock(&bufp->lock);
+            count += bufp->event_count;
+            mutex_unlock(&bufp->lock);
+        }
+
+        if (put_user(count, (typeof(count) *)arg)) {
+            ret = -EINVAL;
+            goto out;
+        }
+        break;
+    case SPR_IOCTL_RESTORE_SECURITY:
+        if (private->status != SPR_EVENT_FROM_MONITOR) {
+            ret = -EINVAL;
+            goto out;
+        }
+
+        if (copy_from_user(&security, (void __user *)arg, sizeof(security))) {
+            ret = -EFAULT;
+            goto out;
+        }
+
+        if ((ret = spr_enable_seccomp(security.seccomp_mode))) 
+            goto out;
+
+        spr_write_gsbase(security.gsbase);
+        spr_write_fsbase(security.fsbase);
+        spr_cap_capset(security.cap_permitted, security.cap_effective);
+
+        break;
+    default:
+        ret = -ENOTTY;
+        goto out;
     }
 
-    *off = count;
-    return count;
+    ret = 0;
+
+out:
+    return ret;
 }
 
-static const struct file_operations fops = {
-    .read = pinject_read,
-    .write = pinject_write,
+static int spr_procrelease(struct inode *inode, struct file *filp)
+{
+    vfree(filp->private_data);
+    return 0;
+}
+
+static const struct file_operations g_spr_fops = {
+    .open = spr_procopen,
+    .read = spr_procread,
+    .unlocked_ioctl = spr_procioctl,
+    .release = spr_procrelease,
     .owner = THIS_MODULE
 };
 
 int proc_init(void) {
-    ent = proc_create("pinject", 0666, NULL, &fops);
-    return 0;
+    int ret;
+
+    ent = proc_create(SPR_IOCTL_NAME, 0666, NULL, &g_spr_fops);
+
+    if (!ent) {
+        ret = -EFAULT;
+        pr_err("proc_init: Cannot create proc file");
+    } else {
+        ret = 0;
+    }
+
+    return ret;
 }
 
 void proc_destroy(void) {
-    proc_remove(ent);
+    if (ent) {
+        proc_remove(ent);
+    }
 }

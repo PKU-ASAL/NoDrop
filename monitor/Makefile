@@ -7,7 +7,7 @@ S_FILES := misc.S
 
 INCLUDE_PATH := -I. -I../include
 CFLAGS := $(INCLUDE_PATH) -std=gnu11 -fPIC -g -Og
-LDFLAGS := -nostartfiles -Wl,-Tscript_x86-64.ld -Wl,-znow 
+LDFLAGS := -nostartfiles -Wl,-Tscript_x86-64.ld -Wl,-znow
 
 PKGCONF ?= pkg-config
 
@@ -18,7 +18,7 @@ PKGCONF ?= pkg-config
 
 # DPDK_CFLAGS  := $(shell $(PKGCONF) --cflags libdpdk) -DALLOW_EXPERIMENTAL_API
 # DPDK_LDFLAGS := $(shell $(PKGCONF) --libs libdpdk)
-DPDK_CFLAGS  := 
+DPDK_CFLAGS  :=
 DPDK_LDFLAGS :=
 
 O_FILES := $(patsubst %.c,%.o,$(C_FILES)) 
@@ -28,7 +28,7 @@ all: $(TARGET)
 
 monitor: $(O_FILES)
 	sudo rmmod -f $(MODULE) 2> /dev/null || true
-	$(CC) $^ -o $@ $(LDFLAGS) $(DPDK_LDFLAGS)
+	$(CC) $^ -o $@ $(DPDK_LDFLAGS) $(LDFLAGS)
 
 client: $(PRIM_C_FILES)
 	$(CC) $^ -o $@ $(DPDK_CFLAGS) -DCLIENT $(DPDK_LDFLAGS)

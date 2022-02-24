@@ -281,11 +281,11 @@ load_elf_binary(struct elfhdr *elf_ex,
             if (eppnt->p_flags & PF_X)
                 elf_prot |= PROT_EXEC;
             vaddr = eppnt->p_vaddr;
-            if (elf_ex->e_type == ET_EXEC || load_addr_set)
+            if (load_addr_set)
                 elf_type |= MAP_FIXED;
-            else if (no_base && elf_ex->e_type == ET_DYN)
+            else if (elf_ex->e_type == ET_DYN)
                 load_addr = -vaddr;
-
+            
             _addr = elf_map(binary, load_addr + vaddr,
                     eppnt, elf_prot, elf_type, total_size);
             total_size = 0;
@@ -295,8 +295,7 @@ load_elf_binary(struct elfhdr *elf_ex,
             if (BAD_ADDR(_addr))
                 goto out;
 
-            if (!load_addr_set &&
-                elf_ex->e_type == ET_DYN) {
+            if (!load_addr_set) {
                 load_addr = _addr - ELF_PAGESTART(vaddr);
                 load_addr_set = 1;
             }
@@ -363,6 +362,30 @@ out:
     return error;
 }
 
+static inline void elf_reg_init(struct thread_struct *t,
+				   struct pt_regs *regs, const u16 ds)
+{
+	/* ax gets execve's return value. */
+	/*regs->ax = */ regs->bx = regs->cx = regs->dx = 0;
+	regs->si = regs->di = regs->bp = 0;
+	regs->r8 = regs->r9 = regs->r10 = regs->r11 = 0;
+	regs->r12 = regs->r13 = regs->r14 = regs->r15 = 0;
+	t->fsbase = t->gsbase = 0;
+	t->fsindex = t->gsindex = 0;
+	t->ds = t->es = ds;
+}
+
+static inline void 
+prepare_context(struct context_struct *ctx, const struct pt_regs *regs) {
+    if (prepare_root_path(ctx->root_path)) {
+        sprintf(ctx->root_path, "/");
+    }
+
+    prepare_rlimit_data(ctx->rlim);
+    prepare_security_data(&ctx->securities);
+    memcpy(&ctx->regs, regs, sizeof(struct pt_regs));
+}
+
 static int
 create_elf_tbls(struct elfhdr *exec,
                 uint64_t load_addr,
@@ -387,11 +410,7 @@ create_elf_tbls(struct elfhdr *exec,
     elf_addr_t *elf_info = NULL;
     unsigned char k_rand_bytes[16];
 
-    struct context_struct context = {
-        .fsbase = current->thread.fsbase,
-        .gsbase = current->thread.gsbase,
-    };
-    memcpy(&context.regs, regs, sizeof(struct pt_regs));
+    struct context_struct context;
 
     p = original_rsp = regs->sp;
 
@@ -426,7 +445,7 @@ create_elf_tbls(struct elfhdr *exec,
     * we only need to put the argc, argv and env onto the stack
     */
     elf_info_idx = 0;
-    if (exec) {
+    if (exec && interpreter) {
         elf_info = kmalloc(sizeof(elf_addr_t) * 12 * 2, GFP_KERNEL);
         if (!elf_info)
             goto err;
@@ -504,12 +523,13 @@ create_elf_tbls(struct elfhdr *exec,
         goto err;
 
     // put AUXV
-    if (exec && copy_to_user(sp, elf_info, elf_info_idx * sizeof(elf_addr_t))) {
+    if (exec && interpreter && copy_to_user(sp, elf_info, elf_info_idx * sizeof(elf_addr_t))) {
         goto err;
     }
 
+    prepare_context(&context, regs);
     void *arg[] = {
-        (void *)((exec != NULL) ? (int)1 : (int)0),
+        (exec != NULL) ? (void *)1 : (void *)0,
         (void *)&context,
         (void *)log
     };
@@ -532,40 +552,42 @@ do_load_monitor(const struct pt_regs *reg,
                uint64_t *interp_load) {
     int retval;
     uint64_t load_addr = 0;
-    uint64_t interp_entry;
     uint64_t interp_load_addr = 0;
     uint64_t interp_map_addr = 0;
+    uint64_t load_entry;
     uint64_t monitor_map_addr;
     
 
-    interp_entry = load_elf_binary(&interp_elf_ex,
-                    interpreter,
-                    &interp_map_addr,
-                    ELF_ET_DYN_BASE, interp_elf_phdata);
-
-    if (!IS_ERR((void *)interp_entry)) {
-        /* load_elf_interp() returns relocation adjustment */
-        interp_load_addr = interp_entry;
-        interp_entry += interp_elf_ex.e_entry;
-    }
-    if (BAD_ADDR(interp_entry)) {
-        retval = IS_ERR((void *)interp_entry) ?	(int)interp_entry : -EINVAL;
-        goto out;
+    if (interpreter) {
+        interp_load_addr = load_elf_binary(&interp_elf_ex,
+                        interpreter,
+                        &interp_map_addr,
+                        ELF_ET_DYN_BASE, interp_elf_phdata);
+        if (BAD_ADDR(interp_load_addr)) {
+            retval = IS_ERR((void *)interp_load_addr) ?	
+                     (int)interp_load_addr : -EINVAL;
+            goto out;
+        }
     }
 
     load_addr = load_elf_binary(&monitor_elf_ex,
                     monitor,
                     &monitor_map_addr,
                     ELF_ET_DYN_BASE, monitor_elf_phdata);
+
     if (BAD_ADDR(load_addr)) {
         retval = IS_ERR((void *)load_addr) ?
                 (int)load_addr : -EINVAL;
         goto out;
     }
 
-    pr_info("[%d] load monitor at %llx\nload interp at %llx\nentry = %llx", current->pid, load_addr, interp_load_addr, interp_entry);
+    load_entry = interpreter ? 
+                interp_load_addr + interp_elf_ex.e_entry : 
+                load_addr + monitor_elf_ex.e_entry;
 
-    if (entry)  *entry = interp_entry;
+    pr_info("[%d] load monitor at %llx\nload interp at %llx\nentry = %llx", current->pid, load_addr, interp_load_addr, load_entry);
+
+    if (entry)  *entry = load_entry;
     if (load)   *load = load_addr;
     if (interp_load) *interp_load = interp_load_addr;
 
@@ -621,8 +643,13 @@ load_monitor(const struct spr_kbuffer *buffer) {
     }
 
 success:
+
+    spr_prepare_security();
+
+    elf_reg_init(&current->thread, reg, 0);
     reg->sp = sp;
     reg->cx = reg->ip = entry;
+
     retval = LOAD_SUCCESS;
 
 out:
@@ -638,6 +665,8 @@ int loader_init(void) {
     struct elf_phdr *elf_ppnt = NULL;
 
     loff_t pos;
+    monitor = NULL;
+    interpreter = NULL;
 
     monitor = open_exec(MONITOR_PATH);
     retval = PTR_ERR(monitor);
@@ -656,7 +685,7 @@ int loader_init(void) {
     /* First of all, some simple consistency checks */
     if (memcmp(monitor_elf_ex.e_ident, ELFMAG, SELFMAG) != 0)
         goto out_free_monitor;
-    if (monitor_elf_ex.e_type != ET_DYN)
+    if (monitor_elf_ex.e_type != ET_DYN && monitor_elf_ex.e_type != ET_EXEC)
         goto out_free_monitor;
     if (!elf_check_arch(&monitor_elf_ex))
         goto out_free_monitor;
@@ -665,8 +694,10 @@ int loader_init(void) {
     if (load_elf_phdrs(&monitor_elf_ex, monitor, &monitor_elf_phdata))
         goto out_free_monitor;
 
-    elf_ppnt = monitor_elf_phdata;
+    if (monitor_elf_ex.e_type == ET_EXEC)
+        goto success;
 
+    elf_ppnt = monitor_elf_phdata;
     // find INTERP segment
     for (i = 0; i < monitor_elf_ex.e_phnum; i++) {
         if (elf_ppnt->p_type == PT_INTERP) {
@@ -732,6 +763,7 @@ int loader_init(void) {
     if (load_elf_phdrs(&interp_elf_ex, interpreter, &interp_elf_phdata))
         goto out_free_dentry;
 
+success:
     retval = 0;
 
 out:
