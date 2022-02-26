@@ -84,7 +84,7 @@ start:
             info->tail += event_size;
             ++info->nevents;
             ++buffer->event_count;
-            
+
             if (do_exit_syscall) {
                 restart = 0;
                 goto loading;

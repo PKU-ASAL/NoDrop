@@ -307,37 +307,23 @@
 #define PATH_FMT "/tmp/pinject/%u-%ld.buf"
 #define SECOND_IN_US 1000000
 
-int count;
 char path[100];
 struct spr_buffer_info *info;
-
-void spr_monitor_exit(int code) {
-    FILE *file;
-    if (!(file = fopen(path, "ab+"))) {
-        perror("Cannot open log file");
-        return;
-    }
-
-    fwrite(&count, sizeof(count), 1, file);
-    fclose(file);
-}
+struct timeval tv;
 
 void spr_monitor_init(int argc, char *argv[], char *env[]) {
-    struct timeval tv;
-    count = 0;
     info = &g_bufp->info;
     gettimeofday(&tv, NULL);
-    sprintf(path, PATH_FMT, (unsigned int)syscall(SYS_gettid), tv.tv_sec * SECOND_IN_US + tv.tv_usec);
 }
 
 int main() {
     FILE *file;
+    sprintf(path, PATH_FMT, (unsigned int)syscall(SYS_gettid), tv.tv_sec * SECOND_IN_US + tv.tv_usec);
     if(!(file = fopen(path, "ab+"))) {
         perror("Cannot open log file");
         return 0;
     }
 
-    count += info->nevents;
     fwrite(g_bufp->buffer, info->tail, 1, file);
     fclose(file); 
 

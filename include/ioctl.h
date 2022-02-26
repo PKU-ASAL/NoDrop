@@ -16,6 +16,6 @@
 #define SPR_IOCTL_READ_BUFFER_COUNT             _IO(SPR_IOCTL_MAGIC, 1)
 #define SPR_IOCTL_STOP_RECORDING                _IO(SPR_IOCTL_MAGIC, 2)
 #define SPR_IOCTL_START_RECORDING               _IO(SPR_IOCTL_MAGIC, 3)
-#define SPR_IOCTL_RESTORE_SECURITY              _IO(SPR_IOCTL_MAGIC, 4)
+#define SPR_IOCTL_EXIT_MONITOR                  _IO(SPR_IOCTL_MAGIC, 4)
 
 #endif //SPR_IOCTL_H_

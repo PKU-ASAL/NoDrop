@@ -60,6 +60,10 @@ int check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void 
                   void *arg);
 int load_monitor(const struct spr_kbuffer *buffer);
 int event_from_monitor(void);
+int spr_set_monitor_in(void);
+int spr_set_monitor_out(void);
+void spr_erase_monitor_status(void);
+
 
 // event.c
 #define NS_TO_SEC(_ns) ((_ns) / 1000000000)

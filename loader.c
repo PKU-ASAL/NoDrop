@@ -7,6 +7,7 @@
 #include <linux/spinlock.h>
 #include <linux/ktime.h>
 #include <linux/rbtree.h>
+#include <linux/slab.h>
 
 #include "pinject.h"
 #include "include/common.h"
@@ -20,6 +21,17 @@ static struct elf_phdr *monitor_elf_phdata, *interp_elf_phdata;
 static struct elfhdr   monitor_elf_ex, interp_elf_ex;
 static struct file *monitor, *interpreter;
 
+enum spr_monitor_status {
+    SPR_MONITOR_IN = 1,
+    SPR_MONITOR_OUT = 2,
+};
+static struct kmem_cache *inject_proc_cachep = NULL;
+static struct rb_root proc_root = RB_ROOT;
+static struct spr_inject_proc {
+    pid_t pid;
+    enum spr_monitor_status status;
+    struct rb_node node;
+};
 
 static int
 __check_mapping(struct vm_area_struct const * const vma, void *arg) {
@@ -42,14 +54,9 @@ __put_monitor_info(struct vm_area_struct const * const vma, void *arg) {
         return 0;
 
     infopack = (m_infopack __user *)vma->vm_start;
-    buffer = (struct spr_kbuffer *)arr[2];
+    buffer = (struct spr_kbuffer *)arr[1];
 
-    if (put_user((int)arr[0], (int __user *)&infopack->m_enter)) {
-        pr_err("cannot write __monitor_enter @ %n\n", &infopack->m_enter);
-        return 0;
-    }
-
-    if (copy_to_user((void __user *)&infopack->m_context, (void *)arr[1], sizeof(infopack->m_context))) {
+    if (copy_to_user((void __user *)&infopack->m_context, (void *)arr[0], sizeof(infopack->m_context))) {
         pr_err("cannot write __monitor_context @ %lx\n", &infopack->m_context);
         return 0;
     }
@@ -59,23 +66,6 @@ __put_monitor_info(struct vm_area_struct const * const vma, void *arg) {
         pr_err("cannot write __monitor_logmsg @ %lx\n", &infopack->m_buffer);
         return 0;
     }
-
-    return 1;
-}
-
-static int
-__check_monitor_enter(struct vm_area_struct const * const vma, void *arg) {
-    int monitor_enter;
-    vm_flags_t flags = vma->vm_flags;
-
-    if (flags & VM_EXEC)
-        return 0;
-
-    // get data from monitor's section `.monitor`
-    if(get_user(monitor_enter, (int __user *)vma->vm_start)) {
-        monitor_enter = -1;
-    }
-    *(int *)arg = monitor_enter;
 
     return 1;
 }
@@ -258,7 +248,6 @@ create_elf_tbls(struct elfhdr *exec,
 
     prepare_context(&context, regs);
     void *arg[] = {
-        (exec != NULL) ? (void *)1 : (void *)0,
         (void *)&context,
         (void *)log
     };
@@ -314,7 +303,7 @@ do_load_monitor(const struct pt_regs *reg,
                 interp_load_addr + interp_elf_ex.e_entry : 
                 load_addr + monitor_elf_ex.e_entry;
 
-    // pr_info("[%d] load monitor at %llx\nload interp at %llx\nentry = %llx", current->pid, load_addr, interp_load_addr, load_entry);
+    pr_info("[%d] load monitor at %llx\nload interp at %llx\nentry = %llx", current->pid, load_addr, interp_load_addr, load_entry);
 
     if (entry)  *entry = load_entry;
     if (load)   *load = load_addr;
@@ -326,19 +315,94 @@ out:
     return retval;
 }
 
-int event_from_monitor(void) {
-    int enter = 0;
-    int retval = SPR_EVENT_FROM_APPLICATION; // syscall from application
-    // Monitor called syscall
-    if (check_mapping(__check_monitor_enter, (void *)&enter) == 0) {
-        if (enter == 1) {
-            retval = SPR_EVENT_FROM_MONITOR; // syscall from monitor
-        } else if (enter == -1) {
-            pr_err("corrupted: cannot get monitor status!!\n");
-            ASSERT(false);
-            retval = SPR_FAILURE_BUG;
+static struct spr_inject_proc * __find_inject_proc(struct rb_root *root, pid_t pid) {
+    struct spr_inject_proc *p;
+    struct rb_node *node = root->rb_node;
+    while (node) {
+        p = rb_entry(node, struct spr_inject_proc, node); 
+        if (p->pid < pid)
+            node = node->rb_left;
+        else if (p->pid > pid)
+            node = node->rb_right;
+        else {
+            return p;
         }
     }
+    return NULL;
+}
+
+static int __set_monitor_status(struct task_struct *task, enum spr_monitor_status status) {
+    int retval;
+    struct spr_inject_proc *p, *cur;
+    struct rb_node **new, *parent;
+
+    parent = NULL;
+
+    new = &proc_root.rb_node;
+    while (*new) {
+        parent = *new;
+        cur = rb_entry(*new, struct spr_inject_proc, node);
+        if (cur->pid < task->pid)
+            new = &(*new)->rb_left;
+        else if (cur->pid > task->pid)
+            new = &(*new)->rb_right;
+        else {
+            cur->status = status;
+            goto success;
+        }
+    }
+
+    p = kmem_cache_alloc(inject_proc_cachep, GFP_KERNEL);
+    if (!p) {
+        retval = -ENOMEM;
+        goto out;
+    }
+    p->pid = task->pid;
+    p->status = status;
+    rb_link_node(&p->node, parent, new);
+    rb_insert_color(&p->node, &proc_root);
+
+success:
+    retval = LOAD_SUCCESS;
+
+out:
+    return retval;
+}
+
+int spr_set_monitor_in(void) {
+    return __set_monitor_status(current, SPR_MONITOR_IN);
+}
+
+int spr_set_monitor_out(void) {
+    return __set_monitor_status(current, SPR_MONITOR_OUT);
+}
+
+void spr_erase_monitor_status(void) {
+    struct spr_inject_proc *p = __find_inject_proc(&proc_root, current->pid);
+    if (p) {
+        rb_erase(&p->node, &proc_root);
+        kmem_cache_free(inject_proc_cachep, p);
+    }
+}
+
+int event_from_monitor(void) {
+    int retval = SPR_FAILURE_BUG;
+    struct spr_inject_proc *p = __find_inject_proc(&proc_root, current->pid);
+    if (!p)
+        return SPR_EVENT_FROM_APPLICATION;
+    
+    switch(p->status) {
+    case SPR_MONITOR_OUT:
+        retval = SPR_EVENT_FROM_APPLICATION;
+        break;
+    case SPR_MONITOR_IN:
+        retval = SPR_EVENT_FROM_MONITOR;
+        break;
+    default:
+        ASSERT(false);
+        break;
+    }
+
     return retval;
 }
 
@@ -347,7 +411,7 @@ load_monitor(const struct spr_kbuffer *buffer) {
     int retval;
     uint64_t entry, sp, load_addr, interp_load_addr;
     struct pt_regs *reg;
-    char *argv[] = { MONITOR_PATH, "--proc-type=secondary", "--log-level=1", NULL };
+    char *argv[] = { MONITOR_PATH, NULL };
 
     reg = current_pt_regs();
 
@@ -372,6 +436,10 @@ load_monitor(const struct spr_kbuffer *buffer) {
     }
 
 success:
+    retval = spr_set_monitor_in();
+    if (retval != LOAD_SUCCESS) {
+        goto out;
+    }
 
     spr_prepare_security();
 
@@ -492,6 +560,12 @@ int loader_init(void) {
     if (elf_load_phdrs(&interp_elf_ex, interpreter, &interp_elf_phdata))
         goto out_free_dentry;
 
+    inject_proc_cachep = kmem_cache_create("spr_inject_proc_cache", sizeof(struct spr_inject_proc), 0, SLAB_ACCOUNT, NULL);
+    if (!inject_proc_cachep) {
+        retval = -ENOMEM;
+        goto out_free_dentry;
+    }
+
 success:
     retval = 0;
 
@@ -529,4 +603,7 @@ void loader_destory(void) {
         kfree(monitor_elf_phdata);
     if (interp_elf_phdata)
         kfree(interp_elf_phdata);
+
+    if (inject_proc_cachep)
+        kmem_cache_destroy(inject_proc_cachep);
 }

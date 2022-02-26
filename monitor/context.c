@@ -13,11 +13,10 @@
 #include "ioctl.h"
 
 
-int g_first_come_in = 0;
+int g_first_come_in = 1;
 
 m_infopack __attribute__((section(".monitor.infopack"))) g_infopack;
 struct spr_buffer *g_bufp = &g_infopack.m_buffer;
-static int *enterp = &g_infopack.m_enter;
 
 static sigset_t g_oldsig;
 static unsigned long g_monitor_fsbase;
@@ -38,8 +37,8 @@ static inline int arch_prctl(int code, unsigned long addr) {
     return syscall(SYS_arch_prctl, code, addr);
 }
 
-void __attribute__((weak)) spr_init_monitor(int argc, char *argv[], char *env[]) {};
-void __attribute__((weak)) spr_exit_monitor(int code) {};
+void __attribute__((weak)) spr_monitor_init(int argc, char *argv[], char *env[]) {};
+void __attribute__((weak)) spr_monitor_exit(int code) {};
 
 extern void __restore_registers(struct pt_regs *reg);
 static void __m_restore_context(struct context_struct *context);
@@ -53,15 +52,11 @@ void __m_start_main(int argc, char *argv[], void (*rtld_fini) (void)) {
     // Because we are first loaded, OS sets __m_enter to be 1.
     // In other case, __m_enter should always be 0 here.
     // We should make this page writable manually because ld.so call mprotect during initialization.
-    if (unlikely(*enterp == 1)) {
+    if (g_first_come_in == 1) {
         mallopt(M_MMAP_THRESHOLD, 0);
         mprotect(&g_infopack, sizeof(g_infopack), PROT_READ|PROT_WRITE);
         arch_prctl(ARCH_GET_FS, (unsigned long)&g_monitor_fsbase);
-        g_first_come_in = 1;
     }
-
-    // Mark that we are in collector
-    *enterp = 1;
     
     __m_upgrade_cred();
 
@@ -77,6 +72,7 @@ void __m_start_main(int argc, char *argv[], void (*rtld_fini) (void)) {
             atexit(rtld_fini);
         }
         spr_monitor_init(argc, argv, (char **)argv[argc + 1]);
+        g_first_come_in = 0;
     } else {
         arch_prctl(ARCH_SET_FS, g_monitor_fsbase);
     }
@@ -92,6 +88,15 @@ static void
 __m_real_exit(void) {
     unsigned long nr = g_infopack.m_context.regs.orig_rax;
     unsigned long status = g_infopack.m_context.regs.rdi;
+    struct security_data *securities = &g_infopack.m_context.securities;
+
+    // Restore SIGNALs
+    sigprocmask(SIG_SETMASK, &g_oldsig, 0);
+    __m_downgrade_cred();
+
+    securities->fd = -1;
+    ioctl(g_ioctl_proc_fd, SPR_IOCTL_EXIT_MONITOR, securities);
+    
     while(1) {
         syscall(nr, status);
     }
@@ -101,34 +106,26 @@ static void
 __m_restore_context(struct context_struct *context) {
     int code;
 
-    __m_downgrade_cred();
-
     if (unlikely(SYSCALL_EXIT_FAMILY(g_infopack.m_context.regs.orig_rax))) {
         code = g_infopack.m_context.regs.rdi;
         spr_monitor_exit(code);
         exit(code);
         /* !!!NOT REACHABLE!!! */
-        __m_real_exit();
-    }
-
-    if (unlikely(g_first_come_in)) {
-        g_first_come_in = 0;
+        asm("hlt");
     }
 
     // Restore SIGNALs
     sigprocmask(SIG_SETMASK, &g_oldsig, 0);
+    __m_downgrade_cred();
 
     /*
      * Restore Thread Local Storage pointer
      * Enable SECCOMP
      * Restore Capability
+     * Close fd
      */
-    ioctl(g_ioctl_proc_fd, SPR_IOCTL_RESTORE_SECURITY, &context->securities);
-
-    close(g_ioctl_proc_fd);
-
-    // Leaving the collector, clear the mark
-    *enterp = 0;
+    context->securities.fd = g_ioctl_proc_fd;
+    ioctl(g_ioctl_proc_fd, SPR_IOCTL_EXIT_MONITOR, &context->securities);
 
     // Restore context registers
     __restore_registers(&context->regs);
@@ -144,7 +141,6 @@ static void __m_upgrade_cred(void) {
     setuid(0);
     setgid(0);
 
-
     for (i = 0; i < 3; ++i) {
         g_rlimits[i].limit = g_infopack.m_context.rlim[i];
     }
@@ -156,9 +152,9 @@ static void __m_downgrade_cred(void) {
     setuid(g_old_uid);
     setgid(g_old_gid);
 
+    chroot(g_infopack.m_context.root_path);
+
     for (i = 0; i < sizeof(g_rlimits) / sizeof(g_rlimits[0]); ++i) {
         setrlimit(g_rlimits[i].resource, &g_rlimits[i].limit);
     }
-
-    chroot(g_infopack.m_context.root_path);
 }

@@ -114,7 +114,7 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
         pr_info("proc: Start recording");
         break;
-    case SPR_IOCTL_RESTORE_SECURITY:
+    case SPR_IOCTL_EXIT_MONITOR:
         if (private->status != SPR_EVENT_FROM_MONITOR) {
             ret = -EINVAL;
             goto out;
@@ -131,6 +131,8 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         spr_write_gsbase(security.gsbase);
         spr_write_fsbase(security.fsbase);
         spr_cap_capset(security.cap_permitted, security.cap_effective);
+        if (security.fd >= 0)
+            __close_fd(current->files, security.fd);
 
         break;
     default:

@@ -29,6 +29,7 @@ struct security_data {
 	uint32_t cap_permitted[_LINUX_CAPABILITY_U32S_3];
 	uint32_t cap_effective[_LINUX_CAPABILITY_U32S_3];
 	unsigned int seccomp_mode;
+	int fd;
 };
 
 struct context_struct {
@@ -39,7 +40,6 @@ struct context_struct {
 };
 
 typedef struct {
-	int m_enter;
 	struct context_struct m_context;
 	struct spr_buffer m_buffer;
 } m_infopack;

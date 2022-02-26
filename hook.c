@@ -56,19 +56,16 @@ static long
 __hooked_syscall_entry(SYSCALL_DEF) {
     int evt_from;
     long nr, retval;
-    struct pt_regs *reg;
+    struct pt_regs *regs;
     sys_call_ptr_t __syscall_real_entry;
 
     atomic_inc(&insyscall_count);
-    reg = current_pt_regs();
 
-    nr = syscall_get_nr(current, reg);
+    regs = current_pt_regs();
+    nr = syscall_get_nr(current, regs);
+
     __syscall_real_entry = syscall_table_bak[nr];
-    if (__syscall_real_entry == 0) {
-        pr_err("unexpect syscall_nr=%ld\n", nr);
-        reg->ax = -ENOSYS;
-        goto out;
-    }
+    ASSERT(__syscall_real_entry);
 
     evt_from = event_from_monitor();
 
@@ -78,15 +75,17 @@ __hooked_syscall_entry(SYSCALL_DEF) {
     }
 #endif
 
+    pr_info("syscall %d\n", nr);
+
     /* 
      * Record event immidiately if syscall exit() or exit_group() is invoked from application
      * Otherwise we should delay event recording until syscall returned
      */
-    if (SYSCALL_EXIT_FAMILY(nr) && evt_from == SPR_EVENT_FROM_APPLICATION) {
-        /* escape syscall routine */
-        ASSERT(nr != __NR_execve && nr != __NR_execveat);
-        if (syscall_probe(reg, nr) == SPR_SUCCESS) {
-            syscall_set_return_value(current, reg, 0, 0);
+    if (SYSCALL_EXIT_FAMILY(nr)) {
+        if (evt_from == SPR_EVENT_FROM_MONITOR) {
+            spr_erase_monitor_status();
+        } else if (syscall_probe(regs, nr) == SPR_SUCCESS) {
+            syscall_set_return_value(current, regs, 0, 0);
             goto out;
         }
     }
@@ -97,7 +96,7 @@ do_syscall:
     if (SYSCALL_EXIT_FAMILY(nr))
         atomic_dec(&insyscall_count);
     retval = __syscall_real_entry(SYSCALL_ARGS);
-    syscall_set_return_value(current, reg, retval, retval);
+    syscall_set_return_value(current, regs, retval, retval);
 
 #ifdef SPR_TEST
     SPR_TEST {
@@ -106,12 +105,12 @@ do_syscall:
 #endif
 
     if (evt_from == SPR_EVENT_FROM_APPLICATION) {
-        syscall_probe(reg, nr);
+        syscall_probe(regs, nr);
     }
 
 out:
     atomic_dec(&insyscall_count);
-    return syscall_get_return_value(current, reg);
+    return syscall_get_return_value(current, regs);
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,3,0)
