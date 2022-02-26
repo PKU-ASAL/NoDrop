@@ -72,8 +72,15 @@ int init_buffer(struct spr_kbuffer *buffer);
 void free_buffer(struct spr_kbuffer *buffer);
 void reset_buffer(struct spr_kbuffer *buffer, int flags);
 
+// elf.c
+#define BAD_ADDR(x) ((unsigned long)(x) >= TASK_SIZE)
+
+int elf_load_phdrs(struct elfhdr *elf_ex, struct file *elf_file, struct elf_phdr **elf_phdrs);
+unsigned long elf_load_binary(struct elfhdr *elf_ex, struct file *binary, uint64_t *map_addr, unsigned long no_base, struct elf_phdr *elf_phdrs);
+void elf_reg_init(struct thread_struct *t, struct pt_regs *regs, const u16 ds);
+
 /*
- * Global functions - fillers.c
+ * fillers.c
  *
  * These are analogous to get_user(), copy_from_user() and strncpy_from_user(),
  * but they can't sleep, barf on page fault or be preempted

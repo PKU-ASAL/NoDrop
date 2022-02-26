@@ -13,6 +13,7 @@ $(MODULE)-objs := \
 	fillers.o \
 	events.o \
 	privil.o \
+	elf.o \
 	events_table.o \
 	fillers_table.o \
 	flags_table.o \
