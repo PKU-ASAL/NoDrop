@@ -585,7 +585,7 @@ do_load_monitor(const struct pt_regs *reg,
                 interp_load_addr + interp_elf_ex.e_entry : 
                 load_addr + monitor_elf_ex.e_entry;
 
-    pr_info("[%d] load monitor at %llx\nload interp at %llx\nentry = %llx", current->pid, load_addr, interp_load_addr, load_entry);
+    // pr_info("[%d] load monitor at %llx\nload interp at %llx\nentry = %llx", current->pid, load_addr, interp_load_addr, load_entry);
 
     if (entry)  *entry = load_entry;
     if (load)   *load = load_addr;
@@ -701,7 +701,7 @@ int loader_init(void) {
     // find INTERP segment
     for (i = 0; i < monitor_elf_ex.e_phnum; i++) {
         if (elf_ppnt->p_type == PT_INTERP) {
-            retval = -ENOEXEC;
+            retval = 0;
             if (elf_ppnt->p_filesz > PATH_MAX ||
                 elf_ppnt->p_filesz < 2)
                 goto out_free_monitor;

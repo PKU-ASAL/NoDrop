@@ -13,23 +13,21 @@
 #include "include/common.h"
 #include "include/events.h"
 
-#define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
-#define SPR_TEST if (!STR_EQU(current->comm, "a.out") && !STR_EQU(current->comm, "sshd"))
 
-int released;
+#define SPR_TEST if (!(STR_EQU(current->comm, "a.out") ||  STR_EQU(current->comm, "h2load")))
 
 static int filtered_syscall[] = { 
     __NR_write, __NR_read, 
-    __NR_execve, __NR_clone, __NR_fork, __NR_vfork, 
+    __NR_execve, 
+    __NR_clone, __NR_fork, __NR_vfork, 
     __NR_socket, __NR_bind, __NR_connect, __NR_listen, __NR_accept, __NR_accept4,
     __NR_sendto, __NR_recvfrom, __NR_sendmsg, __NR_recvmsg,
     __NR_exit, __NR_exit_group };
 static sys_call_ptr_t *syscall_table;
 static sys_call_ptr_t syscall_table_bak[NR_syscalls];
 
-static  DEFINE_RWLOCK(syscall_lock);
-#define enter_syscall(garbage) ({read_lock(&syscall_lock); NULL;})
-#define leave_syscall(garbage) ({read_unlock(&syscall_lock); NULL;})
+static atomic_t insyscall_count;
+int released;
 
 static int
 syscall_probe(struct pt_regs *regs, long id) {
@@ -59,10 +57,9 @@ __hooked_syscall_entry(SYSCALL_DEF) {
     int evt_from;
     long nr, retval;
     struct pt_regs *reg;
-    struct syscall_record *rec;
     sys_call_ptr_t __syscall_real_entry;
 
-    rec = enter_syscall();
+    atomic_inc(&insyscall_count);
     reg = current_pt_regs();
 
     nr = syscall_get_nr(current, reg);
@@ -72,6 +69,8 @@ __hooked_syscall_entry(SYSCALL_DEF) {
         reg->ax = -ENOSYS;
         goto out;
     }
+
+    evt_from = event_from_monitor();
 
 #ifdef SPR_TEST
     SPR_TEST {
@@ -83,12 +82,11 @@ __hooked_syscall_entry(SYSCALL_DEF) {
      * Record event immidiately if syscall exit() or exit_group() is invoked from application
      * Otherwise we should delay event recording until syscall returned
      */
-    evt_from = event_from_monitor();
     if (SYSCALL_EXIT_FAMILY(nr) && evt_from == SPR_EVENT_FROM_APPLICATION) {
         /* escape syscall routine */
         ASSERT(nr != __NR_execve && nr != __NR_execveat);
         if (syscall_probe(reg, nr) == SPR_SUCCESS) {
-            reg->ax = 0;
+            syscall_set_return_value(current, reg, 0, 0);
             goto out;
         }
     }
@@ -97,7 +95,7 @@ __hooked_syscall_entry(SYSCALL_DEF) {
 do_syscall:
 #endif
     if (SYSCALL_EXIT_FAMILY(nr))
-        leave_syscall(rec);
+        atomic_dec(&insyscall_count);
     retval = __syscall_real_entry(SYSCALL_ARGS);
     syscall_set_return_value(current, reg, retval, retval);
 
@@ -112,7 +110,7 @@ do_syscall:
     }
 
 out:
-    leave_syscall(rec);
+    atomic_dec(&insyscall_count);
     return syscall_get_return_value(current, reg);
 }
 
@@ -177,6 +175,8 @@ int hook_init() {
     released = 1;
     hook_syscall();
 
+    atomic_set(&insyscall_count, 0);
+
     return 0;
 }
 
@@ -184,7 +184,7 @@ void hook_destory() {
     restore_syscall();
 
     pr_info("Wait for processes to leave hook entry\n");
-    while(!write_trylock(&syscall_lock)) {
+    while(atomic_read(&insyscall_count) > 0) {
         cond_resched();
     }
 }

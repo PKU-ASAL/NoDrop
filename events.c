@@ -104,7 +104,7 @@ start:
 
 loading:
     if (load_monitor(buffer) == LOAD_SUCCESS) {
-        reset_buffer(buffer, 0, 0);
+        reset_buffer(buffer, SPR_INIT_INFO);
         if (restart)
             goto start;
         return SPR_SUCCESS;
@@ -153,7 +153,7 @@ int init_buffer(struct spr_kbuffer *buffer) {
         buffer->buffer[j] = 0;
     }
 
-    reset_buffer(buffer, 1, 1);
+    reset_buffer(buffer, SPR_INIT_INFO | SPR_INIT_COUNT | SPR_INIT_LOCK);
 
     pr_info("CPU buffer initialized, size = %d\n", BUFFER_SIZE);
     return 0;
@@ -180,17 +180,17 @@ void free_buffer(struct spr_kbuffer *buffer) {
     }
 }
 
-void reset_buffer(struct spr_kbuffer *buffer, int clean_count, int clean_lock) {
-    buffer->info->nevents = 0;
-    buffer->info->tail = 0;
-
-    if (clean_lock) {
-        mutex_init(&buffer->lock);
+void reset_buffer(struct spr_kbuffer *buffer, int flags) {
+    if (flags & SPR_INIT_INFO) {
+        buffer->info->nevents = 0;
+        buffer->info->tail = 0;
     }
 
-    if (clean_count) {
+    if (flags & SPR_INIT_COUNT)
         buffer->event_count = 0;
-    }
+
+    if (flags & SPR_INIT_LOCK)
+        mutex_init(&buffer->lock);
 }
 
 int event_buffer_init(void) {

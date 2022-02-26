@@ -100,6 +100,9 @@ __m_real_exit(void) {
 static void 
 __m_restore_context(struct context_struct *context) {
     int code;
+
+    __m_downgrade_cred();
+
     if (unlikely(SYSCALL_EXIT_FAMILY(g_infopack.m_context.regs.orig_rax))) {
         code = g_infopack.m_context.regs.rdi;
         spr_monitor_exit(code);
@@ -114,8 +117,6 @@ __m_restore_context(struct context_struct *context) {
 
     // Restore SIGNALs
     sigprocmask(SIG_SETMASK, &g_oldsig, 0);
-
-    __m_downgrade_cred();
 
     /*
      * Restore Thread Local Storage pointer
@@ -152,12 +153,12 @@ static void __m_upgrade_cred(void) {
 static void __m_downgrade_cred(void) {
     int i;
 
-    chroot(g_infopack.m_context.root_path);
-
     setuid(g_old_uid);
     setgid(g_old_gid);
 
     for (i = 0; i < sizeof(g_rlimits) / sizeof(g_rlimits[0]); ++i) {
         setrlimit(g_rlimits[i].resource, &g_rlimits[i].limit);
     }
+
+    chroot(g_infopack.m_context.root_path);
 }

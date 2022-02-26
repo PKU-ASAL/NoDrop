@@ -83,9 +83,8 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
     case SPR_IOCTL_CLEAR_BUFFER:
         for_each_present_cpu(cpu) {
             bufp = &per_cpu(buffer, cpu);
-            pr_info("cpu %d bufp %lx info %lx\n", cpu, bufp, bufp->info);
             mutex_lock(&bufp->lock);
-            reset_buffer(bufp, 1, 0);
+            reset_buffer(bufp, SPR_INIT_INFO | SPR_INIT_COUNT);
             mutex_unlock(&bufp->lock);
         }
 

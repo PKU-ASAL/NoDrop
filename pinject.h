@@ -5,6 +5,7 @@
 #include "include/common.h"
 #include "include/events.h"
 
+#define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
 #define ASSERT(expr) BUG_ON(!(expr))
 #define MONITOR_PATH "./monitor/monitor"
 
@@ -15,6 +16,10 @@
 #define SPR_FAILURE_INVALID_USER_MEMORY -4
 #define SPR_EVENT_FROM_MONITOR 1
 #define SPR_EVENT_FROM_APPLICATION 2
+
+#define SPR_INIT_INFO  (1 << 1)
+#define SPR_INIT_COUNT (1 << 2)
+#define SPR_INIT_LOCK  (1 << 3)
 
 typedef unsigned long syscall_arg_t;
 
@@ -65,7 +70,7 @@ void event_buffer_destory(void);
 int record_one_event(enum spr_event_type type, struct spr_event_data *event_datap);
 int init_buffer(struct spr_kbuffer *buffer);
 void free_buffer(struct spr_kbuffer *buffer);
-void reset_buffer(struct spr_kbuffer *buffer, int clean_count, int init_lock);
+void reset_buffer(struct spr_kbuffer *buffer, int flags);
 
 /*
  * Global functions - fillers.c

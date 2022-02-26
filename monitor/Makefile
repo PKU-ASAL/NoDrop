@@ -7,7 +7,7 @@ S_FILES := misc.S
 
 INCLUDE_PATH := -I. -I../include
 CFLAGS := $(INCLUDE_PATH) -std=gnu11 -fPIC -g -Og
-LDFLAGS := -nostartfiles -Wl,-Tscript_x86-64.ld -Wl,-znow
+LDFLAGS := -nostartfiles -Wl,-Tscript_x86-64.ld
 
 PKGCONF ?= pkg-config
 
