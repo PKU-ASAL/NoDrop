@@ -1,12 +1,11 @@
 #include <linux/kernel.h>
 #include <linux/kallsyms.h>
 #include <linux/ptrace.h>
-#include <asm/unistd.h>
-#include <asm/syscall.h>
 #include <linux/unistd.h>
 #include <linux/mm.h>
-#include <linux/spinlock.h>
 #include <linux/version.h>
+#include <asm/unistd.h>
+#include <asm/syscall.h>
 
 #include "pinject.h"
 #include "syscall.h"
@@ -75,8 +74,6 @@ __hooked_syscall_entry(SYSCALL_DEF) {
     }
 #endif
 
-    pr_info("syscall %d\n", nr);
-
     /* 
      * Record event immidiately if syscall exit() or exit_group() is invoked from application
      * Otherwise we should delay event recording until syscall returned
@@ -84,6 +81,7 @@ __hooked_syscall_entry(SYSCALL_DEF) {
     if (SYSCALL_EXIT_FAMILY(nr)) {
         if (evt_from == SPR_EVENT_FROM_MONITOR) {
             spr_erase_monitor_status();
+            release_monitor_info();
         } else if (syscall_probe(regs, nr) == SPR_SUCCESS) {
             syscall_set_return_value(current, regs, 0, 0);
             goto out;

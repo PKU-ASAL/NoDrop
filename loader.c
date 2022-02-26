@@ -8,6 +8,8 @@
 #include <linux/ktime.h>
 #include <linux/rbtree.h>
 #include <linux/slab.h>
+#include <linux/wait.h>
+#include <linux/mm.h>
 
 #include "pinject.h"
 #include "include/common.h"
@@ -28,10 +30,20 @@ enum spr_monitor_status {
 static struct kmem_cache *inject_proc_cachep = NULL;
 static struct rb_root proc_root = RB_ROOT;
 static struct spr_inject_proc {
-    pid_t pid;
-    enum spr_monitor_status status;
+    struct task_struct *task;
     struct rb_node node;
+    enum spr_monitor_status status;
 };
+
+static struct kmem_cache *mm_wait_struct_cachep = NULL;
+static struct rb_root mm_wait_struct_root = RB_ROOT;
+static struct spr_mm_wait_struct {
+    struct mm_struct *mm;
+    struct rb_node node;
+    wait_queue_head_t wait_tasks;
+    atomic_t nwaittings;
+};
+
 
 static int
 __check_mapping(struct vm_area_struct const * const vma, void *arg) {
@@ -127,9 +139,10 @@ create_elf_tbls(struct elfhdr *exec,
     elf_addr_t __user *sp;
     elf_addr_t __user *u_rand_bytes;
     elf_addr_t *elf_info = NULL;
+    struct context_struct *context = NULL;
+
     unsigned char k_rand_bytes[16];
 
-    struct context_struct context;
 
     p = original_rsp = regs->sp;
 
@@ -165,7 +178,7 @@ create_elf_tbls(struct elfhdr *exec,
     */
     elf_info_idx = 0;
     if (exec && interpreter) {
-        elf_info = kmalloc(sizeof(elf_addr_t) * 12 * 2, GFP_KERNEL);
+        elf_info = vmalloc(sizeof(elf_addr_t) * 12 * 2);
         if (!elf_info)
             goto err;
         INSERT_AUX_ENT(AT_HWCAP, ELF_HWCAP);
@@ -246,20 +259,28 @@ create_elf_tbls(struct elfhdr *exec,
         goto err;
     }
 
-    prepare_context(&context, regs);
+
+    context = vmalloc(sizeof(struct context_struct));
+    if (!context) 
+        goto err;
+
+    prepare_context(context, regs);
     void *arg[] = {
-        (void *)&context,
+        (void *)context,
         (void *)log
     };
     if (check_mapping(__put_monitor_info, (void *)arg)) {
         goto err;
     }
 
+    vfree(context);
     return 0;
 err:
     *target_sp = original_rsp;
     if (elf_info)
-        kfree(elf_info);
+        vfree(elf_info);
+    if (context)
+        vfree(context);
     return -EFAULT;
 }
 
@@ -303,7 +324,7 @@ do_load_monitor(const struct pt_regs *reg,
                 interp_load_addr + interp_elf_ex.e_entry : 
                 load_addr + monitor_elf_ex.e_entry;
 
-    pr_info("[%d] load monitor at %llx\nload interp at %llx\nentry = %llx", current->pid, load_addr, interp_load_addr, load_entry);
+    // pr_info("[%d] load monitor at %llx\nload interp at %llx\nentry = %llx", current->pid, load_addr, interp_load_addr, load_entry);
 
     if (entry)  *entry = load_entry;
     if (load)   *load = load_addr;
@@ -320,9 +341,9 @@ static struct spr_inject_proc * __find_inject_proc(struct rb_root *root, pid_t p
     struct rb_node *node = root->rb_node;
     while (node) {
         p = rb_entry(node, struct spr_inject_proc, node); 
-        if (p->pid < pid)
+        if (p->task->pid < pid)
             node = node->rb_left;
-        else if (p->pid > pid)
+        else if (p->task->pid > pid)
             node = node->rb_right;
         else {
             return p;
@@ -342,9 +363,9 @@ static int __set_monitor_status(struct task_struct *task, enum spr_monitor_statu
     while (*new) {
         parent = *new;
         cur = rb_entry(*new, struct spr_inject_proc, node);
-        if (cur->pid < task->pid)
+        if (cur->task->pid < task->pid)
             new = &(*new)->rb_left;
-        else if (cur->pid > task->pid)
+        else if (cur->task->pid > task->pid)
             new = &(*new)->rb_right;
         else {
             cur->status = status;
@@ -357,7 +378,7 @@ static int __set_monitor_status(struct task_struct *task, enum spr_monitor_statu
         retval = -ENOMEM;
         goto out;
     }
-    p->pid = task->pid;
+    p->task = task;
     p->status = status;
     rb_link_node(&p->node, parent, new);
     rb_insert_color(&p->node, &proc_root);
@@ -367,6 +388,88 @@ success:
 
 out:
     return retval;
+}
+
+static struct spr_mm_wait_struct *__find_mm_wait_struct(struct rb_root *root, struct mm_struct *mm) {
+    struct spr_mm_wait_struct *p;
+    struct rb_node *node = root->rb_node;
+    while (node) {
+        p = rb_entry(node, struct spr_mm_wait_struct, node); 
+        if ((u64)p->mm < (u64)mm)
+            node = node->rb_left;
+        else if ((u64)p->mm > (u64)mm)
+            node = node->rb_right;
+        else {
+            return p;
+        }
+    }
+    return NULL; 
+}
+
+#define get_current_mm_wait_struct() get_mm_wait_struct(current->mm)
+static inline struct spr_mm_wait_struct *get_mm_wait_struct(struct mm_struct *mm) {
+    struct spr_mm_wait_struct *p, *cur;
+    struct rb_node **new, *parent;
+
+    parent = NULL;
+    new = &mm_wait_struct_root.rb_node;
+    while (*new) {
+        parent = *new;
+        cur = rb_entry(*new, struct spr_mm_wait_struct, node);
+        if ((u64)cur->mm < (u64)mm)
+            new = &(*new)->rb_left;
+        else if ((u64)cur->mm > (u64)mm)
+            new = &(*new)->rb_right;
+        else return cur;
+    }
+
+    p = kmem_cache_alloc(mm_wait_struct_cachep, GFP_KERNEL);
+    if (p) {
+        p->mm = mm;
+        p->wait_tasks = (wait_queue_head_t)__WAIT_QUEUE_HEAD_INITIALIZER(p->wait_tasks);
+        atomic_set(&p->nwaittings, 0);
+        rb_link_node(&p->node, parent, new);
+        rb_insert_color(&p->node, &mm_wait_struct_root);
+    }
+    return p;
+}
+
+static inline void put_mm_wait_struct(struct spr_mm_wait_struct *wait_mm) {
+    if (wait_mm && atomic_read(&wait_mm->nwaittings) == 0) {
+        rb_erase(&wait_mm->node, &mm_wait_struct_root);
+        kmem_cache_free(mm_wait_struct_cachep, wait_mm);
+    }
+}
+
+int claim_monitor_info(void) {
+    int retval;
+    struct spr_mm_wait_struct *wait_mm;
+
+    retval = -ENOMEM;
+    wait_mm = get_current_mm_wait_struct();
+    if (!wait_mm) {
+        goto out;
+    }
+
+    might_sleep();
+    if (atomic_inc_return(&wait_mm->nwaittings) == 1)
+        goto success;
+
+    ___wait_event(wait_mm->wait_tasks, atomic_read(&wait_mm->nwaittings) == 1, 
+            TASK_UNINTERRUPTIBLE, WQ_FLAG_EXCLUSIVE, 0, schedule());
+        
+success:
+    retval = SPR_SUCCESS;
+out:
+    return retval;
+}
+
+void release_monitor_info(void) {
+    struct spr_mm_wait_struct *wait_mm = __find_mm_wait_struct(&mm_wait_struct_root, current->mm);
+    ASSERT(wait_mm);
+    atomic_dec(&wait_mm->nwaittings);
+    wake_up(&wait_mm->wait_tasks);
+    put_mm_wait_struct(wait_mm);
 }
 
 int spr_set_monitor_in(void) {
@@ -416,13 +519,23 @@ load_monitor(const struct spr_kbuffer *buffer) {
     reg = current_pt_regs();
 
     if(check_mapping(__check_mapping, (void *)&entry) == 0) {
-        retval = create_elf_tbls(NULL, 0, 0, &sp, reg, buffer, argv);
-        if (retval == LOAD_SUCCESS) {
-            entry += monitor_elf_ex.e_entry;
-            goto success;
-        } else {
+        retval = spr_set_monitor_in();
+        if (retval != LOAD_SUCCESS) {
             goto out;
         }
+
+        retval = claim_monitor_info();
+        if (retval != SPR_SUCCESS) {
+            goto out_set_monitor_out;
+        }
+
+        retval = create_elf_tbls(NULL, 0, 0, &sp, reg, buffer, argv);
+        if (retval != LOAD_SUCCESS) {
+            goto out_release_monitor_info;
+        }
+
+        entry += monitor_elf_ex.e_entry;
+        goto success;
     }
 
     retval = do_load_monitor(reg, &entry, &load_addr, &interp_load_addr);
@@ -430,17 +543,22 @@ load_monitor(const struct spr_kbuffer *buffer) {
         goto out;
     }
 
-    retval = create_elf_tbls(&monitor_elf_ex, load_addr, interp_load_addr, &sp, reg, buffer, argv);
-    if(retval != LOAD_SUCCESS) {
-        goto out;
-    }
-
-success:
     retval = spr_set_monitor_in();
     if (retval != LOAD_SUCCESS) {
         goto out;
     }
 
+    retval = claim_monitor_info();
+    if (retval != SPR_SUCCESS) {
+        goto out_set_monitor_out;
+    }
+
+    retval = create_elf_tbls(&monitor_elf_ex, load_addr, interp_load_addr, &sp, reg, buffer, argv);
+    if(retval != LOAD_SUCCESS) {
+        goto out_release_monitor_info;
+    }
+
+success:
     spr_prepare_security();
 
     elf_reg_init(&current->thread, reg, 0);
@@ -448,11 +566,14 @@ success:
     reg->cx = reg->ip = entry;
 
     retval = LOAD_SUCCESS;
+    return retval;
 
+out_release_monitor_info:
+    release_monitor_info();
+out_set_monitor_out:
+    spr_set_monitor_out();
 out:
-    if (retval != LOAD_SUCCESS) {
-        pr_err("(%d)load_monitor: cannot transfer logging buffer", smp_processor_id());
-    }
+    pr_err("(%d)load_monitor: cannot transfer logging buffer, reason %d", smp_processor_id(), retval);
     return retval;
 }
 
@@ -563,7 +684,13 @@ int loader_init(void) {
     inject_proc_cachep = kmem_cache_create("spr_inject_proc_cache", sizeof(struct spr_inject_proc), 0, SLAB_ACCOUNT, NULL);
     if (!inject_proc_cachep) {
         retval = -ENOMEM;
-        goto out_free_dentry;
+        goto out_free_mem_cache;
+    }
+
+    mm_wait_struct_cachep = kmem_cache_create("spr_mm_wait_struct_cache", sizeof(struct spr_mm_wait_struct), 0, SLAB_ACCOUNT, NULL);
+    if (!mm_wait_struct_cachep) {
+        retval = -ENOMEM;
+        goto out_free_mem_cache;
     }
 
 success:
@@ -572,6 +699,11 @@ success:
 out:
     return retval;
 
+out_free_mem_cache:
+    if (mm_wait_struct_cachep)
+        kmem_cache_destroy(mm_wait_struct_cachep);
+    if (inject_proc_cachep)
+        kmem_cache_destroy(inject_proc_cachep);
 out_free_dentry:
     allow_write_access(interpreter);
     if (interpreter)
@@ -604,6 +736,8 @@ void loader_destory(void) {
     if (interp_elf_phdata)
         kfree(interp_elf_phdata);
 
+    if (mm_wait_struct_cachep)
+        kmem_cache_destroy(mm_wait_struct_cachep);
     if (inject_proc_cachep)
         kmem_cache_destroy(inject_proc_cachep);
 }

@@ -63,6 +63,8 @@ int event_from_monitor(void);
 int spr_set_monitor_in(void);
 int spr_set_monitor_out(void);
 void spr_erase_monitor_status(void);
+int claim_monitor_info(void);
+void release_monitor_info(void);
 
 
 // event.c
