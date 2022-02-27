@@ -13,7 +13,6 @@
 #include "include/ioctl.h"
 
 
-#define BUFSIZE 30
 
 static struct proc_dir_entry *ent;
 typedef struct  {
@@ -45,22 +44,27 @@ static int spr_procopen(struct inode *inode, struct file *filp)
 
 static ssize_t
 spr_procread(struct file *filp, char __user *buf, size_t count, loff_t *off) {
-    int len = 0;
-    unsigned int event_id, cpu;
+#define BUFSIZE 50
+    int len;
+    unsigned int cpu;
+    uint64_t event_count, unflushed_count;
     char kbuf[BUFSIZE];
 
     if (*off > 0 || count < BUFSIZE)
         return 0;
 
-    event_id = 0;
+    event_count = unflushed_count = 0;
     for_each_present_cpu(cpu) {
         struct spr_kbuffer *bufp = &per_cpu(buffer, cpu);
         mutex_lock(&bufp->lock);
-        event_id += bufp->event_count;
+        event_count += bufp->event_count;
+        unflushed_count += bufp->info->nevents;
         mutex_unlock(&bufp->lock);
     }
 
-    len += sprintf(kbuf, "%u", event_id);
+    len = sprintf(kbuf, "%llu,%llu", event_count, unflushed_count);
+    if (len > BUFSIZE)
+        len = BUFSIZE;
     if (copy_to_user(buf, kbuf, len))
         return -EFAULT;
     
@@ -72,10 +76,13 @@ static long
 spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
     int ret;
-    uint64_t count;
     unsigned int cpu;
-    struct security_data security;
+    uint64_t count;
+    char *ptr;
     struct spr_kbuffer *bufp;
+    struct security_data security;
+    struct buffer_count_info cinfo;
+    struct fetch_buffer_struct fetch;
     spr_private_data_t *private = filp->private_data;
 
 
@@ -90,16 +97,53 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
         pr_info("proc: clean buffer");
         break;
-    case SPR_IOCTL_READ_BUFFER_COUNT:
+
+    case SPR_IOCTL_FETCH_BUFFER:
+        if (spr_copy_from_user((void *)&fetch, (void *)arg, sizeof(fetch))) {
+            ret = -EINVAL;
+            goto out;
+        }
         count = 0;
+        ptr = fetch.buf;
         for_each_present_cpu(cpu) {
             bufp = &per_cpu(buffer, cpu);
             mutex_lock(&bufp->lock);
-            count += bufp->event_count;
+            if (count + bufp->info->tail <= fetch.len) {
+                if (copy_to_user((void *)ptr, (void *)bufp->buffer, bufp->info->tail)) {
+                    mutex_unlock(&bufp->lock);
+                    ret = -EFAULT;
+                    goto out;
+                }
+                ptr += bufp->info->tail;
+                count += bufp->info->tail;
+                mutex_unlock(&bufp->lock);
+            } else {
+                mutex_unlock(&bufp->lock);
+                break;
+            }
+        }
+
+        fetch.len = count;
+        if (copy_to_user((void *)ptr, (void *)&fetch, sizeof(fetch))) {
+            ret = -EINVAL;
+            goto out;
+        }
+
+        ret = 0;
+        break;
+    
+    case SPR_IOCTL_READ_BUFFER_COUNT_INFO:
+        memset(&cinfo, 0, sizeof(cinfo));
+        for_each_present_cpu(cpu) {
+            bufp = &per_cpu(buffer, cpu);
+            mutex_lock(&bufp->lock);
+            cinfo.event_count += bufp->event_count;
+            cinfo.unflushed_count += bufp->info->nevents;
+            cinfo.unflushed_len += bufp->info->tail;
             mutex_unlock(&bufp->lock);
         }
 
-        if (put_user(count, (typeof(count) *)arg)) {
+        if (copy_to_user((void *)arg, (void *)&cinfo, sizeof(cinfo))) {
             ret = -EINVAL;
             goto out;
         }

@@ -94,6 +94,7 @@ void elf_reg_init(struct thread_struct *t, struct pt_regs *regs, const u16 ds);
 #define spr_get_user(x, ptr) (spr_copy_from_user(&x, ptr, sizeof(x)) ? -EFAULT : 0)
 unsigned long spr_copy_from_user(void *to, const void __user *from, unsigned long n);
 long spr_strncpy_from_user(char *to, const char __user *from, unsigned long n);
+void memory_dump(char *p, size_t size);
 
 // syscall_table.c
 #define SYSCALL_TABLE_ID0 0

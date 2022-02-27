@@ -15,6 +15,7 @@
 #include <stdint.h>
 #endif
 
+
 #define MAX_LOG_LENGTH  128
 #define MAX_LOG_NR		1024
  
@@ -22,6 +23,7 @@
 
 #define likely(x) 	__builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
+
 
 struct security_data {
 	unsigned long fsbase;

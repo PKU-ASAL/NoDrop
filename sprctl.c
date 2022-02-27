@@ -1,42 +1,80 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <fcntl.h>
 #include <sys/types.h>
 
 #include "include/ioctl.h"
 
 int main(int argc, char *argv[]) {
-    unsigned long long count;
     int fd;
+    int ret;
+    FILE *file;
+    struct buffer_count_info cinfo;
+    struct fetch_buffer_struct fetch;
 
     if (argc < 2) {
-        printf("Usage: sprctl <cmd>\n");
+        fprintf(stderr, "Usage: sprctl <cmd>\n");
         return 0;
     }
 
     fd = open("/proc/pinject", O_RDWR);
     if (fd < 0) {
-        printf("Cannot open /proc/pinject\n");
+        fprintf(stderr, "Cannot open /proc/pinject\n");
         return 127;
     }
 
     if (!strcmp(argv[1], "clean")) {
         if (!ioctl(fd, SPR_IOCTL_CLEAR_BUFFER, 0))
-            printf("Success\n");
+            fprintf(stderr, "Success\n");
+    } else if (!strcmp(argv[1], "fetch")) {
+        if ((ret = ioctl(fd, SPR_IOCTL_READ_BUFFER_COUNT_INFO, &cinfo))) {
+            fprintf(stderr, "Get Buffer Count Info failed, reason %d\n", ret);
+            return -1;
+        }
+
+        fetch.len = cinfo.unflushed_len;
+        fetch.buf = malloc(fetch.len);
+        if (!fetch.buf) {
+            fprintf(stderr, "Allocate memory failed\n");
+            return -1;
+        }
+
+        if ((ret = ioctl(fd, SPR_IOCTL_FETCH_BUFFER, &fetch))) {
+            fprintf(stderr, "Fetch Buffer failed, reason %d\n", ret);
+            return -1;
+        }
+
+        if (argc <= 2) file = stdout;
+        else file = fopen(argv[2], "wb");
+        if (!file) {
+            fprintf(stderr, "Cannot open file\n");
+            return -1;
+        }
+
+        if (fwrite(fetch.buf, fetch.len, 1, file) == 1) {
+            fprintf(stderr, "Write %lu bytes to file %s\n", fetch.len, argc <= 2 ? "stdout" : argv[2]);
+        } else {
+            fprintf(stderr, "Write to file %s failed\n", argc <= 2 ? "stdout" : argv[2]);
+        }
+
+        if (file != stdout)
+            fclose(file);
+
     } else if (!strcmp(argv[1], "count")) {
-        if (!ioctl(fd, SPR_IOCTL_READ_BUFFER_COUNT, &count)) {
-            printf("%lld\n", count);
+        if (!ioctl(fd, SPR_IOCTL_READ_BUFFER_COUNT_INFO, &cinfo)) {
+            printf("event_count=%lu,unflushed_count=%lu,unflushed_len=%lu\n", cinfo.event_count, cinfo.unflushed_count, cinfo.unflushed_len);
         }
     } else if (!strcmp(argv[1], "stop")) {
         if (!ioctl(fd, SPR_IOCTL_STOP_RECORDING, 0))
-            printf("Stopped\n");
+            fprintf(stderr, "Stopped\n");
 
     } else if (!strcmp(argv[1], "start")) {
         if (!ioctl(fd, SPR_IOCTL_START_RECORDING, 0))
-            printf("Start\n");
+            fprintf(stderr, "Start\n");
 
     } else {
-        printf("Unknown cmd %s\n", argv[1]);
+        fprintf(stderr, "Unknown cmd %s\n", argv[1]);
     }
 
     return 0;

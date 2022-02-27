@@ -317,8 +317,10 @@ void spr_monitor_init(int argc, char *argv[], char *env[]) {
 }
 
 int main() {
+    unsigned int tid;
     FILE *file;
-    sprintf(path, PATH_FMT, (unsigned int)syscall(SYS_gettid), tv.tv_sec * SECOND_IN_US + tv.tv_usec);
+    tid = (unsigned int)syscall(SYS_gettid);
+    sprintf(path, PATH_FMT, tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
     if(!(file = fopen(path, "ab+"))) {
         perror("Cannot open log file");
         return 0;

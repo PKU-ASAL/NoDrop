@@ -58,7 +58,7 @@
             len = max_arg_size;	\
     } while(0)
 
-static void memory_dump(char *p, size_t size)
+void memory_dump(char *p, size_t size)
 {
     unsigned int j;
 

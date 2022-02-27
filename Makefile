@@ -28,6 +28,7 @@ clean:
 load: all
 	sudo rmmod -f $(MODULE) 2> /dev/null || true
 	sudo insmod $(MODULE).ko
+	sudo rm -rf /tmp/pinject; mkdir /tmp/pinject
 
 debug:
 	make -C $(KDIR-debug) M=$(PWD) modules
