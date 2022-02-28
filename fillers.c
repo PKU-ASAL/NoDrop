@@ -664,7 +664,7 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
     u32 max_arg_size = args->arg_data_size;
 
     if (unlikely(args->curarg >= args->nargs)) {
-        pr_err("(%u)val_to_ring: too many arguments for event #%llu, type=%u, curarg=%u, nargs=%u tid:%u\n",
+        vpr_err("(%u)val_to_ring: too many arguments for event #%llu, type=%u, curarg=%u, nargs=%u tid:%u\n",
             smp_processor_id(),
             args->nevents,
             (u32)args->event_type,
@@ -940,7 +940,7 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
 
         break;
     default:
-        pr_err("val_to_ring: invalid argument type %d. Event %u (%s) might have less parameters than what has been declared in nargs\n",
+        vpr_err("val_to_ring: invalid argument type %d. Event %u (%s) might have less parameters than what has been declared in nargs\n",
             (int)g_event_info[args->event_type].params[args->curarg].type,
             (u32)args->event_type,
             g_event_info[args->event_type].name);
@@ -1547,13 +1547,13 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 
 			if (unlikely(!mm)) {
 				args->str_storage[0] = 0;
-				pr_info("f_proc_startupdate drop, mm=NULL\n");
+				vpr_info("f_proc_startupdate drop, mm=NULL\n");
 				return SPR_FAILURE_BUG;
 			}
 
 			if (unlikely(!mm->arg_end)) {
 				args->str_storage[0] = 0;
-				pr_info("f_proc_startupdate drop, mm->arg_end=NULL\n");
+				vpr_info("f_proc_startupdate drop, mm->arg_end=NULL\n");
 				return SPR_FAILURE_BUG;
 			}
 

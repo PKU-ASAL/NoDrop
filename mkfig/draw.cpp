@@ -124,8 +124,8 @@ int main(int argc, char *argv[]) {
     if (argc > 2) {
         nanoseconds start = evts.begin()->first;
         std::vector<nanoseconds> y;
-        for (int i = 0; i < 100; ++i)
-            y.emplace_back(evts[start + i + 10]);
+        for (int i = 0; i < 310; ++i)
+            y.emplace_back(evts[start + i]);
         plt::figure_size(1200, 500);
         plt::xlabel("Time (100ms)");
         plt::ylabel("Events number");

@@ -2,9 +2,25 @@
 #define PINJECT_H_
 
 #include <linux/ptrace.h>
+#include <linux/elf.h>
+
 #include "include/common.h"
 #include "include/events.h"
 
+// #define vpr_debug(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
+
+#define vpr_debug(fmt, ...)
+
+#define vpr_err(fmt, ...) vpr_log(err, fmt, ##__VA_ARGS__)
+#define vpr_info(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
+
+#define vpr_log(xxx, fmt, ...)					\
+do {								\
+		pr_##xxx("%s[%d]: " fmt, current->comm, current->pid, ##__VA_ARGS__);			\
+} while (0)
+
+//#define SPR_TEST(task) if (!(STR_EQU((task)->comm, "a.out") || STR_EQU((task)->comm, "sshd") ||  STR_EQU((task)->comm, "h2load")))
+#define SPR_TEST(task) if (!(task->cred->uid.val != 0))
 #define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
 #define ASSERT(expr) BUG_ON(!(expr))
 #define MONITOR_PATH "./monitor/monitor"
@@ -25,7 +41,11 @@ typedef unsigned long syscall_arg_t;
 
 // proc.c
 int  proc_init(void);
-void proc_destroy(void);
+void proc_destory(void);
+
+// trace.c
+int trace_register_init(void);
+void trace_register_destory(void);
 
 // privil.c
 unsigned int spr_get_seccomp(void);
@@ -60,15 +80,16 @@ int check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void 
                   void *arg);
 int load_monitor(const struct spr_kbuffer *buffer);
 int event_from_monitor(void);
-int spr_set_monitor_in(void);
-int spr_set_monitor_out(void);
-void spr_erase_monitor_status(void);
-int claim_monitor_info(void);
-void release_monitor_info(void);
+int spr_set_status_in(struct task_struct *task);
+int spr_set_status_out(struct task_struct *task);
+void spr_erase_status(struct task_struct *task);
+int spr_claim_mm(struct task_struct *task);
+void spr_release_mm(struct task_struct *task);
 
 
 // event.c
-#define NS_TO_SEC(_ns) ((_ns) / 1000000000)
+inline nanoseconds spr_nsecs(void);
+#define NS_TO_SEC(_ns) ((_ns) / SECOND_IN_NS)
 #define SECOND_IN_NS 1000000000 // 1s = 1e9ns
 
 int event_buffer_init(void);

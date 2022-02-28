@@ -90,6 +90,7 @@ __m_real_exit(void) {
     unsigned long status = g_infopack.m_context.regs.rdi;
     struct security_data *securities = &g_infopack.m_context.securities;
 
+
     // Restore SIGNALs
     sigprocmask(SIG_SETMASK, &g_oldsig, 0);
     __m_downgrade_cred();
@@ -97,9 +98,7 @@ __m_real_exit(void) {
     securities->fd = -1;
     ioctl(g_ioctl_proc_fd, SPR_IOCTL_EXIT_MONITOR, securities);
     
-    while(1) {
-        syscall(nr, status);
-    }
+    syscall(nr, status);
 }
 
 static void 
@@ -109,7 +108,7 @@ __m_restore_context(struct context_struct *context) {
     if (unlikely(SYSCALL_EXIT_FAMILY(g_infopack.m_context.regs.orig_rax))) {
         code = g_infopack.m_context.regs.rdi;
         spr_monitor_exit(code);
-        exit(code);
+        __m_real_exit();
         /* !!!NOT REACHABLE!!! */
         asm("hlt");
     }

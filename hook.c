@@ -1,9 +1,10 @@
 #include <linux/kernel.h>
+#include <linux/version.h>
 #include <linux/kallsyms.h>
 #include <linux/ptrace.h>
 #include <linux/unistd.h>
+#include <linux/delay.h>
 #include <linux/mm.h>
-#include <linux/version.h>
 #include <asm/unistd.h>
 #include <asm/syscall.h>
 
@@ -12,8 +13,6 @@
 #include "include/common.h"
 #include "include/events.h"
 
-
-#define SPR_TEST if (!(STR_EQU(current->comm, "a.out") ||  STR_EQU(current->comm, "h2load")))
 
 static int filtered_syscall[] = { 
     __NR_write, __NR_read, 
@@ -66,23 +65,21 @@ __hooked_syscall_entry(SYSCALL_DEF) {
     __syscall_real_entry = syscall_table_bak[nr];
     ASSERT(__syscall_real_entry);
 
-    evt_from = event_from_monitor();
-
 #ifdef SPR_TEST
-    SPR_TEST {
+    SPR_TEST(current) {
         goto do_syscall;
     }
 #endif
 
+    evt_from = event_from_monitor();
+
+    vpr_debug("syscall %d, from %d\n", nr, evt_from);
     /* 
      * Record event immidiately if syscall exit() or exit_group() is invoked from application
      * Otherwise we should delay event recording until syscall returned
      */
-    if (SYSCALL_EXIT_FAMILY(nr)) {
-        if (evt_from == SPR_EVENT_FROM_MONITOR) {
-            spr_erase_monitor_status();
-            release_monitor_info();
-        } else if (syscall_probe(regs, nr) == SPR_SUCCESS) {
+    if (SYSCALL_EXIT_FAMILY(nr) && evt_from == SPR_EVENT_FROM_APPLICATION) {
+        if (syscall_probe(regs, nr) == SPR_SUCCESS) {
             syscall_set_return_value(current, regs, 0, 0);
             goto out;
         }
@@ -97,7 +94,7 @@ do_syscall:
     syscall_set_return_value(current, regs, retval, retval);
 
 #ifdef SPR_TEST
-    SPR_TEST {
+    SPR_TEST(current) {
         goto out;
     }
 #endif
@@ -178,10 +175,14 @@ int hook_init() {
 }
 
 void hook_destory() {
+    int now;
     restore_syscall();
 
-    pr_info("Wait for processes to leave hook entry\n");
-    while(atomic_read(&insyscall_count) > 0) {
-        cond_resched();
+    vpr_info("Wait for processes to leave hook entry\n");
+    for(;;) {
+        now = atomic_read(&insyscall_count);
+        vpr_info("insyscall count %d\n", now);
+        if (now <= 0) break;
+        msleep(1000);
     }
 }

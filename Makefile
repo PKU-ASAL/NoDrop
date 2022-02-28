@@ -10,6 +10,7 @@ $(MODULE)-objs := \
 	loader.o \
 	hook.o \
 	proc.o \
+	trace.o \
 	fillers.o \
 	events.o \
 	privil.o \

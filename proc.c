@@ -1,6 +1,8 @@
+#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/uaccess.h>
 #include <linux/proc_fs.h>
+#include <linux/fdtable.h>
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <linux/mutex.h>
@@ -175,8 +177,15 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         spr_write_gsbase(security.gsbase);
         spr_write_fsbase(security.fsbase);
         spr_cap_capset(security.cap_permitted, security.cap_effective);
-        if (security.fd >= 0)
-            __close_fd(current->files, security.fd);
+        if (security.fd >= 0) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
+            ksys_close(security.fd);
+#else
+            sys_close(security.fd);
+#endif
+            spr_set_status_out(current);
+            spr_release_mm(current);
+        }
 
         break;
     default:
@@ -219,7 +228,7 @@ int proc_init(void) {
     return ret;
 }
 
-void proc_destroy(void) {
+void proc_destory(void) {
     if (ent) {
         proc_remove(ent);
     }

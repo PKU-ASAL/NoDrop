@@ -67,7 +67,7 @@ start:
     if (g_spr_events[event_type].filler_callback) {
         cbret = g_spr_events[event_type].filler_callback(&args);
     } else {
-        pr_err("corrupted filler for event type %d: NULL callback\n", event_type);
+        vpr_err("corrupted filler for event type %d: NULL callback\n", event_type);
         ASSERT(0);
     }
 
@@ -90,7 +90,7 @@ start:
                 goto loading;
             }
         } else {
-            pr_err("corrupted filler for event type %d (added %u args, should have added %u args)\n",
+            vpr_err("corrupted filler for event type %d (added %u args, should have added %u args)\n",
                     event_type,
                     args.curarg,
                     args.nargs);
@@ -113,7 +113,7 @@ loading:
     }
 }
 
-static inline nanoseconds spr_nsecs(void) {
+inline nanoseconds spr_nsecs(void) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 17, 0)
 	return ktime_get_real_ns();
 #else
@@ -131,21 +131,21 @@ int init_buffer(struct spr_kbuffer *buffer) {
     buffer->str_storage = (char *)__get_free_page(GFP_USER);
     if (!buffer->str_storage) {
         ret = -ENOMEM;
-		pr_err("Error allocating the string storage\n");
+		vpr_err("Error allocating the string storage\n");
         goto init_buffer_err;
     }
 
     buffer->info = vmalloc(sizeof(struct spr_buffer_info));
     if (!buffer->info) {
         ret = -ENOMEM;
-        pr_err("Error allocating buffer memory\n");
+        vpr_err("Error allocating buffer memory\n");
         goto init_buffer_err;
     }
 
     buffer->buffer = vmalloc(BUFFER_SIZE);
     if (!buffer->buffer) {
         ret = -ENOMEM;
-        pr_err("Error allocating buffer memory\n");
+        vpr_err("Error allocating buffer memory\n");
         goto init_buffer_err;
     }
 
