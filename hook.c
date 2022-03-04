@@ -15,7 +15,7 @@
 
 
 static int filtered_syscall[] = { 
-    __NR_write, __NR_read, 
+    __NR_write, __NR_read, __NR_open, __NR_close,
     __NR_execve, 
     __NR_clone, __NR_fork, __NR_vfork, 
     __NR_socket, __NR_bind, __NR_connect, __NR_listen, __NR_accept, __NR_accept4,
@@ -56,6 +56,7 @@ __hooked_syscall_entry(SYSCALL_DEF) {
     long nr, retval;
     struct pt_regs *regs;
     sys_call_ptr_t __syscall_real_entry;
+    struct spr_proc_status_struct *p = NULL;
 
     atomic_inc(&insyscall_count);
 
@@ -71,19 +72,17 @@ __hooked_syscall_entry(SYSCALL_DEF) {
     }
 #endif
 
-    evt_from = event_from_monitor();
-
-    vpr_debug("syscall %d, from %d\n", nr, evt_from);
+    evt_from = event_from_monitor(&p);
     /* 
      * Record event immidiately if syscall exit() or exit_group() is invoked from application
      * Otherwise we should delay event recording until syscall returned
      */
-    if (SYSCALL_EXIT_FAMILY(nr) && evt_from == SPR_EVENT_FROM_APPLICATION) {
-        if (syscall_probe(regs, nr) == SPR_SUCCESS) {
-            syscall_set_return_value(current, regs, 0, 0);
-            goto out;
-        }
-    }
+    // if (SYSCALL_EXIT_FAMILY(nr) && evt_from == SPR_EVENT_FROM_APPLICATION) {
+    //     if (syscall_probe(regs, nr) == SPR_SUCCESS) {
+    //         syscall_set_return_value(current, regs, 0, 0);
+    //         goto out;
+    //     }
+    // }
 
 #ifdef SPR_TEST
 do_syscall:
@@ -91,21 +90,28 @@ do_syscall:
     if (SYSCALL_EXIT_FAMILY(nr))
         atomic_dec(&insyscall_count);
     retval = __syscall_real_entry(SYSCALL_ARGS);
-    syscall_set_return_value(current, regs, retval, retval);
-
+    syscall_set_return_value(current, regs, 0, retval);
+    ASSERT(!SYSCALL_EXIT_FAMILY(nr));
 #ifdef SPR_TEST
     SPR_TEST(current) {
         goto out;
     }
 #endif
 
-    if (evt_from == SPR_EVENT_FROM_APPLICATION) {
+    vpr_dbg("syscall %ld, retval %ld\n", nr, retval);
+    if (p && p->status == SPR_MONITOR_RESTORE) {
+        spr_restore_context(p);
+        spr_set_status_out(current);
+        spr_release_mm(current);
+        vpr_dbg("restore context");
+        retval = syscall_get_return_value(current, regs);
+    } else if (evt_from == SPR_EVENT_FROM_APPLICATION) {
         syscall_probe(regs, nr);
     }
 
 out:
     atomic_dec(&insyscall_count);
-    return syscall_get_return_value(current, regs);
+    return retval;
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,3,0)

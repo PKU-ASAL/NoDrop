@@ -6,6 +6,7 @@
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <linux/mutex.h>
+#include <linux/signal.h>
 #include <asm/prctl.h>
 #include <asm/proto.h>
 
@@ -15,28 +16,17 @@
 #include "include/ioctl.h"
 
 
-
 static struct proc_dir_entry *ent;
-typedef struct  {
-    int status;
-} spr_private_data_t;
 
 static int spr_procopen(struct inode *inode, struct file *filp)
 {
-    int ret;
-    int status = event_from_monitor();
-    spr_private_data_t *private;
+    int ret, status;
+    struct spr_proc_status_struct *p;
 
+    status = event_from_monitor(&p);
     if (status == SPR_EVENT_FROM_APPLICATION || status == SPR_EVENT_FROM_MONITOR) {
-        private = vmalloc(sizeof(spr_private_data_t));
-        if (!private) {
-            ret = -ENOMEM;
-            pr_err("proc open: No memory for allocating private data");
-        } else {
-            ret = 0;
-            private->status = status;
-            filp->private_data = (void *)private;
-        }
+        ret = 0;
+        filp->private_data = (void *)p;
     } else {
         ret = -ENODEV;
     }
@@ -58,10 +48,10 @@ spr_procread(struct file *filp, char __user *buf, size_t count, loff_t *off) {
     event_count = unflushed_count = 0;
     for_each_present_cpu(cpu) {
         struct spr_kbuffer *bufp = &per_cpu(buffer, cpu);
-        mutex_lock(&bufp->lock);
+        down_read(&bufp->sem);
         event_count += bufp->event_count;
         unflushed_count += bufp->info->nevents;
-        mutex_unlock(&bufp->lock);
+        up_read(&bufp->sem);
     }
 
     len = sprintf(kbuf, "%llu,%llu", event_count, unflushed_count);
@@ -78,23 +68,21 @@ static long
 spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
     int ret;
-    unsigned int cpu;
-    uint64_t count;
     char *ptr;
+    uint64_t count;
+    unsigned int cpu;
     struct spr_kbuffer *bufp;
-    struct security_data security;
     struct buffer_count_info cinfo;
     struct fetch_buffer_struct fetch;
-    spr_private_data_t *private = filp->private_data;
-
+    struct spr_proc_status_struct *p = filp->private_data;
 
     switch(cmd) {
     case SPR_IOCTL_CLEAR_BUFFER:
         for_each_present_cpu(cpu) {
             bufp = &per_cpu(buffer, cpu);
-            mutex_lock(&bufp->lock);
+            down_write(&bufp->sem);
             reset_buffer(bufp, SPR_INIT_INFO | SPR_INIT_COUNT);
-            mutex_unlock(&bufp->lock);
+            up_write(&bufp->sem);
         }
 
         pr_info("proc: clean buffer");
@@ -109,18 +97,18 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         ptr = fetch.buf;
         for_each_present_cpu(cpu) {
             bufp = &per_cpu(buffer, cpu);
-            mutex_lock(&bufp->lock);
+            down_read(&bufp->sem);
             if (count + bufp->info->tail <= fetch.len) {
                 if (copy_to_user((void *)ptr, (void *)bufp->buffer, bufp->info->tail)) {
-                    mutex_unlock(&bufp->lock);
+                    up_read(&bufp->sem);
                     ret = -EFAULT;
                     goto out;
                 }
                 ptr += bufp->info->tail;
                 count += bufp->info->tail;
-                mutex_unlock(&bufp->lock);
+                up_read(&bufp->sem);
             } else {
-                mutex_unlock(&bufp->lock);
+                up_read(&bufp->sem);
                 break;
             }
         }
@@ -138,11 +126,11 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         memset(&cinfo, 0, sizeof(cinfo));
         for_each_present_cpu(cpu) {
             bufp = &per_cpu(buffer, cpu);
-            mutex_lock(&bufp->lock);
+            down_read(&bufp->sem);
             cinfo.event_count += bufp->event_count;
             cinfo.unflushed_count += bufp->info->nevents;
             cinfo.unflushed_len += bufp->info->tail;
-            mutex_unlock(&bufp->lock);
+            up_read(&bufp->sem);
         }
 
         if (copy_to_user((void *)arg, (void *)&cinfo, sizeof(cinfo))) {
@@ -161,31 +149,13 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         pr_info("proc: Start recording");
         break;
     case SPR_IOCTL_EXIT_MONITOR:
-        if (private->status != SPR_EVENT_FROM_MONITOR) {
-            ret = -EINVAL;
+        if (p->status != SPR_MONITOR_IN) {
+            ret = -EPERM;
             goto out;
         }
 
-        if (copy_from_user(&security, (void __user *)arg, sizeof(security))) {
-            ret = -EFAULT;
-            goto out;
-        }
-
-        if ((ret = spr_enable_seccomp(security.seccomp_mode))) 
-            goto out;
-
-        spr_write_gsbase(security.gsbase);
-        spr_write_fsbase(security.fsbase);
-        spr_cap_capset(security.cap_permitted, security.cap_effective);
-        if (security.fd >= 0) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
-            ksys_close(security.fd);
-#else
-            sys_close(security.fd);
-#endif
-            spr_set_status_out(current);
-            spr_release_mm(current);
-        }
+        spr_set_status_restore(current, arg);
+        vpr_info("exit monitor\n");
 
         break;
     default:
@@ -201,7 +171,6 @@ out:
 
 static int spr_procrelease(struct inode *inode, struct file *filp)
 {
-    vfree(filp->private_data);
     return 0;
 }
 

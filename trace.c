@@ -27,9 +27,9 @@ KPROBE_PRE_DEFINE(procexit_handler_pre, struct pt_regs *regs)
     }
 #endif
 
-	vpr_debug("procexit %d\n", p->pid);
-	spr_erase_status(p);
-	spr_release_mm(p);
+	vpr_dbg("procexit %d\n", p->pid);
+	if (spr_erase_status(p) == SPR_MONITOR_IN)
+        spr_release_mm(p);
     return 0;
 }
 

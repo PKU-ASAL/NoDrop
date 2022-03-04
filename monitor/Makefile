@@ -6,7 +6,7 @@ C_FILES := $(PRIM_C_FILES) context.c
 S_FILES := misc.S
 
 INCLUDE_PATH := -I. -I../include
-CFLAGS := $(INCLUDE_PATH) -std=gnu11 -fPIC -g -Og
+CFLAGS := $(INCLUDE_PATH) -std=gnu11 -fPIC -O3 -fno-stack-protector
 LDFLAGS := -nostartfiles -Wl,-Tscript_x86-64.ld
 
 PKGCONF ?= pkg-config

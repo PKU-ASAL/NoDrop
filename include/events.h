@@ -3,7 +3,7 @@
 
 #ifdef __KERNEL__
 #include <linux/kernel.h>
-#include <linux/mutex.h>
+#include <linux/rwsem.h>
 #else
 #include <stdint.h>
 #endif //__KERNEL__
@@ -751,8 +751,8 @@ struct spr_kbuffer {
     char *buffer;
 	char *str_storage;
     struct spr_buffer_info *info;
+	struct rw_semaphore sem;
 	uint64_t event_count;
-	struct mutex lock;
 };
 #endif //__KERNEL__
 

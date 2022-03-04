@@ -3,33 +3,33 @@
 
 #include <linux/ptrace.h>
 #include <linux/elf.h>
+#include <linux/signal.h>
+#include <linux/fs_struct.h>
 
 #include "include/common.h"
 #include "include/events.h"
 
-// #define vpr_debug(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
-
-#define vpr_debug(fmt, ...)
+#define vpr_dbg(fmt, ...)
+// // Uncomment the marco below and comment the marco above to print debug logs 
+// #define vpr_dbg(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
 
 #define vpr_err(fmt, ...) vpr_log(err, fmt, ##__VA_ARGS__)
 #define vpr_info(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
 
-#define vpr_log(xxx, fmt, ...)					\
-do {								\
-		pr_##xxx("%s[%d]: " fmt, current->comm, current->pid, ##__VA_ARGS__);			\
-} while (0)
+#define vpr_log(xxx, fmt, ...) pr_##xxx("(%d)%s[%d][%s:%d]: " fmt, smp_processor_id(), current->comm, current->pid, __func__, __LINE__, ##__VA_ARGS__)
 
-//#define SPR_TEST(task) if (!(STR_EQU((task)->comm, "a.out") || STR_EQU((task)->comm, "sshd") ||  STR_EQU((task)->comm, "h2load")))
-#define SPR_TEST(task) if (!(task->cred->uid.val != 0))
+#define SPR_TEST(task) if (!(STR_EQU((task)->comm, "a.out") || STR_EQU((task)->comm, "apache2")))
+// #define SPR_TEST(task) if (!(task->cred->uid.val != 0))
 #define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
 #define ASSERT(expr) BUG_ON(!(expr))
 #define MONITOR_PATH "./monitor/monitor"
 
 #define SPR_SUCCESS 0
-#define SPR_FAILURE_BUG -1
-#define SPR_FAILURE_BUFFER_FULL -2
-#define SPR_FAILURE_INVALID_EVENT -3
-#define SPR_FAILURE_INVALID_USER_MEMORY -4
+#define SPR_FAILURE -1
+#define SPR_FAILURE_BUG -2
+#define SPR_FAILURE_BUFFER_FULL -3
+#define SPR_FAILURE_INVALID_EVENT -4
+#define SPR_FAILURE_INVALID_USER_MEMORY -5
 #define SPR_EVENT_FROM_MONITOR 1
 #define SPR_EVENT_FROM_APPLICATION 2
 
@@ -38,6 +38,35 @@ do {								\
 #define SPR_INIT_LOCK  (1 << 3)
 
 typedef unsigned long syscall_arg_t;
+
+enum spr_proc_status {
+    SPR_MONITOR_IN = 1,
+    SPR_MONITOR_OUT = 2,
+	SPR_MONITOR_RESTORE = 3,
+};
+struct spr_proc_info {
+	struct pt_regs regs;
+	unsigned long fsbase;
+	unsigned long gsbase;
+
+	// following should be switched in kernel
+	unsigned int seccomp_mode;
+	sigset_t sigset;
+	kernel_cap_t cap_permitted;
+	kernel_cap_t cap_effective;
+	struct path root_path;
+};
+struct spr_proc_status_root {
+    struct rb_root root;
+    struct rw_semaphore sem;
+};
+struct spr_proc_status_struct {
+    enum spr_proc_status status;
+	pid_t pid;
+	int ioctl_fd;
+	struct spr_proc_info *info;
+    struct rb_node node;
+};
 
 // proc.c
 int  proc_init(void);
@@ -49,16 +78,9 @@ void trace_register_destory(void);
 
 // privil.c
 unsigned int spr_get_seccomp(void);
-void spr_disable_seccomp(void);
-int spr_enable_seccomp(unsigned int mode);
-void spr_write_gsbase(unsigned long gsbase);
-void spr_write_fsbase(unsigned long fsbase);
-void spr_cap_raise(void);
-void spr_cap_capset(u32 *permitted, u32 *effective);
 void spr_prepare_security(void);
-int prepare_root_path(char *path);
+void spr_restore_context(struct spr_proc_status_struct *p);
 void prepare_rlimit_data(struct rlimit *rlims);
-void prepare_security_data(struct security_data *security);
 
 // hook.c
 void hook_syscall(void);
@@ -79,15 +101,16 @@ void loader_destory(void);
 int check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg),
                   void *arg);
 int load_monitor(const struct spr_kbuffer *buffer);
-int event_from_monitor(void);
+int event_from_monitor(struct spr_proc_status_struct **proc);
 int spr_set_status_in(struct task_struct *task);
 int spr_set_status_out(struct task_struct *task);
-void spr_erase_status(struct task_struct *task);
+int spr_set_status_restore(struct task_struct *task, int fd);
+int spr_erase_status(struct task_struct *task);
 int spr_claim_mm(struct task_struct *task);
 void spr_release_mm(struct task_struct *task);
 
 
-// event.c
+// events.c
 inline nanoseconds spr_nsecs(void);
 #define NS_TO_SEC(_ns) ((_ns) / SECOND_IN_NS)
 #define SECOND_IN_NS 1000000000 // 1s = 1e9ns

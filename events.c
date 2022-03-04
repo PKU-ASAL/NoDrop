@@ -1,5 +1,6 @@
 #include <linux/version.h>
 #include <linux/kernel.h>
+#include <linux/semaphore.h>
 
 
 #include "pinject.h"
@@ -14,7 +15,6 @@ do_record_one_event(struct spr_kbuffer *buffer,
         struct spr_event_data *event_datap)
 {
     int cbret, restart;
-    int do_exit_syscall = 0;
     size_t event_size;
     uint32_t freespace; 
     struct event_filler_arguments args;
@@ -49,7 +49,6 @@ start:
     if (event_datap->category == SPRC_SYSCALL) {
         args.regs = event_datap->event_info.syscall_data.regs;
         args.syscall_nr = event_datap->event_info.syscall_data.id;
-        do_exit_syscall = SYSCALL_EXIT_FAMILY(syscall_get_nr(current, args.regs));
     } else {
         args.regs = NULL;
         args.syscall_nr = -1;
@@ -58,7 +57,7 @@ start:
     args.curarg = 0;
     args.arg_data_size = args.buffer_size - args.arg_data_offset;
     args.nevents = info->nevents;
-    args.snaplen = 16; // temporary MAGIC number
+    args.snaplen = 80; // temporary MAGIC number
 
     for(cbret = 0; cbret < args.nargs; ++cbret) {
         *(((uint16_t *)args.buf_ptr) + cbret) = 0;
@@ -84,11 +83,7 @@ start:
             info->tail += event_size;
             ++info->nevents;
             ++buffer->event_count;
-
-            if (do_exit_syscall) {
-                restart = 0;
-                goto loading;
-            }
+        
         } else {
             vpr_err("corrupted filler for event type %d (added %u args, should have added %u args)\n",
                     event_type,
@@ -190,7 +185,7 @@ void reset_buffer(struct spr_kbuffer *buffer, int flags) {
         buffer->event_count = 0;
 
     if (flags & SPR_INIT_LOCK)
-        mutex_init(&buffer->lock);
+        init_rwsem(&buffer->sem);
 }
 
 int event_buffer_init(void) {
@@ -220,7 +215,7 @@ int record_one_event(enum spr_event_type type, struct spr_event_data *event_data
 
     cpu = get_cpu();
     bufp = &per_cpu(buffer, cpu);
-    mutex_lock(&bufp->lock);
+    down_write(&bufp->sem);
 
     retval = do_record_one_event(bufp, type, ts, event_datap);
     if (retval != SPR_SUCCESS) {
@@ -229,7 +224,7 @@ int record_one_event(enum spr_event_type type, struct spr_event_data *event_data
                 bufp->info->nevents, bufp->info->tail);
     }
 
-    mutex_unlock(&bufp->lock);
+    up_write(&bufp->sem);
     put_cpu();
     return retval;
 }

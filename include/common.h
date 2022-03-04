@@ -16,9 +16,6 @@
 #endif
 
 
-#define MAX_LOG_LENGTH  128
-#define MAX_LOG_NR		1024
- 
 #define SYSCALL_EXIT_FAMILY(nr)     	((nr) == __NR_exit || (nr) == __NR_exit_group)
 
 #define likely(x) 	__builtin_expect(!!(x), 1)
@@ -28,6 +25,7 @@
 struct security_data {
 	unsigned long fsbase;
 	unsigned long gsbase;	
+	unsigned long sigset;
 	uint32_t cap_permitted[_LINUX_CAPABILITY_U32S_3];
 	uint32_t cap_effective[_LINUX_CAPABILITY_U32S_3];
 	unsigned int seccomp_mode;
@@ -36,9 +34,7 @@ struct security_data {
 
 struct context_struct {
 	struct pt_regs regs;
-	struct security_data securities;
 	struct rlimit rlim[3];
-	char root_path[PATH_MAX];
 };
 
 typedef struct {
