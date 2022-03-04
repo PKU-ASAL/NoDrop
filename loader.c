@@ -1,10 +1,9 @@
-#include <linux/sched/task_stack.h>
-#include <linux/sched.h>
-#include <linux/seq_file.h>
+#include <linux/elf.h>
+#include <linux/file.h>
 #include <linux/ptrace.h>
 #include <linux/binfmts.h>
 #include <linux/random.h>
-#include <linux/spinlock.h>
+#include <linux/slab.h>
 #include <linux/ktime.h>
 #include <linux/rbtree.h>
 
@@ -314,7 +313,7 @@ do_load_monitor(const struct pt_regs *reg,
                 interp_load_addr + interp_elf_ex.e_entry : 
                 load_addr + monitor_elf_ex.e_entry;
 
-    // pr_info("[%d] load monitor at %llx\nload interp at %llx\nentry = %llx", current->pid, load_addr, interp_load_addr, load_entry);
+    pr_info("[%d] load monitor at %llx\nload interp at %llx\nentry = %llx", current->pid, load_addr, interp_load_addr, load_entry);
 
     if (entry)  *entry = load_entry;
     if (load)   *load = load_addr;

@@ -58,7 +58,7 @@ start:
     args.curarg = 0;
     args.arg_data_size = args.buffer_size - args.arg_data_offset;
     args.nevents = info->nevents;
-    args.snaplen = 16; // temporary MAGIC number
+    args.snaplen = 80; // temporary MAGIC number
 
     for(cbret = 0; cbret < args.nargs; ++cbret) {
         *(((uint16_t *)args.buf_ptr) + cbret) = 0;
@@ -113,7 +113,7 @@ loading:
     }
 }
 
-static inline nanoseconds spr_nsecs(void) {
+inline nanoseconds spr_nsecs(void) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 17, 0)
 	return ktime_get_real_ns();
 #else

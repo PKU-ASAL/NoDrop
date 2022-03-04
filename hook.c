@@ -4,6 +4,7 @@
 #include <asm/unistd.h>
 #include <asm/syscall.h>
 #include <linux/unistd.h>
+#include <linux/delay.h>
 #include <linux/mm.h>
 #include <linux/spinlock.h>
 #include <linux/version.h>
@@ -14,7 +15,7 @@
 #include "include/events.h"
 
 
-#define SPR_TEST if (!(STR_EQU(current->comm, "a.out") ||  STR_EQU(current->comm, "h2load")))
+#define SPR_TEST if (!(STR_EQU(current->comm, "a.out") ||  STR_EQU(current->comm, "h2load") || STR_EQU(current->comm, "nginx")))
 
 static int filtered_syscall[] = { 
     __NR_write, __NR_read, 
@@ -181,10 +182,14 @@ int hook_init() {
 }
 
 void hook_destory() {
+    int now;
     restore_syscall();
 
     pr_info("Wait for processes to leave hook entry\n");
-    while(atomic_read(&insyscall_count) > 0) {
-        cond_resched();
+    for(;;) {
+        now = atomic_read(&insyscall_count);
+        pr_info("insyscall count %d\n", now);
+        if (now <= 0) break;
+        msleep(1000);
     }
 }

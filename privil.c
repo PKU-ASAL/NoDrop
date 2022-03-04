@@ -83,11 +83,14 @@ void spr_write_gsbase(unsigned long gsbase) {
 void prepare_security_data(struct security_data *security) {
     int i;
     struct cred *cred = current_cred();
+    sigset_t sigset;
 
+    sigprocmask(-1, 0, &sigset);
     *security = (struct security_data) {
         .fsbase = current->thread.fsbase,
         .gsbase = current->thread.gsbase,
         .seccomp_mode = seccomp_mode(&current->seccomp),
+        .sigset = sigset.sig[0],
     };
 
     for (i = 0; i < _KERNEL_CAPABILITY_U32S; ++i) {
@@ -132,9 +135,10 @@ int prepare_root_path(char *buf) {
     pathp = d_path(&old_path, buf, PATH_MAX);
     path_put(&old_path);
     if (IS_ERR(pathp)) {
+        spr_set_fs_root(current->fs, &old_path);
         return PTR_ERR(pathp);
     }
-    memmove(buf, pathp, strlen(pathp) + 1);
+    sprintf(buf, "%s", pathp);
 
     spr_set_fs_root(current->fs, &old_path);
     return 0;
@@ -150,6 +154,7 @@ void spr_disable_rlim(void) {
 
 void spr_prepare_security(void) {
     struct path real_path;
+    sigset_t sigset;
 
     spr_cap_raise();
     spr_disable_rlim();
@@ -157,4 +162,7 @@ void spr_prepare_security(void) {
 
     get_fs_root(init_task.fs, &real_path);
     spr_set_fs_root(current->fs, &real_path);
+
+    sigfillset(&sigset);
+    sigprocmask(SIG_SETMASK, &sigset, 0);
 }

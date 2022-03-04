@@ -13,13 +13,12 @@
 #include "ioctl.h"
 
 
-int g_first_come_in = 0;
+int g_first_come_in = 1;
 
 m_infopack __attribute__((section(".monitor.infopack"))) g_infopack;
 struct spr_buffer *g_bufp = &g_infopack.m_buffer;
 static int *enterp = &g_infopack.m_enter;
 
-static sigset_t g_oldsig;
 static unsigned long g_monitor_fsbase;
 static unsigned int g_old_uid, g_old_gid;
 
@@ -33,13 +32,14 @@ static struct {
     {RLIMIT_CPU}
 };
 
-void *__dso_handle = 0;
 static inline int arch_prctl(int code, unsigned long addr) {
     return syscall(SYS_arch_prctl, code, addr);
 }
 
-void __attribute__((weak)) spr_init_monitor(int argc, char *argv[], char *env[]) {};
-void __attribute__((weak)) spr_exit_monitor(int code) {};
+void spr_monitor_enter();
+void __attribute__((weak)) spr_monitor_init(int argc, char *argv[], char *env[]) {};
+void __attribute__((weak)) spr_monitor_exit(int code) {};
+void spr_monitor_return();
 
 extern void __restore_registers(struct pt_regs *reg);
 static void __m_restore_context(struct context_struct *context);
@@ -48,37 +48,29 @@ static void __m_upgrade_cred(void);
 static void __m_downgrade_cred(void);
 
 void __m_start_main(int argc, char *argv[], void (*rtld_fini) (void)) {
-    sigset_t newsig;
+    int i;
+    
+    *enterp = 1;
 
     // Because we are first loaded, OS sets __m_enter to be 1.
     // In other case, __m_enter should always be 0 here.
     // We should make this page writable manually because ld.so call mprotect during initialization.
-    if (unlikely(*enterp == 1)) {
+    if (unlikely(g_first_come_in == 1)) {
         mallopt(M_MMAP_THRESHOLD, 0);
-        mprotect(&g_infopack, sizeof(g_infopack), PROT_READ|PROT_WRITE);
         arch_prctl(ARCH_GET_FS, (unsigned long)&g_monitor_fsbase);
-        g_first_come_in = 1;
-    }
-
-    // Mark that we are in collector
-    *enterp = 1;
-    
-    __m_upgrade_cred();
-
-    g_ioctl_proc_fd = open(SPR_IOCTL_PATH, O_RDONLY);
-
-    // block all SIGNALs
-    sigfillset(&newsig);
-    sigprocmask(SIG_SETMASK, &newsig, &g_oldsig);
-
-    if (g_first_come_in) {
-        atexit(__m_real_exit);
-        if (rtld_fini) {
-            atexit(rtld_fini);
-        }
-        spr_monitor_init(argc, argv, (char **)argv[argc + 1]);
     } else {
         arch_prctl(ARCH_SET_FS, g_monitor_fsbase);
+    }
+
+    // if (likely(g_first_come_in == 0))
+    //     arch_prctl(ARCH_SET_FS, g_monitor_fsbase);
+
+    __m_upgrade_cred();
+    g_ioctl_proc_fd = open(SPR_IOCTL_PATH, O_RDONLY);
+
+    if (unlikely(g_first_come_in == 1)) {
+        spr_monitor_init(argc, argv, (char **)argv[argc + 1]);
+        g_first_come_in = 0;
     }
 
     main();
@@ -92,6 +84,19 @@ static void
 __m_real_exit(void) {
     unsigned long nr = g_infopack.m_context.regs.orig_rax;
     unsigned long status = g_infopack.m_context.regs.rdi;
+    struct security_data *securities = &g_infopack.m_context.securities;
+
+    __m_downgrade_cred();
+
+    /*
+     * Restore Thread Local Storage pointer
+     * Enable SECCOMP
+     * Restore Capability
+     */
+    ioctl(g_ioctl_proc_fd, SPR_IOCTL_RESTORE_SECURITY, securities);
+    close(g_ioctl_proc_fd);
+
+
     while(1) {
         syscall(nr, status);
     }
@@ -100,23 +105,19 @@ __m_real_exit(void) {
 static void 
 __m_restore_context(struct context_struct *context) {
     int code;
-
-    __m_downgrade_cred();
+    struct spr_sigwait *sig, *signext;
 
     if (unlikely(SYSCALL_EXIT_FAMILY(g_infopack.m_context.regs.orig_rax))) {
         code = g_infopack.m_context.regs.rdi;
+        // spr_monitor_return();
         spr_monitor_exit(code);
-        exit(code);
-        /* !!!NOT REACHABLE!!! */
         __m_real_exit();
-    }
-
-    if (unlikely(g_first_come_in)) {
-        g_first_come_in = 0;
+        /* !!!NOT REACHABLE!!! */
     }
 
     // Restore SIGNALs
-    sigprocmask(SIG_SETMASK, &g_oldsig, 0);
+    __m_downgrade_cred();
+    // spr_monitor_return();
 
     /*
      * Restore Thread Local Storage pointer
@@ -124,7 +125,6 @@ __m_restore_context(struct context_struct *context) {
      * Restore Capability
      */
     ioctl(g_ioctl_proc_fd, SPR_IOCTL_RESTORE_SECURITY, &context->securities);
-
     close(g_ioctl_proc_fd);
 
     // Leaving the collector, clear the mark
@@ -153,12 +153,12 @@ static void __m_upgrade_cred(void) {
 static void __m_downgrade_cred(void) {
     int i;
 
-    setuid(g_old_uid);
-    setgid(g_old_gid);
-
     for (i = 0; i < sizeof(g_rlimits) / sizeof(g_rlimits[0]); ++i) {
         setrlimit(g_rlimits[i].resource, &g_rlimits[i].limit);
     }
 
     chroot(g_infopack.m_context.root_path);
+
+    setgid(g_old_gid);
+    setuid(g_old_uid);
 }

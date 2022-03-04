@@ -2,6 +2,8 @@
 #define PINJECT_H_
 
 #include <linux/ptrace.h>
+#include <linux/elf.h>
+
 #include "include/common.h"
 #include "include/events.h"
 
@@ -65,6 +67,7 @@ int event_from_monitor(void);
 #define NS_TO_SEC(_ns) ((_ns) / 1000000000)
 #define SECOND_IN_NS 1000000000 // 1s = 1e9ns
 
+nanoseconds spr_nsecs(void);
 int event_buffer_init(void);
 void event_buffer_destory(void);
 int record_one_event(enum spr_event_type type, struct spr_event_data *event_datap);

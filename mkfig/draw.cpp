@@ -93,7 +93,7 @@ int main(int argc, char *argv[]) {
     if (argc > 1) {
         traverse_dir(argv[1]);
     } else {
-        traverse_dir(".");
+        traverse_dir("/tmp/pinject");
     }
 
     std::vector<pthread_t> tids(files.size());
@@ -120,19 +120,18 @@ int main(int argc, char *argv[]) {
 
     printf("total_count = %lu\n", total_count);
 
-    nanoseconds start = evts.begin()->first;
-    std::vector<nanoseconds> y;
-    for (int i = 0; i < 100; ++i)
-        y.emplace_back(evts[start + i + 10]);
-
-    plt::figure_size(1200, 500);
-    plt::xlabel("Time (100ms)");
-    plt::ylabel("Events number");
-    plt::ylim(0, int(*std::max_element(y.begin(), y.end()) * 1.1));
-
-    plt::plot(y);
 
     if (argc > 2) {
+        nanoseconds start = evts.begin()->first;
+        std::vector<nanoseconds> y;
+        for (int i = 0; i < 310; ++i)
+            y.emplace_back(evts[start + i]);
+        plt::figure_size(1200, 500);
+        plt::xlabel("Time (100ms)");
+        plt::ylabel("Events number");
+        plt::ylim(0, int(*std::max_element(y.begin(), y.end()) * 1.1));
+
+        plt::plot(y);
         plt::save(argv[2]);
     }
 

@@ -9,7 +9,7 @@
 
 #ifdef __KERNEL__
 #include <linux/syscalls.h>
-#include <linux/time.h>
+#include <linux/signal.h>
 #else
 #include <sys/resource.h>
 #include <stdint.h>
@@ -29,6 +29,7 @@ struct security_data {
 	uint32_t cap_permitted[_LINUX_CAPABILITY_U32S_3];
 	uint32_t cap_effective[_LINUX_CAPABILITY_U32S_3];
 	unsigned int seccomp_mode;
+	unsigned long sigset;
 };
 
 struct context_struct {

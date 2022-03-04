@@ -4,6 +4,7 @@
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <linux/mutex.h>
+#include <linux/signal.h>
 #include <asm/prctl.h>
 #include <asm/proto.h>
 
@@ -74,9 +75,13 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
     int ret;
     uint64_t count;
     unsigned int cpu;
+    char *ptr;
     struct security_data security;
     struct spr_kbuffer *bufp;
+    struct buffer_count_info cinfo;
+    struct fetch_buffer_struct fetch;
     spr_private_data_t *private = filp->private_data;
+    sigset_t sigset;
 
 
     switch(cmd) {
@@ -90,16 +95,53 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
         pr_info("proc: clean buffer");
         break;
-    case SPR_IOCTL_READ_BUFFER_COUNT:
+        
+    case SPR_IOCTL_FETCH_BUFFER:
+        if (spr_copy_from_user((void *)&fetch, (void *)arg, sizeof(fetch))) {
+            ret = -EINVAL;
+            goto out;
+        }
         count = 0;
+        ptr = fetch.buf;
         for_each_present_cpu(cpu) {
             bufp = &per_cpu(buffer, cpu);
             mutex_lock(&bufp->lock);
-            count += bufp->event_count;
+            if (count + bufp->info->tail <= fetch.len) {
+                if (copy_to_user((void *)ptr, (void *)bufp->buffer, bufp->info->tail)) {
+                    mutex_unlock(&bufp->lock);
+                    ret = -EFAULT;
+                    goto out;
+                }
+                ptr += bufp->info->tail;
+                count += bufp->info->tail;
+                mutex_unlock(&bufp->lock);
+            } else {
+                mutex_unlock(&bufp->lock);
+                break;
+            }
+        }
+
+        fetch.len = count;
+        if (copy_to_user((void *)ptr, (void *)&fetch, sizeof(fetch))) {
+            ret = -EINVAL;
+            goto out;
+        }
+
+        ret = 0;
+        break;
+    
+    case SPR_IOCTL_READ_BUFFER_COUNT_INFO:
+        memset(&cinfo, 0, sizeof(cinfo));
+        for_each_present_cpu(cpu) {
+            bufp = &per_cpu(buffer, cpu);
+            mutex_lock(&bufp->lock);
+            cinfo.event_count += bufp->event_count;
+            cinfo.unflushed_count += bufp->info->nevents;
+            cinfo.unflushed_len += bufp->info->tail;
             mutex_unlock(&bufp->lock);
         }
 
-        if (put_user(count, (typeof(count) *)arg)) {
+        if (copy_to_user((void *)arg, (void *)&cinfo, sizeof(cinfo))) {
             ret = -EINVAL;
             goto out;
         }
@@ -131,6 +173,9 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         spr_write_gsbase(security.gsbase);
         spr_write_fsbase(security.fsbase);
         spr_cap_capset(security.cap_permitted, security.cap_effective);
+
+        sigset.sig[0] = security.sigset;
+        sigprocmask(SIG_SETMASK, &sigset, 0);
 
         break;
     default:
