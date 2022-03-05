@@ -33,4 +33,5 @@ const struct spr_event_entry g_spr_events[SPRE_EVENT_MAX] = {
     [SPRE_SYSCALL_SENDMMSG] = {FILLER_REF(sys_empty)},
     [SPRE_SYSCALL_RECVMSG] = {FILLER_REF(sys_recvmsg)},
     [SPRE_SYSCALL_RECVMMSG] = {FILLER_REF(sys_empty)},
+    [SPRE_SYSCALL_IOCTL] = {FILLER_REF(sys_ioctl)}
 };

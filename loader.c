@@ -74,7 +74,7 @@ __put_monitor_info(struct vm_area_struct const * const vma, void *arg) {
         return 0;
     }
     
-    vpr_info("transfer %ld logs of %ld bytes\n", buffer->info->nevents, buffer->info->tail);
+    vpr_info("transfer %lld logs of %u bytes\n", buffer->info->nevents, buffer->info->tail);
 
     return 1;
 }
@@ -169,7 +169,7 @@ static inline int __wait_mm(struct spr_mm_wait_struct *wait_mm)
 
 static inline int get_mm_wait_struct(struct spr_mm_wait_struct_root *rt, struct mm_struct *mm) 
 {
-    int retval, locked, nwriter;
+    int retval, locked;
     struct spr_mm_wait_struct *p;
     struct rb_node **new, *parent;
 
@@ -328,7 +328,6 @@ static int __set_status(struct spr_proc_status_root *rt,
 
     vpr_dbg("find pid %d\n", task->pid);
 
-restart:
     __down_read(&rt->sem);
     p = __find_proc_status(&rt->root, task);
     __up_read(&rt->sem);

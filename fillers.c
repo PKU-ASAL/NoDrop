@@ -2796,8 +2796,8 @@ int f_sys_recvmsg(struct event_filler_arguments *args)
         return SPR_FAILURE_INVALID_USER_MEMORY;
 
     /*
-        * data and size
-        */
+    * data and size
+    */
     iov = (const struct iovec __user *)mh.msg_iov;
     iovcnt = mh.msg_iovlen;
 
@@ -2845,4 +2845,45 @@ int f_sys_recvmsg(struct event_filler_arguments *args)
 		return res;
 
 	return SPR_SUCCESS;
+}
+
+int f_sys_ioctl(struct event_filler_arguments *args)
+{
+    unsigned long val;
+    int res;
+    int64_t retval;
+    
+    /*
+     * FD
+     */
+    syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
+    res = val_to_ring(args, val, 0, false, 0);
+    if (unlikely(res != SPR_SUCCESS))
+        return res;
+
+    /*
+     * cmd
+     */
+    syscall_get_arguments_deprecated(current, args->regs, 1, 1, &val);
+    res = val_to_ring(args, val, 0, false, 0);
+    if (unlikely(res != SPR_SUCCESS))
+        return res;
+    
+    /*
+     * argument
+     */
+    syscall_get_arguments_deprecated(current, args->regs, 1, 1, &val);
+    res = val_to_ring(args, val, 0, false, 0);
+    if (unlikely(res != SPR_SUCCESS))
+        return res;
+
+    /*
+     * retval
+     */
+    retval = (int64_t)(long)syscall_get_return_value(current, args->regs);
+    res = val_to_ring(args, retval, 0, false, 0);
+    if (unlikely(res != SPR_SUCCESS))
+        return res;
+
+    return SPR_SUCCESS;
 }

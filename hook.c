@@ -15,7 +15,7 @@
 
 
 static int filtered_syscall[] = { 
-    __NR_write, __NR_read, __NR_open, __NR_close,
+    __NR_write, __NR_read, __NR_open, __NR_close, __NR_ioctl,
     __NR_execve, 
     __NR_clone, __NR_fork, __NR_vfork, 
     __NR_socket, __NR_bind, __NR_connect, __NR_listen, __NR_accept, __NR_accept4,
@@ -77,12 +77,12 @@ __hooked_syscall_entry(SYSCALL_DEF) {
      * Record event immidiately if syscall exit() or exit_group() is invoked from application
      * Otherwise we should delay event recording until syscall returned
      */
-    // if (SYSCALL_EXIT_FAMILY(nr) && evt_from == SPR_EVENT_FROM_APPLICATION) {
-    //     if (syscall_probe(regs, nr) == SPR_SUCCESS) {
-    //         syscall_set_return_value(current, regs, 0, 0);
-    //         goto out;
-    //     }
-    // }
+    if (SYSCALL_EXIT_FAMILY(nr) && evt_from == SPR_EVENT_FROM_APPLICATION) {
+        if (syscall_probe(regs, nr) == SPR_SUCCESS_LOAD) {
+            syscall_set_return_value(current, regs, 0, 0);
+            goto out;
+        }
+    }
 
 #ifdef SPR_TEST
 do_syscall:

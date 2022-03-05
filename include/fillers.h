@@ -26,7 +26,8 @@ struct event_filler_arguments;
     FN(sys_setsockopt)  \
     FN(sys_getsockopt)  \
     FN(sys_sendmsg)     \
-    FN(sys_recvmsg)     
+    FN(sys_recvmsg)     \
+    FN(sys_ioctl)
 
 #define FILLER_ENUM_FN(x) SPR_FILLER_##x,
 enum spr_filler_id {

@@ -25,6 +25,7 @@ const enum spr_event_type g_syscall_event_table[SYSCALL_TABLE_SIZE] = {
 	[__NR_write - SYSCALL_TABLE_ID0] = SPRE_SYSCALL_WRITE,
     [__NR_open - SYSCALL_TABLE_ID0] = SPRE_SYSCALL_OPEN,
 	[__NR_close - SYSCALL_TABLE_ID0] = SPRE_SYSCALL_CLOSE,
+    [__NR_ioctl - SYSCALL_TABLE_ID0] = SPRE_SYSCALL_IOCTL,
     [__NR_exit - SYSCALL_TABLE_ID0] = SPRE_SYSCALL_EXIT,
     [__NR_exit_group - SYSCALL_TABLE_ID0] = SPRE_SYSCALL_EXIT_GROUP,
     [__NR_execve - SYSCALL_TABLE_ID0] = SPRE_SYSCALL_EXECVE,

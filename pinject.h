@@ -25,6 +25,7 @@
 #define MONITOR_PATH "./monitor/monitor"
 
 #define SPR_SUCCESS 0
+#define SPR_SUCCESS_LOAD 1
 #define SPR_FAILURE -1
 #define SPR_FAILURE_BUG -2
 #define SPR_FAILURE_BUFFER_FULL -3

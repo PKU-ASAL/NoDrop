@@ -102,7 +102,7 @@ loading:
         reset_buffer(buffer, SPR_INIT_INFO);
         if (restart)
             goto start;
-        return SPR_SUCCESS;
+        return SPR_SUCCESS_LOAD;
     } else {
         return SPR_FAILURE_BUG;
     }
