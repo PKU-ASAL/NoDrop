@@ -222,7 +222,7 @@ restart:
 
     rb_link_node(&p->node, parent, new);
     rb_insert_color(&p->node, &rt->root);
-    smp_mb();
+    smp_wmb();
 
     vpr_dbg("allocate %lx for mm %lx\nparent %lx, rb_left %lx, rb_right %lx\n", &p->node, mm, rb_parent(&p->node), &p->node.rb_left, &p->node.rb_right);
     retval = SPR_SUCCESS;
@@ -276,66 +276,72 @@ void spr_release_mm(struct task_struct *task)
     put_mm_wait_struct(&mm_wait_root, task->mm);
 }
 
+static inline struct spr_proc_status_struct *
+__find_proc_status(struct rb_root *rt, struct task_struct *task)
+{
+    struct rb_node *n;
+    struct spr_proc_status_struct *p;
+
+    n = rt->rb_node;
+    while (n) {
+        p = rb_entry(n, struct spr_proc_status_struct, node); 
+        if (task->pid < p->pid)
+            n = n->rb_left;
+        else if (task->pid > p->pid)
+            n = n->rb_right;
+        else {
+            return p;
+        }
+    }
+    return NULL;
+}
+
+static inline int
+__insert_proc_status(struct rb_root *rt, struct spr_proc_status_struct *p)
+{
+    struct spr_proc_status_struct *this;
+    struct rb_node **new = &rt->rb_node, *parent = NULL;
+    while (*new) {
+        this = rb_entry(*new, struct spr_proc_status_struct, node);
+        parent = *new;
+        if (p->pid < this->pid)
+            new = &parent->rb_left;
+        else if (p->pid > this->pid)
+            new = &parent->rb_right;
+        else
+            return false;
+    }
+
+    rb_link_node(&p->node, parent, new);
+    rb_insert_color(&p->node, rt);
+    smp_wmb();
+    return true;
+}
+
 
 static int __set_status(struct spr_proc_status_root *rt, 
                     struct task_struct *task, 
                     enum spr_proc_status status, int fd) 
 {
-    int retval, locked = -1;
+    int retval;
     struct spr_proc_status_struct *p;
-    struct rb_node **new, *parent;
 
     vpr_dbg("find pid %d\n", task->pid);
 
 restart:
-    parent = NULL;
-    if (locked == -1)
-        __down_read(&rt->sem);
-    else    
-        __down_write(&rt->sem);
-
-    new = &rt->root.rb_node;
-    while(*new) {
-        parent = *new;
-        p = rb_entry(parent, struct spr_proc_status_struct, node);
-        if (task->pid < p->pid) 
-            new = &parent->rb_left;
-        else if (task->pid > p->pid)
-            new = &parent->rb_right;
-        else {
-            ASSERT(locked == -1);
-            p->status = status;
-            p->ioctl_fd = fd;
-            vpr_dbg("got pid %d at %lx\n", p->pid, parent);
-            __up_read(&rt->sem);
-            goto success;
-        }
+    __down_read(&rt->sem);
+    p = __find_proc_status(&rt->root, task);
+    __up_read(&rt->sem);
+    if (p) {
+        p->status = status;
+        p->ioctl_fd = fd;
+        vpr_dbg("got pid %d at %lx\n", p->pid, &p->node);
+        goto success;
     }
+
     ASSERT(status == SPR_MONITOR_IN);
-    if (locked == -1)
-        // We are first here and not find fid on the rbtree
-        // So we release the reader lock and try to get a writer lock
-        __up_read(&rt->sem);
-    else
-        // We failed to get the writer lock last time
-        // and after restart, we successfuly get the writer lock
-        // So we just jump to do inserting
-        goto write_lock; 
 
-    locked = (down_write_trylock(&rt->sem) == 1) ? LOCKED : UNLOCK;
-    if (locked == UNLOCK) {
-        // if we cannot acquire the semaphore, we should restart the procedure
-        // Since there may be someone inserting a node into the rbtree
-        // and the parent pointer may change
-
-        // We will restart and try to get the writer lock,
-        // since noone will share the same node on the rbtree with us.
-        goto restart;
-    }
-
-write_lock:
-    vpr_dbg("get write\n");
-
+    __down_write(&rt->sem);
     p = kmem_cache_alloc(proc_status_cachep, GFP_KERNEL);
     if (!p) {
         __up_write(&rt->sem);
@@ -353,13 +359,10 @@ write_lock:
     p->ioctl_fd = fd;
     p->status = status;
 
-    rb_link_node(&p->node, parent, new);
-    rb_insert_color(&p->node, &rt->root);
-    smp_mb();
-    vpr_dbg("allocate %lx pid %d status %d\nparent %lx, rb_left %lx, rb_right %lx\n", &p->node, p->pid, p->status, rb_parent(&p->node), &p->node.rb_left, &p->node.rb_right);
+    ASSERT(__insert_proc_status(&rt->root, p) == true);
+    vpr_dbg("allocate %lx pid %d status %d\n", &p->node, p->pid, p->status);
 
     __up_write(&rt->sem);
-
 
 success:
     vpr_dbg("set status %d\n", p->status);
@@ -382,47 +385,28 @@ int spr_set_status_restore(struct task_struct *task, int fd) {
     return __set_status(&proc_root, task, SPR_MONITOR_RESTORE, fd);
 }
 
-static inline struct spr_proc_status_struct * __find_proc_status(struct rb_root *rt, struct task_struct *task)
-{
-    struct rb_node *n;
-    struct spr_proc_status_struct *p;
-
-    n = rt->rb_node;
-    while (n) {
-        p = rb_entry(n, struct spr_proc_status_struct, node); 
-        if (task->pid < p->pid)
-            n = n->rb_left;
-        else if (task->pid > p->pid)
-            n = n->rb_right;
-        else {
-            return p;
-        }
-    }
-    return NULL;
-}
-
 int spr_erase_status(struct task_struct *task) {
     int retval;
     struct spr_proc_status_struct *p;
     struct spr_proc_info *info;
 
-    __down_read(&proc_root.sem);
+    __down_write(&proc_root.sem);
     p = __find_proc_status(&proc_root.root, current);
-    __up_read(&proc_root.sem);
-
     if (!p) {
+        __up_write(&proc_root.sem);
         vpr_dbg("erase_monitor_status: not found %d\n", task->pid);
         return SPR_MONITOR_OUT;
     }
 
+    vpr_dbg("erase_monitor_status: pid %d\n", task->pid, p->status);
+
     retval = p->status;
     info = p->info;
 
-    __down_write(&proc_root.sem);
-    vpr_dbg("erase_monitor_status: pid %d\n", task->pid, p->status);
     rb_erase(&p->node, &proc_root.root);
     kmem_cache_free(proc_status_cachep, p);
     smp_mb();
+
     __up_write(&proc_root.sem);
 
     vfree(info);
