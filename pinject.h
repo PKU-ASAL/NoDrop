@@ -18,8 +18,7 @@
 
 #define vpr_log(xxx, fmt, ...) pr_##xxx("(%d)%s[%d][%s:%d]: " fmt, smp_processor_id(), current->comm, current->pid, __func__, __LINE__, ##__VA_ARGS__)
 
-#define SPR_TEST(task) if (!(STR_EQU((task)->comm, "a.out") || STR_EQU((task)->comm, "apache2")))
-// #define SPR_TEST(task) if (!(task->cred->uid.val != 0))
+#define SPR_TEST(task) if (!(STR_EQU((task)->comm, "a.out") || STR_EQU((task)->comm, "nginx") || STR_EQU((task)->comm, "redis-server")))
 #define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
 #define ASSERT(expr) BUG_ON(!(expr))
 #define MONITOR_PATH "./monitor/monitor"

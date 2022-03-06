@@ -48,7 +48,7 @@ __check_mapping(struct vm_area_struct const * const vma, void *arg) {
         return 1;
     }
 
-    return 0;
+    return -1;
 }
 
 static int
@@ -58,19 +58,23 @@ __put_monitor_info(struct vm_area_struct const * const vma, void *arg) {
     struct spr_kbuffer *buffer;
 
     if (vma->vm_flags & VM_EXEC)
-        return 0;
+        return -1;
 
     infopack = (m_infopack __user *)vma->vm_start;
     buffer = (struct spr_kbuffer *)arr[1];
 
     if (copy_to_user((void __user *)&infopack->m_context, (void *)arr[0], sizeof(infopack->m_context))) {
-        vpr_err("cannot write __monitor_context @ %lx\n", &infopack->m_context);
+        vpr_err("cannot write m_context @ %lx\n", &infopack->m_context);
         return 0;
     }
 
-    if (copy_to_user((void __user *)&infopack->m_buffer.buffer, (void *)buffer->buffer, BUFFER_SIZE) ||
-        copy_to_user((void __user *)&infopack->m_buffer.info, (void *)buffer->info, sizeof(struct spr_buffer_info))) {
-        vpr_err("cannot write __monitor_logmsg @ %lx\n", &infopack->m_buffer);
+    if (copy_to_user((void __user *)&infopack->m_buffer.buffer, (void *)buffer->buffer, (void *)buffer->info->tail)) {
+        vpr_err("cannot write m_buffer @ %lx\n", &infopack->m_buffer);
+        return 0;
+    }
+
+    if (copy_to_user((void __user *)&infopack->m_buffer.info, (void *)buffer->info, sizeof(struct spr_buffer_info))) {
+        vpr_err("cannot write buffer info @ %lx\n", &infopack->m_buffer.info);
         return 0;
     }
     
@@ -92,7 +96,7 @@ check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg
     for (vma = mm->mmap; vma; vma = vma->vm_next) {
         file = vma->vm_file;
         if (file == monitor) {
-            if ((*resolve)((struct vm_area_struct const * const)vma, arg)) {
+            if ((*resolve)((struct vm_area_struct const * const)vma, arg) != -1) {
                 up_read(&mm->mmap_sem);
                 return 0;
             }
@@ -105,14 +109,11 @@ check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg
 
 #define rb_traverse(root, ptr, type, member, cmd) \
 do { \
-    int count = 0; \
     struct rb_node *node = (root)->rb_node; \
-    if (node) while (count < 100 && node->rb_left) { ptr = rb_entry(node, type, member); cmd; vpr_info("node %lx\n", node); node = node->rb_left; count++;} \
-    vpr_info("---------------");\
     while(node) { \
         ptr = rb_entry(node, type, member); \
-        cmd; \
         node = rb_next(node); \
+        cmd; \
     } \
 } while(0)
 
@@ -905,6 +906,8 @@ out_free_monitor:
 }
 
 void loader_destory(void) {
+    struct spr_proc_status_struct *p;
+    struct spr_mm_wait_struct *mm;
     if (interpreter) {
         allow_write_access(interpreter);
         fput(interpreter);
@@ -920,8 +923,12 @@ void loader_destory(void) {
     if (interp_elf_phdata)
         kfree(interp_elf_phdata);
 
-    if (mm_wait_struct_cachep)
-        kmem_cache_destroy(mm_wait_struct_cachep);
-    if (proc_status_cachep)
+    if (proc_status_cachep) {
+        rb_traverse(&proc_root.root, p, struct spr_proc_status_struct, node, kmem_cache_free(proc_status_cachep, p));
         kmem_cache_destroy(proc_status_cachep);
+    }
+    if (mm_wait_struct_cachep) {
+        rb_traverse(&mm_wait_root.root, mm, struct spr_mm_wait_struct, node, kmem_cache_free(mm_wait_struct_cachep, mm));
+        kmem_cache_destroy(mm_wait_struct_cachep);
+    }
 }

@@ -83,7 +83,6 @@ start:
             info->tail += event_size;
             ++info->nevents;
             ++buffer->event_count;
-        
         } else {
             vpr_err("corrupted filler for event type %d (added %u args, should have added %u args)\n",
                     event_type,
@@ -218,7 +217,7 @@ int record_one_event(enum spr_event_type type, struct spr_event_data *event_data
     down_write(&bufp->sem);
 
     retval = do_record_one_event(bufp, type, ts, event_datap);
-    if (retval != SPR_SUCCESS) {
+    if (retval < 0) {
         pr_warn("record_one_event: one event log dropped, reason=%d\nnevents=%lld tail=0x%x\n",
                 retval,
                 bufp->info->nevents, bufp->info->tail);
