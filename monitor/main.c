@@ -18,7 +18,10 @@ void spr_monitor_init(int argc, char *argv[], char *env[], struct spr_buffer *bu
 }
 
 int main(struct spr_buffer *buffer) {
+    int i;
+    char *ptr;
     FILE *file;
+    struct spr_event_hdr *hdr;
     unsigned int tid = (unsigned int)syscall(SYS_gettid);
     sprintf(path, PATH_FMT, tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
     if(!(file = fopen(path, "ab+"))) {
@@ -26,7 +29,12 @@ int main(struct spr_buffer *buffer) {
         return 0;
     }
 
-    fwrite(buffer->buffer, info->tail, 1, file);
+    ptr = buffer->buffer;
+    for(i = 0; i < info->nevents; ++i) {
+        hdr = (struct spr_event_hdr *)ptr;
+        fwrite(ptr, hdr->len, 1, file);
+        ptr += hdr->len;
+    }
     fclose(file); 
 
     return 0;
