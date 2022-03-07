@@ -19,3 +19,11 @@ a.out
 
 *.png
 draw*
+*.res
+
+nginx_/
+nginx-*/
+httpd_/
+httpd-*/
+http-test-files/
+*.patch
