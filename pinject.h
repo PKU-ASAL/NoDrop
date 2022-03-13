@@ -10,7 +10,6 @@
 #include "include/events.h"
 
 #define vpr_dbg(fmt, ...)
-// // Uncomment the marco below and comment the marco above to print debug logs 
 // #define vpr_dbg(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
 
 #define vpr_err(fmt, ...) vpr_log(err, fmt, ##__VA_ARGS__)
@@ -18,7 +17,8 @@
 
 #define vpr_log(xxx, fmt, ...) pr_##xxx("(%d)%s[%d][%s:%d]: " fmt, smp_processor_id(), current->comm, current->pid, __func__, __LINE__, ##__VA_ARGS__)
 
-#define SPR_TEST(task) if (!(STR_EQU((task)->comm, "a.out") || STR_EQU((task)->comm, "nginx") || STR_EQU((task)->comm, "redis-server")))
+#define SPR_TEST(task) if (!(STR_EQU((task)->comm, "a.out")))
+// #define SPR_TEST(task) if (!(STR_EQU((task)->comm, "nginx") || STR_EQU((task)->comm, "redis-server") || STR_EQU((task)->comm, "postmark") || STR_EQU((task)->comm, "openssl") || STR_EQU((task)->comm, "7z")))
 #define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
 #define ASSERT(expr) BUG_ON(!(expr))
 #define MONITOR_PATH "./monitor/monitor"
@@ -67,6 +67,18 @@ struct spr_proc_status_struct {
 	struct spr_proc_info *info;
     struct rb_node node;
 };
+struct spr_mm_wait_struct_root {
+    struct rb_root root;
+    struct rw_semaphore sem;
+};
+struct spr_mm_wait_struct {
+    struct mm_struct *mm;
+    struct rb_node node;
+    struct semaphore lock;
+    wait_queue_head_t waitq;
+    atomic_t count;
+    int claimed;
+};
 
 // proc.c
 int  proc_init(void);
@@ -83,7 +95,7 @@ void spr_restore_context(struct spr_proc_status_struct *p);
 void prepare_rlimit_data(struct rlimit *rlims);
 
 // hook.c
-void hook_syscall(void);
+int hook_syscall(void);
 void restore_syscall(void);
 int  hook_init(void);
 void hook_destory(void);

@@ -675,7 +675,7 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
         return SPR_FAILURE_BUG;
     }
 
-    if (unlikely(args->arg_data_size == 0))
+    if (unlikely(args->arg_data_size <= 0))
         return SPR_FAILURE_BUFFER_FULL;
 
     if (max_arg_size > SPR_MAX_ARG_SIZE)
@@ -726,11 +726,6 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
                 if (++len > (int)max_arg_size)
                     len = max_arg_size;
             }
-
-            /*
-             * Make sure the string is null-terminated
-             */
-            *(char *)(args->buf_ptr + args->arg_data_offset + len) = 0;
         } else {
             /*
              * Handle NULL pointers

@@ -1,9 +1,10 @@
 #!/usr/bin/python3
 
+import time
 import subprocess
 
 LOOP = 10
-cmd = "7z b -mmt1"
+cmd = "7z b"
 
 def prepare():
     print(cmd)
@@ -16,10 +17,13 @@ def execute_7z():
 
 
 res = []
+total_cost = 0
 prepare()
 for i in range(LOOP):
-    print("loop %d ...", end="", flush=True)
+    print("loop %d ..." % i, end="", flush=True)
+    start = time.time()
     ret = execute_7z()
+    total_cost += time.time() - start
     res.append(ret)
     print(ret, "MIPS")
 
@@ -29,5 +33,6 @@ variance = 0
 for x in res:
     variance += (x - avg) * (x - avg)
 variance /= len(res)
-print("Variance:", variance)
-print("Average:", round(total / LOOP), "MIPS")
+print("Variance:", round(variance, 6))
+print("Average:", round(avg), "MIPS")
+print("Total cost", total_cost, "s")

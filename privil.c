@@ -45,15 +45,10 @@ static int spr_enable_seccomp(unsigned int mode) {
     return 0;
 }
 
-static void spr_cap_raise(void) {
-    struct cred *cred = current_cred();
-	cred->cap_permitted = CAP_FULL_SET;
-	cred->cap_effective = CAP_FULL_SET;
-}
-
+#define spr_cap_raise() spr_cap_capset(&CAP_FULL_SET, &CAP_FULL_SET)
 static void spr_cap_capset(kernel_cap_t *permitted, kernel_cap_t *effective)
 {
-    struct cred *cred = current_cred();
+    struct cred *cred = (struct cred *)current_cred();
     cred->cap_effective = *effective;
     cred->cap_permitted = *permitted;
 }
@@ -62,7 +57,7 @@ static void spr_write_fsbase(unsigned long fsbase) {
     preempt_disable();
     loadsegment(fs, 0);
     wrmsrl(MSR_FS_BASE, fsbase);
-    current->thread.fsbase = fsbase;
+    current->thread.FSBASE = fsbase;
     preempt_enable();
 }
 
@@ -70,7 +65,7 @@ static void spr_write_gsbase(unsigned long gsbase) {
     preempt_disable();
     load_gs_index(0);
     wrmsrl(MSR_KERNEL_GS_BASE, gsbase);
-    current->thread.gsbase = gsbase;
+    current->thread.GSBASE = gsbase;
     preempt_enable();
 }
 

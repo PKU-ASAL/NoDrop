@@ -144,7 +144,9 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         pr_info("proc: Stop recording");
         break;
     case SPR_IOCTL_START_RECORDING:
-        hook_syscall();
+        ret = hook_syscall();
+        if (ret)
+            goto out;
 
         pr_info("proc: Start recording");
         break;
@@ -155,7 +157,7 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         }
 
         spr_set_status_restore(current, arg);
-        vpr_info("exit monitor\n");
+        vpr_dbg("exit monitor\n");
 
         break;
     default:

@@ -10,7 +10,15 @@
 
 #include "matplotlibcpp.h"
 
+/* Install dependency: 
+ * apt-get install python3-matplotlib python3-numpy python3-dev
+ */
+
 namespace plt = matplotlibcpp;
+
+#define GRAINED 50
+#define STR_HELPER(x) #x 
+#define STR(x) STR_HELPER(x)
 
 struct MyStruct {
     const char *filename;
@@ -18,6 +26,9 @@ struct MyStruct {
 };
 
 std::vector<std::string> files;
+std::vector<pthread_t> tids;
+std::vector<std::map<nanoseconds, uint32_t>> mps;
+std::vector<struct MyStruct> params;
 
 void * resolve_buf_file(void *arg) {
     uint64_t count;
@@ -53,7 +64,7 @@ void * resolve_buf_file(void *arg) {
             break;
         }
 
-        ++mp->operator[](hdr.ts / 100000000);
+        ++mp->operator[](hdr.ts / (1000000 * GRAINED));
         ++count;
 
         pos += hdr.len;
@@ -96,9 +107,10 @@ int main(int argc, char *argv[]) {
         traverse_dir("/tmp/pinject");
     }
 
-    std::vector<pthread_t> tids(files.size());
-    std::vector<std::map<nanoseconds, uint32_t>> mps(files.size());
-    std::vector<struct MyStruct> params(files.size());
+    tids.resize(files.size());
+    mps.resize(files.size());
+    params.resize(files.size());
+
     for (size_t i = 0; i < files.size(); ++i) {
         params[i] = {files[i].c_str(), &mps[i]};
         if (pthread_create(&tids[i], NULL, resolve_buf_file, (void*)&params[i])) {
@@ -124,10 +136,10 @@ int main(int argc, char *argv[]) {
     if (argc > 2) {
         nanoseconds start = evts.begin()->first;
         std::vector<nanoseconds> y;
-        for (int i = 0; i < 310; ++i)
+        for (int i = 0; i < 10000 / GRAINED; ++i)
             y.emplace_back(evts[start + i]);
         plt::figure_size(1200, 500);
-        plt::xlabel("Time (100ms)");
+        plt::xlabel("Time (" STR(GRAINED) "ms)");
         plt::ylabel("Events number");
         plt::ylim(0, int(*std::max_element(y.begin(), y.end()) * 1.1));
 

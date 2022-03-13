@@ -1,4 +1,5 @@
 #include <linux/kernel.h>
+#include <linux/version.h>
 #include <linux/elf.h>
 #include <linux/fs.h>
 #include <linux/file.h>
@@ -251,8 +252,12 @@ elf_load_binary(struct elfhdr *elf_ex,
     last_bss = ELF_PAGEALIGN(last_bss);
     /* Finally, if there is still more bss to allocate, do it. */
     if (last_bss > elf_bss) {
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 10, 17)
+        error = vm_brk(elf_bss, last_bss - elf_bss);
+#else
         error = vm_brk_flags(elf_bss, last_bss - elf_bss,
                 bss_prot & PROT_EXEC ? VM_EXEC : 0);
+#endif
         if (error)
             goto out;
     }
@@ -270,7 +275,7 @@ void elf_reg_init(struct thread_struct *t,
 	regs->si = regs->di = regs->bp = 0;
 	regs->r8 = regs->r9 = regs->r10 = regs->r11 = 0;
 	regs->r12 = regs->r13 = regs->r14 = regs->r15 = 0;
-	t->fsbase = t->gsbase = 0;
+	t->FSBASE = t->GSBASE = 0;
 	t->fsindex = t->gsindex = 0;
 	t->ds = t->es = ds;
 }

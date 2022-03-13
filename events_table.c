@@ -1,4 +1,7 @@
+#ifdef __KERNEL__
 #include "pinject.h"
+#endif
+
 #include "events.h"
 
 const struct spr_event_info g_event_info[SPRE_EVENT_MAX] = {

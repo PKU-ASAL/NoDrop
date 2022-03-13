@@ -1,6 +1,7 @@
 #include <linux/version.h>
 #include <linux/kernel.h>
 #include <linux/semaphore.h>
+#include <linux/vmalloc.h>
 
 
 #include "pinject.h"
@@ -15,6 +16,7 @@ do_record_one_event(struct spr_kbuffer *buffer,
         struct spr_event_data *event_datap)
 {
     int cbret, restart;
+    int do_exit = 0;
     size_t event_size;
     uint32_t freespace; 
     struct event_filler_arguments args;
@@ -49,6 +51,7 @@ start:
     if (event_datap->category == SPRC_SYSCALL) {
         args.regs = event_datap->event_info.syscall_data.regs;
         args.syscall_nr = event_datap->event_info.syscall_data.id;
+        do_exit = SYSCALL_EXIT_FAMILY(args.syscall_nr);
     } else {
         args.regs = NULL;
         args.syscall_nr = -1;
@@ -83,6 +86,11 @@ start:
             info->tail += event_size;
             ++info->nevents;
             ++buffer->event_count;
+
+            if (do_exit) {
+                restart = 0;
+                goto loading;
+            }
         } else {
             vpr_err("corrupted filler for event type %d (added %u args, should have added %u args)\n",
                     event_type,

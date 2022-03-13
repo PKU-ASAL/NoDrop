@@ -13,6 +13,8 @@ monitor/monitor
 *.module
 *.symvers
 *.d
+*.ur-safe
+*.log
 
 a.out
 .DS_Store
@@ -22,8 +24,12 @@ draw*
 *.res
 
 nginx_/
+redis_/
+redis-*/
 nginx-*/
 httpd_/
 httpd-*/
 http-test-files/
 *.patch
+*.rdb
+*.pmrc

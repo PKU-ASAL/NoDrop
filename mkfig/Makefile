@@ -1,13 +1,13 @@
 TARGET := draw
 CPP_FILES := draw.cpp
 
-PYCONF ?= python3-config
+PYCONF ?= /usr/bin/python3-config
 ifneq ($(shell $(PYCONF) > /dev/null 2>&1; echo $$?), 1)
 $(error "no installation of PYTHON3 found")
 endif
 
-PYTHON_CFLAGS := $(shell $(PYCONF) --cflags)
-PYTHON_LDFLAGS := $(shell $(PYCONF) --ldflags) -fPIC
+PYTHON_CFLAGS := $(shell $(PYCONF) --cflags) -std=c++11
+PYTHON_LDFLAGS := $(shell $(PYCONF) --ldflags)
 
 all: $(TARGET)
 $(TARGET): $(CPP_FILES)

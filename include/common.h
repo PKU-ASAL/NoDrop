@@ -10,6 +10,16 @@
 #ifdef __KERNEL__
 #include <linux/syscalls.h>
 #include <linux/time.h>
+#include <linux/version.h>
+
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 6, 7)
+#define FSBASE fs
+#define GSBASE gs
+#else
+#define FSBASE fsbase
+#define GSBASE gsbase
+#endif
+
 #else
 #include <sys/resource.h>
 #include <stdint.h>

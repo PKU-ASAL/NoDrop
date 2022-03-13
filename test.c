@@ -27,8 +27,8 @@ ssize_t my_write(int fd, const void *buf, size_t size)
 void xxx(void) {
     char line[128];
     int i;
-    for (i = 0; i < 100; ++i) {
-        int fd = open("/mnt/hgfs/Projects/pinject_dpdk/StressTesting/2.txt", O_RDONLY);
+    for (i = 0; i < 10000; ++i) {
+        int fd = open("StressTesting/2.txt", O_RDONLY);
 
         read(fd, line, 50);
         read(fd, line, 50);
@@ -50,7 +50,7 @@ void xxx(void) {
 int main() { 
     int i;
     pthread_t tids[50];
-    for (i = 0; i < 10; ++i) {
+    for (i = 0; i < 50; ++i) {
         if (pthread_create(&tids[i], NULL, xxx, NULL)) {
             printf("%d: failed\n");
             tids[i] = -1;
@@ -58,7 +58,7 @@ int main() {
     }
     int pid = getpid();
     printf("ok\n");
-    for (i = 0; i < 10; ++i) {
+    for (i = 0; i < 50; ++i) {
         if (tids[i] != -1) {
             pthread_join(tids[i], NULL);
         }

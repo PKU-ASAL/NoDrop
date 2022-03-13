@@ -32,7 +32,7 @@ int main() {
         // int fd = open("./test.txt", O_WRONLY| O_CREAT);
         // write(fd, msg, sizeof(msg));
         // close(fd);
-        int fd = open("/mnt/hgfs/Projects/process_inject/StressTesting/2.txt", O_RDONLY);
+        int fd = open("StressTesting/2.txt", O_RDONLY);
 
         read(fd, line, 10);
         read(fd, line, 10);

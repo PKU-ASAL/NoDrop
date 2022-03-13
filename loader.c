@@ -8,6 +8,7 @@
 #include <linux/mm.h>
 #include <linux/semaphore.h>
 #include <linux/wait.h>
+#include <linux/vmalloc.h>
 
 #include "pinject.h"
 #include "include/common.h"
@@ -25,20 +26,7 @@ static struct kmem_cache *proc_status_cachep = NULL;
 static struct kmem_cache *mm_wait_struct_cachep = NULL;
 
 static struct spr_proc_status_root proc_root;
-
-static struct spr_mm_wait_struct_root {
-    struct rb_root root;
-    struct rw_semaphore sem;
-} mm_wait_root;
-static struct spr_mm_wait_struct {
-    struct mm_struct *mm;
-    struct rb_node node;
-    struct semaphore lock;
-    wait_queue_head_t waitq;
-    atomic_t count;
-    int claimed;
-};
-
+static struct spr_mm_wait_struct_root mm_wait_root;
 
 static int
 __check_mapping(struct vm_area_struct const * const vma, void *arg) {
@@ -64,17 +52,17 @@ __put_monitor_info(struct vm_area_struct const * const vma, void *arg) {
     buffer = (struct spr_kbuffer *)arr[1];
 
     if (copy_to_user((void __user *)&infopack->m_context, (void *)arr[0], sizeof(infopack->m_context))) {
-        vpr_err("cannot write m_context @ %lx\n", &infopack->m_context);
+        vpr_err("cannot write m_context @ %llx\n", (u64)&infopack->m_context);
         return 0;
     }
 
-    if (copy_to_user((void __user *)&infopack->m_buffer.buffer, (void *)buffer->buffer, (void *)buffer->info->tail)) {
-        vpr_err("cannot write m_buffer @ %lx\n", &infopack->m_buffer);
+    if (copy_to_user((void __user *)&infopack->m_buffer.buffer, (void *)buffer->buffer, buffer->info->tail)) {
+        vpr_err("cannot write m_buffer @ %llx\n", (u64)&infopack->m_buffer);
         return 0;
     }
 
     if (copy_to_user((void __user *)&infopack->m_buffer.info, (void *)buffer->info, sizeof(struct spr_buffer_info))) {
-        vpr_err("cannot write buffer info @ %lx\n", &infopack->m_buffer.info);
+        vpr_err("cannot write buffer info @ %llx\n", (u64)&infopack->m_buffer.info);
         return 0;
     }
     
@@ -168,44 +156,76 @@ static inline int __wait_mm(struct spr_mm_wait_struct *wait_mm)
     return atomic_read(&wait_mm->count);
 }
 
+static inline struct spr_mm_wait_struct *
+__find_mm_wait_struct(struct rb_root *rt, struct mm_struct *mm)
+{
+    struct spr_mm_wait_struct *p;
+    struct rb_node *n;
+
+    n = rt->rb_node;
+    while (n) {
+        p = rb_entry(n, struct spr_mm_wait_struct, node); 
+        if ((u64)mm < (u64)p->mm)
+            n = n->rb_left;
+        else if ((u64)mm > (u64)p->mm)
+            n = n->rb_right;
+        else {
+            return p;
+        }
+    }
+    return NULL;
+}
+
+static inline int
+__insert_mm_wait_struct(struct rb_root *rt, struct spr_mm_wait_struct *p)
+{
+    struct spr_mm_wait_struct *this;
+    struct rb_node **new = &rt->rb_node, *parent = NULL;
+    while (*new) {
+        this = rb_entry(*new, struct spr_mm_wait_struct, node);
+        parent = *new;
+        if ((u64)p->mm < (u64)this->mm)
+            new = &parent->rb_left;
+        else if ((u64)p->mm > (u64)this->mm)
+            new = &parent->rb_right;
+        else
+            return false;
+    }
+
+    rb_link_node(&p->node, parent, new);
+    rb_insert_color(&p->node, rt);
+    smp_wmb();
+    return true;
+}
+
 static inline int get_mm_wait_struct(struct spr_mm_wait_struct_root *rt, struct mm_struct *mm) 
 {
-    int retval, locked;
+    int retval;
     struct spr_mm_wait_struct *p;
-    struct rb_node **new, *parent;
+    // struct rb_node **new, *parent;
 
     might_sleep();
 
 restart:
-    parent = NULL;
-    __down_write(&rt->sem);
-    new = &rt->root.rb_node;
-    while (*new) {
-        parent = *new;
-        p = rb_entry(parent, struct spr_mm_wait_struct, node);
-        if ((u64)mm < (u64)p->mm)
-            new = &parent->rb_left;
-        else if ((u64)mm > (u64)p->mm)
-            new = &parent->rb_right;
-        else {
-            vpr_dbg("find rbnode %lx mm=%lx\n", p, p->mm);
-            atomic_inc(&p->count);
-            locked = __claim_mm_try(p);
-            if (locked == UNLOCK) {
-                // If we cannot claim it, we should give up the rbtree semaphore
-                // Whis problem is same as Dining philosophers problem
-                __up_write(&rt->sem);
-                // Wait someone release mm and we can restart
-                wait_event(p->waitq, p->claimed == 0);
-                atomic_dec(&p->count);
-                goto restart;
-            } else {
-                atomic_dec(&p->count);
-                __up_write(&rt->sem);
-                return SPR_SUCCESS;
-            }
-        }
+    __down_read(&rt->sem);
+    p = __find_mm_wait_struct(&rt->root, mm);
+    if (p) {
+        atomic_inc(&p->count);
+        if (__claim_mm_try(p) == UNLOCK) {
+            // If we cannot claim it, we should give up the rbtree semaphore
+            // Whis problem is same as Dining philosophers problem
+            __up_read(&rt->sem);
+            // Wait someone release mm and we can restart
+            wait_event(p->waitq, p->claimed == 0);
+            atomic_dec(&p->count);
+            goto restart;
+        } else {
+            atomic_dec(&p->count);
+            __up_read(&rt->sem);
+            return SPR_SUCCESS;
+        } 
     }
+    __up_read(&rt->sem);
 
     p = kmem_cache_alloc(mm_wait_struct_cachep, GFP_KERNEL);
     if (!p) {
@@ -221,16 +241,14 @@ restart:
     p->claimed = 1;
     sema_init(&p->lock, 0);
 
-    rb_link_node(&p->node, parent, new);
-    rb_insert_color(&p->node, &rt->root);
-    smp_wmb();
+    __down_write(&rt->sem);
+    ASSERT(__insert_mm_wait_struct(&rt->root, p) == true);
+    __up_write(&rt->sem);
 
     vpr_dbg("allocate %lx for mm %lx\nparent %lx, rb_left %lx, rb_right %lx\n", &p->node, mm, rb_parent(&p->node), &p->node.rb_left, &p->node.rb_right);
     retval = SPR_SUCCESS;
 
 out_writer:
-    // atomic_dec(&rt->nwriter);
-    __up_write(&rt->sem);
     return retval;
 }
 
@@ -255,13 +273,15 @@ static inline void put_mm_wait_struct(struct spr_mm_wait_struct_root *rt, struct
             if (__wait_mm(p) > 0) {
                 __release_mm(p);
                 wake_up(&p->waitq);
+                __up_write(&rt->sem);
             } else {
                 // Since we will free p and we dont need to release the semaphore
                 rb_erase(&p->node, &rt->root);
-                kmem_cache_free(mm_wait_struct_cachep, p);
                 smp_mb();
+                __up_write(&rt->sem);
+                kmem_cache_free(mm_wait_struct_cachep, p);
             }
-            break;
+            return;
         }
     }
     __up_write(&rt->sem);
@@ -341,17 +361,14 @@ static int __set_status(struct spr_proc_status_root *rt,
 
     ASSERT(status == SPR_MONITOR_IN);
 
-    __down_write(&rt->sem);
     p = kmem_cache_alloc(proc_status_cachep, GFP_KERNEL);
     if (!p) {
-        __up_write(&rt->sem);
         retval = -ENOMEM;
         goto out;
     }
     p->info = vmalloc(sizeof(struct spr_proc_info));
     if (!p->info) {
         kmem_cache_free(proc_status_cachep, p);
-        __up_write(&rt->sem);
         retval = -ENOMEM;
         goto out;
     }
@@ -359,10 +376,10 @@ static int __set_status(struct spr_proc_status_root *rt,
     p->ioctl_fd = fd;
     p->status = status;
 
+    __down_write(&rt->sem);
     ASSERT(__insert_proc_status(&rt->root, p) == true);
-    vpr_dbg("allocate %lx pid %d status %d\n", &p->node, p->pid, p->status);
-
     __up_write(&rt->sem);
+    vpr_dbg("allocate %lx pid %d status %d\n", &p->node, p->pid, p->status);
 
 success:
     vpr_dbg("set status %d\n", p->status);
@@ -388,28 +405,25 @@ int spr_set_status_restore(struct task_struct *task, int fd) {
 int spr_erase_status(struct task_struct *task) {
     int retval;
     struct spr_proc_status_struct *p;
-    struct spr_proc_info *info;
 
-    __down_write(&proc_root.sem);
+    __down_read(&proc_root.sem);
     p = __find_proc_status(&proc_root.root, current);
+    __up_read(&proc_root.sem);
     if (!p) {
-        __up_write(&proc_root.sem);
         vpr_dbg("erase_monitor_status: not found %d\n", task->pid);
         return SPR_MONITOR_OUT;
     }
 
+    __down_write(&proc_root.sem);
+    rb_erase(&p->node, &proc_root.root);
+    smp_mb();
+    __up_write(&proc_root.sem);
+
     vpr_dbg("erase_monitor_status: pid %d\n", task->pid, p->status);
 
     retval = p->status;
-    info = p->info;
-
-    rb_erase(&p->node, &proc_root.root);
+    vfree(p->info);
     kmem_cache_free(proc_status_cachep, p);
-    smp_mb();
-
-    __up_write(&proc_root.sem);
-
-    vfree(info);
     return retval;
 }
 
@@ -462,8 +476,8 @@ __prepare_context(struct context_struct *ctx, const struct pt_regs *regs) {
     info = p->info;
 
     // no one will delete our rbnode
-    info->fsbase = current->thread.fsbase;
-    info->gsbase = current->thread.gsbase;
+    info->fsbase = current->thread.FSBASE;
+    info->gsbase = current->thread.GSBASE;
     info->seccomp_mode = spr_get_seccomp();
     info->cap_effective = current_cred()->cap_effective;
     info->cap_permitted = current_cred()->cap_permitted;
@@ -493,6 +507,7 @@ create_elf_tbls(struct elfhdr *exec,
     int items;
     uint64_t p;
     uint64_t arg_start, env_start, original_rsp;
+    void *minfo_ptr[2];
 
     elf_addr_t __user *sp;
     elf_addr_t __user *u_rand_bytes;
@@ -585,7 +600,7 @@ create_elf_tbls(struct elfhdr *exec,
     // make stack 16-byte aligned
     items = (argc + 1) + (envc + 1) + 1;
     sp = STACK_ADD(p, elf_info_idx);
-    sp = STACK_ROUND(sp, items);
+    sp = (elf_addr_t *)STACK_ROUND(sp, items);
     *target_sp = (unsigned long)sp;
 
     // put argc
@@ -623,12 +638,11 @@ create_elf_tbls(struct elfhdr *exec,
     if (!context) 
         goto err;
 
+    minfo_ptr[0] = (void *)context;
+    minfo_ptr[1] = (void *)log;
+    
     __prepare_context(context, regs);
-    void *arg[] = {
-        (void *)context,
-        (void *)log
-    };
-    if (check_mapping(__put_monitor_info, (void *)arg)) {
+    if (check_mapping(__put_monitor_info, (void *)minfo_ptr)) {
         goto err;
     }
 
@@ -791,9 +805,6 @@ int loader_init(void) {
     if (elf_load_phdrs(&monitor_elf_ex, monitor, &monitor_elf_phdata))
         goto out_free_monitor;
 
-    if (monitor_elf_ex.e_type == ET_EXEC)
-        goto success;
-
     elf_ppnt = monitor_elf_phdata;
     // find INTERP segment
     for (i = 0; i < monitor_elf_ex.e_phnum; i++) {
@@ -841,8 +852,8 @@ int loader_init(void) {
     }
 
     if (!elf_interpreter) {
-        retval = -ENOEXEC;
-        goto out_free_interp;
+        pr_warn("Static linked, consider no dynamic linker\n");
+        goto success;
     }
 
     kfree(elf_interpreter);
@@ -860,25 +871,25 @@ int loader_init(void) {
     if (elf_load_phdrs(&interp_elf_ex, interpreter, &interp_elf_phdata))
         goto out_free_dentry;
 
-    proc_status_cachep = kmem_cache_create("spr_proc_status_cache", sizeof(struct spr_proc_status_struct), 0, SLAB_ACCOUNT, NULL);
+    proc_status_cachep = kmem_cache_create("spr_proc_status_cache", sizeof(struct spr_proc_status_struct), 0, 0, NULL);
     if (!proc_status_cachep) {
         retval = -ENOMEM;
         goto out_free_mem_cache;
     }
 
-    mm_wait_struct_cachep = kmem_cache_create("spr_mm_wait_struct_cache", sizeof(struct spr_mm_wait_struct), 0, SLAB_ACCOUNT, NULL);
+    mm_wait_struct_cachep = kmem_cache_create("spr_mm_wait_struct_cache", sizeof(struct spr_mm_wait_struct), 0, 0, NULL);
     if (!mm_wait_struct_cachep) {
         retval = -ENOMEM;
         goto out_free_mem_cache;
     }
 
+success:
     proc_root.root = RB_ROOT;
     init_rwsem(&proc_root.sem);
 
     mm_wait_root.root = RB_ROOT;
     init_rwsem(&mm_wait_root.sem);
 
-success:
     retval = 0;
 
 out:
