@@ -1,5 +1,6 @@
 #ifdef __KERNEL__
 #include "pinject.h"
+#include "flags.h"
 #endif
 
 #include "events.h"

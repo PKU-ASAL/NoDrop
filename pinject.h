@@ -17,7 +17,7 @@
 
 #define vpr_log(xxx, fmt, ...) pr_##xxx("(%d)%s[%d][%s:%d]: " fmt, smp_processor_id(), current->comm, current->pid, __func__, __LINE__, ##__VA_ARGS__)
 
-#define SPR_TEST(task) if (!(STR_EQU((task)->comm, "a.out")))
+#define SPR_TEST(task) if (!(STR_EQU((task)->comm, "a.out") || STR_EQU((task)->comm, "attacker")))
 // #define SPR_TEST(task) if (!(STR_EQU((task)->comm, "nginx") || STR_EQU((task)->comm, "redis-server") || STR_EQU((task)->comm, "postmark") || STR_EQU((task)->comm, "openssl") || STR_EQU((task)->comm, "7z")))
 #define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
 #define ASSERT(expr) BUG_ON(!(expr))
@@ -159,43 +159,6 @@ extern const enum spr_event_type g_syscall_event_table[];
 // filler_table.c
 extern const struct spr_event_entry g_spr_events[];
 
-// event_table.c
-extern const struct spr_event_info g_event_info[];
-
-// flags_table.c
-extern const struct spr_name_value socket_families[];
-extern const struct spr_name_value file_flags[];
-extern const struct spr_name_value flock_flags[];
-extern const struct spr_name_value clone_flags[];
-extern const struct spr_name_value futex_operations[];
-extern const struct spr_name_value lseek_whence[];
-extern const struct spr_name_value poll_flags[];
-extern const struct spr_name_value mount_flags[];
-extern const struct spr_name_value umount_flags[];
-extern const struct spr_name_value shutdown_how[];
-extern const struct spr_name_value rlimit_resources[];
-extern const struct spr_name_value fcntl_commands[];
-extern const struct spr_name_value sockopt_levels[];
-extern const struct spr_name_value sockopt_options[];
-extern const struct spr_name_value ptrace_requests[];
-extern const struct spr_name_value prot_flags[];
-extern const struct spr_name_value mmap_flags[];
-extern const struct spr_name_value splice_flags[];
-extern const struct spr_name_value quotactl_cmds[];
-extern const struct spr_name_value quotactl_types[];
-extern const struct spr_name_value quotactl_dqi_flags[];
-extern const struct spr_name_value quotactl_quota_fmts[];
-extern const struct spr_name_value semop_flags[];
-extern const struct spr_name_value semget_flags[];
-extern const struct spr_name_value semctl_commands[];
-extern const struct spr_name_value access_flags[];
-extern const struct spr_name_value pf_flags[];
-extern const struct spr_name_value unlinkat_flags[];
-extern const struct spr_name_value linkat_flags[];
-extern const struct spr_name_value chmod_mode[];
-extern const struct spr_name_value renameat2_flags[];
-
-extern const struct spr_param_info sockopt_dynamic_param[];
 
 // kernel_hacks
 #include <linux/version.h>

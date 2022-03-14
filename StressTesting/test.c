@@ -5,6 +5,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 int i;
 time_t starttime;
 
@@ -17,7 +18,7 @@ signal_callback_handler(int signum)
     time_t endtime=time(NULL);
     // printf("number of seconds eplapsed %ld\n",endtime-starttime);
     // printf("average iterations per second %d\n",i/(endtime-starttime));
-    printf(" %d,%d,%d\n",i,endtime-starttime,i/(endtime-starttime));
+    printf(" %d,%ld,%ld\n",i,endtime-starttime,i/(endtime-starttime));
    // Terminate program
    exit(signum);
 }

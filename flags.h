@@ -4,6 +4,9 @@
 #include <linux/mman.h>
 #include <linux/futex.h>
 #include <linux/ptrace.h>
+#include <linux/socket.h>
+#include <linux/sem.h>
+#include <linux/stat.h>
 
 #include "events.h"
 
@@ -80,7 +83,7 @@ static __always_inline uint32_t open_flags_to_scap(unsigned long flags)
 	return res;
 }
 
-static __always_inline u32 open_modes_to_scap(unsigned long flags,
+static __always_inline uint32_t open_modes_to_scap(unsigned long flags,
 					      unsigned long modes)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 0)
@@ -88,7 +91,7 @@ static __always_inline u32 open_modes_to_scap(unsigned long flags,
 #else
 	unsigned long flags_mask = O_CREAT;
 #endif
-	u32 res = 0;
+	uint32_t res = 0;
 
 	if ((flags & flags_mask) == 0)
 		return res;
@@ -144,9 +147,9 @@ static __always_inline u32 open_modes_to_scap(unsigned long flags,
 	return res;
 }
 
-static __always_inline u32 clone_flags_to_scap(unsigned long flags)
+static __always_inline uint32_t clone_flags_to_scap(unsigned long flags)
 {
-	u32 res = 0;
+	uint32_t res = 0;
 
 	if (flags & CLONE_FILES)
 		res |= SPR_CL_CLONE_FILES;
@@ -238,7 +241,7 @@ static __always_inline u32 clone_flags_to_scap(unsigned long flags)
 	return res;
 }
 
-static __always_inline u8 socket_family_to_scap(u8 family)
+static __always_inline uint8_t socket_family_to_scap(uint8_t family)
 {
 	if (family == AF_INET)
 		return SPR_AF_INET;
@@ -396,9 +399,9 @@ static __always_inline u8 socket_family_to_scap(u8 family)
 	}
 }
 
-static __always_inline u32 prot_flags_to_scap(int prot)
+static __always_inline uint32_t prot_flags_to_scap(int prot)
 {
-	u32 res = 0;
+	uint32_t res = 0;
 
 	if (prot & PROT_READ)
 		res |= SPR_PROT_READ;
@@ -428,9 +431,9 @@ static __always_inline u32 prot_flags_to_scap(int prot)
 	return res;
 }
 
-static __always_inline u32 mmap_flags_to_scap(int flags)
+static __always_inline uint32_t mmap_flags_to_scap(int flags)
 {
-	u32 res = 0;
+	uint32_t res = 0;
 
 	if (flags & MAP_SHARED)
 		res |= SPR_MAP_SHARED;
@@ -486,7 +489,7 @@ static __always_inline u32 mmap_flags_to_scap(int flags)
 	return res;
 }
 
-static __always_inline u8 fcntl_cmd_to_scap(unsigned long cmd)
+static __always_inline uint8_t fcntl_cmd_to_scap(unsigned long cmd)
 {
 	switch (cmd) {
 	case F_DUPFD:
@@ -567,7 +570,7 @@ static __always_inline u8 fcntl_cmd_to_scap(unsigned long cmd)
 	}
 }
 
-static __always_inline u8 sockopt_level_to_scap(int level)
+static __always_inline uint8_t sockopt_level_to_scap(int level)
 {
 	switch (level) {
 		case SOL_SOCKET:
@@ -582,7 +585,7 @@ static __always_inline u8 sockopt_level_to_scap(int level)
 	}
 }
 
-static __always_inline u8 sockopt_optname_to_scap(int level, int optname)
+static __always_inline uint8_t sockopt_optname_to_scap(int level, int optname)
 {
 	if (level != SOL_SOCKET)
 	{
@@ -809,9 +812,9 @@ static __always_inline u8 sockopt_optname_to_scap(int level, int optname)
 }
 
 /* XXX this is very basic for the moment, we'll need to improve it */
-static __always_inline u16 poll_events_to_scap(short revents)
+static __always_inline uint16_t poll_events_to_scap(short revents)
 {
-	u16 res = 0;
+	uint16_t res = 0;
 
 	if (revents & POLLIN)
 		res |= SPR_POLLIN;
@@ -849,9 +852,9 @@ static __always_inline u16 poll_events_to_scap(short revents)
 	return res;
 }
 
-static __always_inline u16 futex_op_to_scap(unsigned long op)
+static __always_inline uint16_t futex_op_to_scap(unsigned long op)
 {
-	u16 res = 0;
+	uint16_t res = 0;
 	unsigned long flt_op = op & 127;
 
 	if (flt_op == FUTEX_WAIT)
@@ -899,9 +902,9 @@ static __always_inline u16 futex_op_to_scap(unsigned long op)
 	return res;
 }
 
-static __always_inline u32 access_flags_to_scap(unsigned flags)
+static __always_inline uint32_t access_flags_to_scap(unsigned flags)
 {
-	u32 res = 0;
+	uint32_t res = 0;
 
 	if (flags == 0/*F_OK*/) {
 		res = SPR_F_OK;
@@ -917,7 +920,7 @@ static __always_inline u32 access_flags_to_scap(unsigned flags)
 	return res;
 }
 
-static __always_inline u8 rlimit_resource_to_scap(unsigned long rresource)
+static __always_inline uint8_t rlimit_resource_to_scap(unsigned long rresource)
 {
 	switch (rresource) {
 	case RLIMIT_CPU:
@@ -959,7 +962,7 @@ static __always_inline u8 rlimit_resource_to_scap(unsigned long rresource)
 	}
 }
 
-static __always_inline u16 shutdown_how_to_scap(unsigned long how)
+static __always_inline uint16_t shutdown_how_to_scap(unsigned long how)
 {
 #ifdef SHUT_RD
 	if (how == SHUT_RD)
@@ -968,10 +971,9 @@ static __always_inline u16 shutdown_how_to_scap(unsigned long how)
 		return SHUT_WR;
 	else if (how == SHUT_RDWR)
 		return SHUT_RDWR;
-
 	ASSERT(false);
 #endif
-	return (u16)how;
+	return (uint16_t)how;
 }
 
 static __always_inline uint64_t lseek_whence_to_scap(unsigned long whence)
@@ -988,9 +990,9 @@ static __always_inline uint64_t lseek_whence_to_scap(unsigned long whence)
 	return res;
 }
 
-static __always_inline u16 semop_flags_to_scap(short flags)
+static __always_inline uint16_t semop_flags_to_scap(short flags)
 {
-	u16 res = 0;
+	uint16_t res = 0;
 
 	if (flags & IPC_NOWAIT)
 		res |= SPR_IPC_NOWAIT;
@@ -1001,9 +1003,9 @@ static __always_inline u16 semop_flags_to_scap(short flags)
 	return res;
 }
 
-static __always_inline u32 pf_flags_to_scap(unsigned long flags)
+static __always_inline uint32_t pf_flags_to_scap(unsigned long flags)
 {
-	u32 res = 0;
+	uint32_t res = 0;
 
 	/* Page fault error codes don't seem to be clearly defined in header
 	 * files throughout the kernel except in some emulation modes (e.g. kvm)
@@ -1035,9 +1037,9 @@ static __always_inline u32 pf_flags_to_scap(unsigned long flags)
 	return res;
 }
 
-static __always_inline u32 flock_flags_to_scap(unsigned long flags)
+static __always_inline uint32_t flock_flags_to_scap(unsigned long flags)
 {
-	u32 res = 0;
+	uint32_t res = 0;
 
 	if (flags & LOCK_EX)
 		res |= SPR_LOCK_EX;
@@ -1140,9 +1142,9 @@ static __always_inline uint8_t quotactl_fmt_to_scap(unsigned long fmt)
 	}
 }
 
-static __always_inline u32 semget_flags_to_scap(unsigned flags)
+static __always_inline uint32_t semget_flags_to_scap(unsigned flags)
 {
-	u32 res = 0;
+	uint32_t res = 0;
 
 	if (flags & IPC_CREAT)
 		res |= SPR_IPC_CREAT;
@@ -1153,7 +1155,7 @@ static __always_inline u32 semget_flags_to_scap(unsigned flags)
 	return res;
 }
 
-static __always_inline u32 semctl_cmd_to_scap(unsigned cmd)
+static __always_inline uint32_t semctl_cmd_to_scap(unsigned cmd)
 {
 	switch (cmd) {
 	case IPC_STAT: return SPR_IPC_STAT;
@@ -1173,7 +1175,7 @@ static __always_inline u32 semctl_cmd_to_scap(unsigned cmd)
 	return 0;
 }
 
-static __always_inline u16 ptrace_requests_to_scap(unsigned long req)
+static __always_inline uint16_t ptrace_requests_to_scap(unsigned long req)
 {
 	switch (req) {
 #ifdef PTRACE_SINGLEBLOCK
@@ -1304,9 +1306,9 @@ static __always_inline u16 ptrace_requests_to_scap(unsigned long req)
 	}
 }
 
-static __always_inline u32 unlinkat_flags_to_scap(unsigned long flags)
+static __always_inline uint32_t unlinkat_flags_to_scap(unsigned long flags)
 {
-	u32 res = 0;
+	uint32_t res = 0;
 
 	if (flags & AT_REMOVEDIR)
 		res |= SPR_AT_REMOVEDIR;
@@ -1314,9 +1316,9 @@ static __always_inline u32 unlinkat_flags_to_scap(unsigned long flags)
 	return res;
 }
 
-static __always_inline u32 linkat_flags_to_scap(unsigned long flags)
+static __always_inline uint32_t linkat_flags_to_scap(unsigned long flags)
 {
-	u32 res = 0;
+	uint32_t res = 0;
 
 	if (flags & AT_SYMLINK_FOLLOW)
 		res |= SPR_AT_SYMLINK_FOLLOW;
@@ -1329,9 +1331,9 @@ static __always_inline u32 linkat_flags_to_scap(unsigned long flags)
 	return res;
 }
 
-static __always_inline u32 chmod_mode_to_scap(unsigned long modes)
+static __always_inline uint32_t chmod_mode_to_scap(unsigned long modes)
 {
-	u32 res = 0;
+	uint32_t res = 0;
 	if (modes & S_IRUSR)
 		res |= SPR_S_IRUSR;
 
@@ -1382,6 +1384,5 @@ static __always_inline u32 chmod_mode_to_scap(unsigned long modes)
 
 	return res;
 }
-
 
 #endif /* SPR_FLAG_HELPERS_H_ */
