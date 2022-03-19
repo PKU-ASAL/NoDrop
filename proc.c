@@ -56,9 +56,9 @@ spr_procread(struct file *filp, char __user *buf, size_t count, loff_t *off) {
     event_id = 0;
     for_each_present_cpu(cpu) {
         struct spr_kbuffer *bufp = &per_cpu(buffer, cpu);
-        mutex_lock(&bufp->lock);
+        down_read(&bufp->sem);
         event_id += bufp->event_count;
-        mutex_unlock(&bufp->lock);
+        up_read(&bufp->sem);
     }
 
     len += sprintf(kbuf, "%u", event_id);
@@ -88,9 +88,9 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
     case SPR_IOCTL_CLEAR_BUFFER:
         for_each_present_cpu(cpu) {
             bufp = &per_cpu(buffer, cpu);
-            mutex_lock(&bufp->lock);
+            down_write(&bufp->sem);
             reset_buffer(bufp, SPR_INIT_INFO | SPR_INIT_COUNT);
-            mutex_unlock(&bufp->lock);
+            up_write(&bufp->sem);
         }
 
         pr_info("proc: clean buffer");
@@ -105,18 +105,18 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         ptr = fetch.buf;
         for_each_present_cpu(cpu) {
             bufp = &per_cpu(buffer, cpu);
-            mutex_lock(&bufp->lock);
+            down_read(&bufp->sem);
             if (count + bufp->info->tail <= fetch.len) {
                 if (copy_to_user((void *)ptr, (void *)bufp->buffer, bufp->info->tail)) {
-                    mutex_unlock(&bufp->lock);
+                    up_read(&bufp->sem);
                     ret = -EFAULT;
                     goto out;
                 }
                 ptr += bufp->info->tail;
                 count += bufp->info->tail;
-                mutex_unlock(&bufp->lock);
+                up_read(&bufp->sem);
             } else {
-                mutex_unlock(&bufp->lock);
+                up_read(&bufp->sem);
                 break;
             }
         }
@@ -134,11 +134,11 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         memset(&cinfo, 0, sizeof(cinfo));
         for_each_present_cpu(cpu) {
             bufp = &per_cpu(buffer, cpu);
-            mutex_lock(&bufp->lock);
+            down_read(&bufp->sem);
             cinfo.event_count += bufp->event_count;
             cinfo.unflushed_count += bufp->info->nevents;
             cinfo.unflushed_len += bufp->info->tail;
-            mutex_unlock(&bufp->lock);
+            up_read(&bufp->sem);
         }
 
         if (copy_to_user((void *)arg, (void *)&cinfo, sizeof(cinfo))) {

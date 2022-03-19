@@ -57,7 +57,7 @@ void spr_cap_raise(void) {
 
 void spr_cap_capset(u32 *permitted, u32 *effective) {
     int i;
-    struct cred *cred = current_cred();
+    struct cred *cred = (struct cred *)current_cred();
     for (i = 0; i < _KERNEL_CAPABILITY_U32S; ++i) {
         cred->cap_permitted.cap[i] = permitted[i];
         cred->cap_effective.cap[i] = effective[i];
@@ -82,8 +82,8 @@ void spr_write_gsbase(unsigned long gsbase) {
 
 void prepare_security_data(struct security_data *security) {
     int i;
-    struct cred *cred = current_cred();
     sigset_t sigset;
+    const struct cred *cred = current_cred();
 
     sigprocmask(-1, 0, &sigset);
     *security = (struct security_data) {

@@ -36,10 +36,10 @@ static inline int arch_prctl(int code, unsigned long addr) {
     return syscall(SYS_arch_prctl, code, addr);
 }
 
-void spr_monitor_enter();
 void __attribute__((weak)) spr_monitor_init(int argc, char *argv[], char *env[]) {};
 void __attribute__((weak)) spr_monitor_exit(int code) {};
-void spr_monitor_return();
+void __attribute__((weak)) spr_monitor_enter() {};
+void __attribute__((weak)) spr_monitor_return() {};
 
 extern void __restore_registers(struct pt_regs *reg);
 static void __m_restore_context(struct context_struct *context);
@@ -62,10 +62,10 @@ void __m_start_main(int argc, char *argv[], void (*rtld_fini) (void)) {
         arch_prctl(ARCH_SET_FS, g_monitor_fsbase);
     }
 
-    // if (likely(g_first_come_in == 0))
-    //     arch_prctl(ARCH_SET_FS, g_monitor_fsbase);
-
     __m_upgrade_cred();
+
+    spr_monitor_enter();
+
     g_ioctl_proc_fd = open(SPR_IOCTL_PATH, O_RDONLY);
 
     if (unlikely(g_first_come_in == 1)) {
@@ -107,9 +107,10 @@ __m_restore_context(struct context_struct *context) {
     int code;
     struct spr_sigwait *sig, *signext;
 
+    spr_monitor_return();
+
     if (unlikely(SYSCALL_EXIT_FAMILY(g_infopack.m_context.regs.orig_rax))) {
         code = g_infopack.m_context.regs.rdi;
-        // spr_monitor_return();
         spr_monitor_exit(code);
         __m_real_exit();
         /* !!!NOT REACHABLE!!! */
@@ -117,7 +118,6 @@ __m_restore_context(struct context_struct *context) {
 
     // Restore SIGNALs
     __m_downgrade_cred();
-    // spr_monitor_return();
 
     /*
      * Restore Thread Local Storage pointer
@@ -143,7 +143,6 @@ static void __m_upgrade_cred(void) {
 
     setuid(0);
     setgid(0);
-
 
     for (i = 0; i < 3; ++i) {
         g_rlimits[i].limit = g_infopack.m_context.rlim[i];

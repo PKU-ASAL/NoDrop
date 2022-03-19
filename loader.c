@@ -59,6 +59,8 @@ __put_monitor_info(struct vm_area_struct const * const vma, void *arg) {
         return 0;
     }
 
+    vpr_info("transfer %lld logs of %u bytes\n", buffer->info->nevents, buffer->info->tail);
+
     return 1;
 }
 
@@ -313,7 +315,7 @@ do_load_monitor(const struct pt_regs *reg,
                 interp_load_addr + interp_elf_ex.e_entry : 
                 load_addr + monitor_elf_ex.e_entry;
 
-    pr_info("[%d] load monitor at %llx\nload interp at %llx\nentry = %llx", current->pid, load_addr, interp_load_addr, load_entry);
+    vpr_dbg("load monitor at %llx\nload interp at %llx\nentry = %llx", load_addr, interp_load_addr, load_entry);
 
     if (entry)  *entry = load_entry;
     if (load)   *load = load_addr;
@@ -346,7 +348,7 @@ load_monitor(const struct spr_kbuffer *buffer) {
     int retval;
     uint64_t entry, sp, load_addr, interp_load_addr;
     struct pt_regs *reg;
-    char *argv[] = { MONITOR_PATH, "--proc-type=secondary", "--log-level=1", NULL };
+    char *argv[] = { MONITOR_PATH, NULL };
 
     reg = current_pt_regs();
 
@@ -389,12 +391,14 @@ out:
 
 int loader_init(void) {
     int i, retval;
+    loff_t pos;
     char *elf_interpreter = NULL;
     struct elf_phdr *elf_ppnt = NULL;
 
-    loff_t pos;
     monitor = NULL;
     interpreter = NULL;
+    monitor_elf_phdata = NULL;
+    interp_elf_phdata = NULL;
 
     monitor = open_exec(MONITOR_PATH);
     retval = PTR_ERR(monitor);
@@ -421,9 +425,6 @@ int loader_init(void) {
         goto out_free_monitor;
     if (elf_load_phdrs(&monitor_elf_ex, monitor, &monitor_elf_phdata))
         goto out_free_monitor;
-
-    if (monitor_elf_ex.e_type == ET_EXEC)
-        goto success;
 
     elf_ppnt = monitor_elf_phdata;
     // find INTERP segment
@@ -472,8 +473,8 @@ int loader_init(void) {
     }
 
     if (!elf_interpreter) {
-        retval = -ENOEXEC;
-        goto out_free_interp;
+        pr_warn("No dynamic linker, consider static linked\n");
+        goto success;
     }
 
     kfree(elf_interpreter);

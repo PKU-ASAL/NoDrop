@@ -1,7 +1,5 @@
 KDIR := /lib/modules/$(shell uname -r)/build
-KDIR-debug := /mnt/hgfs/Projects/kernel-dbg/linux-5.4
 PWD  := $(shell pwd)
-EXTRA_CFLAGS += -g -I$(src)/include
 
 MODULE := pinject
 obj-m  += $(MODULE).o
@@ -20,19 +18,31 @@ $(MODULE)-objs := \
 	syscall_table.o \
 	dynamic_params_table.o
 
+ccflags-y += -I$(src) -I$(src)/include -I$(src)/include
+
 all:
 	make -C $(KDIR) M=$(PWD) modules
-.PHONY: clean load debug
+
+.PHONY: clean distclean load mkfig monitor test
 clean:
 	make -C $(KDIR) M=$(PWD) clean
+	make -C mkfig/ clean
+	make -C monitor/ clean
+	make -C StressTesting/ clean
+
+distclean:
+	make -C $(KDIR) M=$(PWD) clean
+
 load: all
 	sudo rm -rf /tmp/pinject; mkdir /tmp/pinject
 	sudo rmmod -f $(MODULE) 2> /dev/null || true
 	sudo insmod $(MODULE).ko
 
-debug:
-	make -C $(KDIR-debug) M=$(PWD) modules
-	cp pinject.ko $(PWD)/../kernel-dbg/busybox-1.34.0/initramfs/
-	cp a.out $(PWD)/../kernel-dbg/busybox-1.34.0/initramfs/
-	cp monitor/monitor $(PWD)/../kernel-dbg/busybox-1.34.0/initramfs/
-	cd $(PWD)/../kernel-dbg/busybox-1.34.0/initramfs/; find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs.cpio.gz
+mkfig:
+	make -C mkfig/
+
+monitor:
+	make -C monitor/
+
+test:
+	make -C StressTesting/

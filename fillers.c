@@ -26,10 +26,11 @@
 #endif
 
 #include "pinject.h"
+#include "fillers.h"
+#include "flags.h"
+
 #include "include/common.h"
 #include "include/events.h"
-#include "include/fillers.h"
-#include "include/flags.h"
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 18, 0)
 #include <linux/bpf.h>
@@ -726,11 +727,6 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
                 if (++len > (int)max_arg_size)
                     len = max_arg_size;
             }
-
-            /*
-             * Make sure the string is null-terminated
-             */
-            *(char *)(args->buf_ptr + args->arg_data_offset + len) = 0;
         } else {
             /*
              * Handle NULL pointers

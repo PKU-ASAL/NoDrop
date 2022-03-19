@@ -3,13 +3,13 @@
 
 #ifdef __KERNEL__
 #include <linux/kernel.h>
-#include <linux/mutex.h>
+#include <linux/rwsem.h>
+#include "fillers.h"
 #else
 #include <stdint.h>
 #endif //__KERNEL__
 
 #include <linux/types.h>
-#include "fillers.h"
 
 typedef uint64_t nanoseconds;
 #define _packed __attribute__((packed))
@@ -751,8 +751,8 @@ struct spr_kbuffer {
     char *buffer;
 	char *str_storage;
     struct spr_buffer_info *info;
+	struct rw_semaphore sem;
 	uint64_t event_count;
-	struct mutex lock;
 };
 #endif //__KERNEL__
 
@@ -798,11 +798,13 @@ struct spr_event_data {
     } event_info;
 };
 
+#ifdef __KERNEL__
 typedef int (*filler_callback_t) (struct event_filler_arguments *args);
 struct spr_event_entry {
     filler_callback_t filler_callback;
     enum spr_filler_id filler_id;
 } _packed;
+#endif
 
 struct spr_param_info {
     char name[SPR_MAX_NAME_LEN];
@@ -814,10 +816,46 @@ struct spr_param_info {
 
 struct spr_event_info {
     char name[SPR_MAX_NAME_LEN];
-    enum spr_capture_category category;
+    enum spr_event_category category;
     enum spr_event_flags flags;
     uint32_t nparams;
     struct spr_param_info params[SPR_MAX_EVENT_PARAMS];
 } _packed;
+
+extern const struct spr_event_info g_event_info[];
+
+extern const struct spr_name_value socket_families[];
+extern const struct spr_name_value file_flags[];
+extern const struct spr_name_value flock_flags[];
+extern const struct spr_name_value clone_flags[];
+extern const struct spr_name_value futex_operations[];
+extern const struct spr_name_value lseek_whence[];
+extern const struct spr_name_value poll_flags[];
+extern const struct spr_name_value mount_flags[];
+extern const struct spr_name_value umount_flags[];
+extern const struct spr_name_value shutdown_how[];
+extern const struct spr_name_value rlimit_resources[];
+extern const struct spr_name_value fcntl_commands[];
+extern const struct spr_name_value sockopt_levels[];
+extern const struct spr_name_value sockopt_options[];
+extern const struct spr_name_value ptrace_requests[];
+extern const struct spr_name_value prot_flags[];
+extern const struct spr_name_value mmap_flags[];
+extern const struct spr_name_value splice_flags[];
+extern const struct spr_name_value quotactl_cmds[];
+extern const struct spr_name_value quotactl_types[];
+extern const struct spr_name_value quotactl_dqi_flags[];
+extern const struct spr_name_value quotactl_quota_fmts[];
+extern const struct spr_name_value semop_flags[];
+extern const struct spr_name_value semget_flags[];
+extern const struct spr_name_value semctl_commands[];
+extern const struct spr_name_value access_flags[];
+extern const struct spr_name_value pf_flags[];
+extern const struct spr_name_value unlinkat_flags[];
+extern const struct spr_name_value linkat_flags[];
+extern const struct spr_name_value chmod_mode[];
+extern const struct spr_name_value renameat2_flags[];
+
+extern const struct spr_param_info sockopt_dynamic_param[];
 
 #endif //_EVENTS_H_

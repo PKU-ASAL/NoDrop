@@ -1,5 +1,7 @@
 #include <linux/version.h>
 #include <linux/kernel.h>
+#include <linux/semaphore.h>
+#include <linux/vmalloc.h>
 
 
 #include "pinject.h"
@@ -60,10 +62,6 @@ start:
     args.nevents = info->nevents;
     args.snaplen = 80; // temporary MAGIC number
 
-    for(cbret = 0; cbret < args.nargs; ++cbret) {
-        *(((uint16_t *)args.buf_ptr) + cbret) = 0;
-    }
-
     if (g_spr_events[event_type].filler_callback) {
         cbret = g_spr_events[event_type].filler_callback(&args);
     } else {
@@ -80,7 +78,6 @@ start:
             * we update the tail and the user space process (on another CPU)
             * can access the buffer.
             */
-            smp_wmb();
             info->tail += event_size;
             ++info->nevents;
             ++buffer->event_count;
@@ -107,7 +104,7 @@ loading:
         reset_buffer(buffer, SPR_INIT_INFO);
         if (restart)
             goto start;
-        return SPR_SUCCESS;
+        return SPR_SUCCESS_LOAD;
     } else {
         return SPR_FAILURE_BUG;
     }
@@ -190,7 +187,7 @@ void reset_buffer(struct spr_kbuffer *buffer, int flags) {
         buffer->event_count = 0;
 
     if (flags & SPR_INIT_LOCK)
-        mutex_init(&buffer->lock);
+        init_rwsem(&buffer->sem);
 }
 
 int event_buffer_init(void) {
@@ -220,16 +217,16 @@ int record_one_event(enum spr_event_type type, struct spr_event_data *event_data
 
     cpu = get_cpu();
     bufp = &per_cpu(buffer, cpu);
-    mutex_lock(&bufp->lock);
+    down_write(&bufp->sem);
 
     retval = do_record_one_event(bufp, type, ts, event_datap);
-    if (retval != SPR_SUCCESS) {
+    if (retval < 0) {
         pr_warn("record_one_event: one event log dropped, reason=%d\nnevents=%lld tail=0x%x\n",
                 retval,
                 bufp->info->nevents, bufp->info->tail);
     }
 
-    mutex_unlock(&bufp->lock);
+    up_write(&bufp->sem);
     put_cpu();
     return retval;
 }
