@@ -12,7 +12,7 @@ URL = "http://127.0.0.1:8089/test.html"
 cmd = "wrk -t %d -c %d %s" % (NRCPUS, CONNECTION, URL)
 
 def prepare():
-    subprocess.run("./nginx/nginx_/sbin/nginx", shell=True)
+    subprocess.run("./nginx/nginx_/sbin/nginx", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def execute_wrk():
     f = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -21,8 +21,7 @@ def execute_wrk():
     return 1e6 / ret
 
 def finish():
-    subprocess.run("./nginx/nginx_/sbin/nginx -s quit", shell=True)
-    subprocess.run("rm -f nginx/nginx_/logs/*", shell=True)
+    subprocess.run("./nginx/nginx_/sbin/nginx -s quit", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
 res = []
 total_cost = 0
