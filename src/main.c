@@ -1,11 +1,11 @@
 #include <linux/init.h>
 #include <linux/module.h>
 
-#include "pinject.h"
+#include "secureprov.h"
 
 MODULE_LICENSE("GPL");
 
-static int pinject_init(void)
+static int secureprov_init(void)
 {
     int err;
 
@@ -44,7 +44,7 @@ out_loader:
     goto out;
 }
 
-static void pinject_exit(void)
+static void secureprov_exit(void)
 {
     loader_destory();
     event_buffer_destory();
@@ -52,5 +52,5 @@ static void pinject_exit(void)
     proc_destroy();
 }
 
-module_init(pinject_init);
-module_exit(pinject_exit);
+module_init(secureprov_init);
+module_exit(secureprov_exit);

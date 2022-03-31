@@ -7,9 +7,9 @@
 #include <linux/ktime.h>
 #include <linux/rbtree.h>
 
-#include "pinject.h"
-#include "include/common.h"
-#include "include/events.h"
+#include "secureprov.h"
+#include "common.h"
+#include "events.h"
 
 
 DEFINE_PER_CPU(struct spr_kbuffer, buffer);

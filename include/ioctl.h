@@ -2,7 +2,7 @@
 #define SPR_IOCTL_H_
 
 
-#define SPR_IOCTL_NAME "pinject"
+#define SPR_IOCTL_NAME "secureprov"
 #define SPR_IOCTL_PATH "/proc/"SPR_IOCTL_NAME
 
 #ifdef __KERNEL__

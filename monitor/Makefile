@@ -1,10 +1,12 @@
-MODULE := pinject
+MODULE := secureprov
 TARGET := monitor
 
+VPATH := ../src
+
 PRIM_C_FILES := main.c \
-				../events_table.c \
-				../flags_table.c \
-				../dynamic_params_table.c
+				events_table.c \
+				flags_table.c \
+				dynamic_params_table.c
 C_FILES := $(PRIM_C_FILES) context.c
 S_FILES := misc.S
 
@@ -23,9 +25,10 @@ monitor: $(O_FILES)
 
 %.o: %.S
 	$(CC) $< -c $(CFLAGS) -o $@ $(LDFLAGS)
-%.o: ../%.c
-	$(CC) $< -c $(CFLAGS) -o $@ $(LDFLAGS)
+# %.o: %.c
+# 	$(CC) $< -c $(CFLAGS) -o $@ $(LDFLAGS)
 %.o: %.c
+	echo $< $@
 	$(CC) $< -c $(CFLAGS) -o $@ $(LDFLAGS)
 
 .PHONY: clean all

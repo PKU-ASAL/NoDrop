@@ -19,9 +19,9 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    fd = open("/proc/pinject", O_RDWR);
+    fd = open(SPR_IOCTL_PATH, O_RDWR);
     if (fd < 0) {
-        fprintf(stderr, "Cannot open /proc/pinject\n");
+        fprintf(stderr, "Cannot open " SPR_IOCTL_PATH);
         return 127;
     }
 

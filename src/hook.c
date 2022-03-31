@@ -8,10 +8,10 @@
 #include <asm/unistd.h>
 #include <asm/syscall.h>
 
-#include "pinject.h"
+#include "secureprov.h"
 #include "syscall.h"
-#include "include/common.h"
-#include "include/events.h"
+#include "common.h"
+#include "events.h"
 
 #ifndef CONFIG_HAVE_SYSCALL_TRACEPOINTS
  #error The kernel must have HAVE_SYSCALL_TRACEPOINTS in order to be useful

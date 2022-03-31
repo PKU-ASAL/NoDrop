@@ -1,4 +1,4 @@
-#include "include/events.h"
+#include "events.h"
 
 const struct spr_event_info g_event_info[SPRE_EVENT_MAX] = {
 	[SPRE_GENERIC] = {"syscall", EC_OTHER, EF_NONE, 1, {{"ID", PT_SYSCALLID, PF_DEC} } },

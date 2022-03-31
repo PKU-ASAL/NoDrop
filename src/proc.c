@@ -8,10 +8,10 @@
 #include <asm/prctl.h>
 #include <asm/proto.h>
 
-#include "pinject.h"
-#include "include/common.h"
-#include "include/events.h"
-#include "include/ioctl.h"
+#include "secureprov.h"
+#include "common.h"
+#include "events.h"
+#include "ioctl.h"
 
 
 #define BUFSIZE 30

@@ -7,7 +7,7 @@ or GPL2.txt for full copies of the license.
 
 */
 
-#include "include/events.h"
+#include "events.h"
 
 const struct spr_name_value socket_families[] = {
 	{"AF_NFC", SPR_AF_NFC},

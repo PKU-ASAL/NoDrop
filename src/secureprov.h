@@ -1,11 +1,11 @@
-#ifndef PINJECT_H_
-#define PINJECT_H_
+#ifndef SECUREPROV_H_
+#define SECUREPROV_H_
 
 #include <linux/ptrace.h>
 #include <linux/elf.h>
 
-#include "include/common.h"
-#include "include/events.h"
+#include "common.h"
+#include "events.h"
 
 #define vpr_dbg(fmt, ...)
 // #define vpr_dbg(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
@@ -15,8 +15,8 @@
 
 #define vpr_log(xxx, fmt, ...) pr_##xxx("(%d)%s[%d][%s:%d]: " fmt, smp_processor_id(), current->comm, current->pid, __func__, __LINE__, ##__VA_ARGS__)
 
-#define SPR_TEST(task) if (!(STR_EQU((task)->comm, "a.out") || STR_EQU((task)->comm, "attacker")))
-// #define SPR_TEST(task) if (!(STR_EQU((task)->comm, "nginx") || STR_EQU((task)->comm, "redis-server") || STR_EQU((task)->comm, "postmark") || STR_EQU((task)->comm, "openssl") || STR_EQU((task)->comm, "7z")))
+#define SPR_TEST(task) if (!(STR_EQU((task)->comm, "a.out")))
+// #define SPR_TEST(task) if (!(STR_EQU((task)->comm, "nginx") || STR_EQU((task)->comm, "httpd") || STR_EQU((task)->comm, "redis-server") || STR_EQU((task)->comm, "postmark") || STR_EQU((task)->comm, "openssl") || STR_EQU((task)->comm, "7z")))
 #define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
 #define ASSERT(expr) BUG_ON(!(expr))
 #define MONITOR_PATH "./monitor/monitor"
@@ -183,4 +183,4 @@ static inline struct inode *file_inode(struct file *f)
 	} while(0)
 #endif
 
-#endif // PINJECT_H_
+#endif // SECUREPROV_H_

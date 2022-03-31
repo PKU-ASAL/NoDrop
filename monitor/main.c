@@ -8,7 +8,7 @@
 #include "context.h"
 #include "events.h"
 
-#define PATH_FMT "/tmp/pinject/%u-%ld.buf"
+#define PATH_FMT "/tmp/secureprov/%u-%ld.buf"
 #define SECOND_IN_US 1000000000
 
 char path[100];

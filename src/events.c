@@ -4,10 +4,10 @@
 #include <linux/vmalloc.h>
 
 
-#include "pinject.h"
+#include "secureprov.h"
 #include "syscall.h"
-#include "include/events.h"
-#include "include/common.h"
+#include "events.h"
+#include "common.h"
 
 static int 
 do_record_one_event(struct spr_kbuffer *buffer,

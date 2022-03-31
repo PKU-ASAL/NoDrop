@@ -13,8 +13,8 @@
 #include <asm/syscall.h>
 #include <linux/unistd.h>
 
-#include "include/events.h"
-#include "pinject.h"
+#include "secureprov.h"
+#include "events.h"
 
 
 /*

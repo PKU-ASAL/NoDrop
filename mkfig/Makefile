@@ -1,6 +1,9 @@
 TARGET := draw
+
+VPATH := ../src
+
 CPP_FILES := draw.cpp
-C_FILES := ../events_table.c ../flags_table.c ../dynamic_params_table.c
+C_FILES := events_table.c flags_table.c dynamic_params_table.c
 CO_FILES := $(patsubst %.c,%.o,$(notdir ${C_FILES})) 
 CPPO_FILES := $(patsubst %.cpp,%.o,$(notdir ${CPP_FILES}))
 O_FILES := $(CO_FILES) $(CPPO_FILES)
@@ -21,7 +24,7 @@ all: $(TARGET)
 $(TARGET): $(O_FILES)
 	$(CXX) $^ -o $@ $(LDFLAGS)
 
-$(CO_FILES): %.o: ../%.c
+$(CO_FILES): %.o: %.c
 	$(CC) $< -c $(CFLAGS) -o $@
 
 $(CPPO_FILES): %.o: %.cpp

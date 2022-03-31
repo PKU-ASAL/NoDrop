@@ -17,6 +17,7 @@ monitor/monitor
 *.log
 
 a.out
+sprctl
 .DS_Store
 
 *.png

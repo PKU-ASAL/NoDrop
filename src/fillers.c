@@ -25,12 +25,12 @@
 #include <asm/syscall.h>
 #endif
 
-#include "pinject.h"
+#include "secureprov.h"
 #include "fillers.h"
 #include "flags.h"
 
-#include "include/common.h"
-#include "include/events.h"
+#include "common.h"
+#include "events.h"
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 18, 0)
 #include <linux/bpf.h>
