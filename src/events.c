@@ -16,7 +16,6 @@ do_record_one_event(struct spr_kbuffer *buffer,
         struct spr_event_data *event_datap)
 {
     int cbret, restart;
-    int do_exit_syscall = 0;
     size_t event_size;
     uint32_t freespace; 
     struct event_filler_arguments args;
@@ -51,7 +50,6 @@ start:
     if (event_datap->category == SPRC_SYSCALL) {
         args.regs = event_datap->event_info.syscall_data.regs;
         args.syscall_nr = event_datap->event_info.syscall_data.id;
-        do_exit_syscall = SYSCALL_EXIT_FAMILY(syscall_get_nr(current, args.regs));
     } else {
         args.regs = NULL;
         args.syscall_nr = -1;
@@ -72,20 +70,12 @@ start:
     if (cbret == SPR_SUCCESS) {
         if (likely(args.curarg == args.nargs)) {
             event_size = sizeof(struct spr_event_hdr) + args.arg_data_offset;
+
             hdr->len = event_size;
-            /*
-            * Make sure all the memory has been written in real memory before
-            * we update the tail and the user space process (on another CPU)
-            * can access the buffer.
-            */
             info->tail += event_size;
+
             ++info->nevents;
             ++buffer->event_count;
-            
-            if (do_exit_syscall) {
-                restart = 0;
-                goto loading;
-            }
         } else {
             pr_err("corrupted filler for event type %d (added %u args, should have added %u args)\n",
                     event_type,

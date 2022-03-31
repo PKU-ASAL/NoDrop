@@ -59,7 +59,7 @@ __put_monitor_info(struct vm_area_struct const * const vma, void *arg) {
         return 0;
     }
 
-    vpr_info("transfer %lld logs of %u bytes\n", buffer->info->nevents, buffer->info->tail);
+    // vpr_info("transfer %lld logs of %u bytes\n", buffer->info->nevents, buffer->info->tail);
 
     return 1;
 }
