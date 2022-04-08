@@ -2,7 +2,7 @@
 
 ### How to build
 
-SpecureProv contains 2 major components: the kernel module and the monitor. All codes under `src/` is the kernel module and all codes under `monitor` is the monitor.
+NoDrop contains 2 major components: the kernel module and the monitor. All codes under `src/` is the kernel module and all codes under `monitor` is the monitor.
 
 NoDrop is tested on Ubuntu 18.04 with unmodified Linux kernel 4.15.0-171. 
 
