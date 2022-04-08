@@ -25,7 +25,7 @@
 #include <asm/syscall.h>
 #endif
 
-#include "secureprov.h"
+#include "nodrop.h"
 #include "fillers.h"
 #include "flags.h"
 
@@ -41,12 +41,12 @@
  * might_sleep(), so if present we use the one defined by them
  */
 #ifdef access_ok_noprefault
-#define spr_access_ok access_ok_noprefault
+#define nod_access_ok access_ok_noprefault
 #else
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0))
-#define spr_access_ok(type, addr, size)	access_ok(addr, size)
+#define nod_access_ok(type, addr, size)	access_ok(addr, size)
 #else
-#define spr_access_ok(type, addr, size)	access_ok(type, addr, size)
+#define nod_access_ok(type, addr, size)	access_ok(type, addr, size)
 #endif
 #endif
 
@@ -76,7 +76,7 @@ static struct pid_namespace *pid_ns_for_children(struct task_struct *task)
 #endif
 }
 
-inline void spr_syscall_get_arguments(struct task_struct *task, struct pt_regs *regs, unsigned long *args)
+inline void nod_syscall_get_arguments(struct task_struct *task, struct pt_regs *regs, unsigned long *args)
 {
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 0))
     syscall_get_arguments(task, regs, 0, 6, args);
@@ -93,13 +93,13 @@ inline void spr_syscall_get_arguments(struct task_struct *task, struct pt_regs *
  * The risk is that if the buffer is partially paged out, we get an error.
  * Returns the number of bytes NOT read.
  */
-unsigned long spr_copy_from_user(void *to, const void __user *from, unsigned long n)
+unsigned long nod_copy_from_user(void *to, const void __user *from, unsigned long n)
 {
     unsigned long res = n;
 
     pagefault_disable();
 
-    if (likely(spr_access_ok(VERIFY_READ, from, n)))
+    if (likely(nod_access_ok(VERIFY_READ, from, n)))
         res = __copy_from_user_inatomic(to, from, n);
 
     pagefault_enable();
@@ -113,7 +113,7 @@ unsigned long spr_copy_from_user(void *to, const void __user *from, unsigned lon
  * because of the preemption. This function reads the user buffer in atomic chunks, and
  * returns when there's an error or the terminator is found
  */
-long spr_strncpy_from_user(char *to, const char __user *from, unsigned long n)
+long nod_strncpy_from_user(char *to, const char __user *from, unsigned long n)
 {
     long string_length = 0;
     long res = -1;
@@ -130,7 +130,7 @@ long spr_strncpy_from_user(char *to, const char __user *from, unsigned long n)
         if (n < bytes_to_read)
             bytes_to_read = n;
 
-        if (!spr_access_ok(VERIFY_READ, from, bytes_to_read)) {
+        if (!nod_access_ok(VERIFY_READ, from, bytes_to_read)) {
             res = -1;
             goto strncpy_end;
         }
@@ -179,29 +179,29 @@ static int accumulate_argv_or_env(const char __user * __user *argv,
 	for (;;) {
 		const char __user *p;
 
-		if (unlikely(spr_get_user(p, argv)))
-			return SPR_FAILURE_INVALID_USER_MEMORY;
+		if (unlikely(nod_get_user(p, argv)))
+			return NOD_FAILURE_INVALID_USER_MEMORY;
 
 		if (p == NULL)
 			break;
 
 		/* need at least enough space for a \0 */
 		if (available < 1)
-			return SPR_FAILURE_BUFFER_FULL;
+			return NOD_FAILURE_BUFFER_FULL;
 
-		n_bytes_copied = spr_strncpy_from_user(&str_storage[len], p,
+		n_bytes_copied = nod_strncpy_from_user(&str_storage[len], p,
 						       available);
 
-		/* spr_strncpy_from_user includes the trailing \0 in its return
+		/* nod_strncpy_from_user includes the trailing \0 in its return
 		 * count. I want to pretend it was strncpy_from_user() so I
 		 * subtract off the 1 */
 		n_bytes_copied--;
 
 		if (n_bytes_copied < 0)
-			return SPR_FAILURE_INVALID_USER_MEMORY;
+			return NOD_FAILURE_INVALID_USER_MEMORY;
 
 		if (n_bytes_copied >= available)
-			return SPR_FAILURE_BUFFER_FULL;
+			return NOD_FAILURE_BUFFER_FULL;
 
 		/* update buffer. I want to keep the trailing \0, so I +1 */
 		available   -= n_bytes_copied+1;
@@ -218,7 +218,7 @@ static int accumulate_argv_or_env(const char __user * __user *argv,
  * https://github.com/torvalds/linux/commit/69c978232aaa99476f9bd002c2a29a84fa3779b5
  * Hence the crap in these two functions
  */
-unsigned long spr_get_mm_counter(struct mm_struct *mm, int member)
+unsigned long nod_get_mm_counter(struct mm_struct *mm, int member)
 {
 	long val = 0;
 
@@ -235,23 +235,23 @@ unsigned long spr_get_mm_counter(struct mm_struct *mm, int member)
 }
 
 
-static unsigned long spr_get_mm_rss(struct mm_struct *mm)
+static unsigned long nod_get_mm_rss(struct mm_struct *mm)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 4, 0)
 	return get_mm_rss(mm);
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 34)
-	return spr_get_mm_counter(mm, MM_FILEPAGES) +
-		spr_get_mm_counter(mm, MM_ANONPAGES);
+	return nod_get_mm_counter(mm, MM_FILEPAGES) +
+		nod_get_mm_counter(mm, MM_ANONPAGES);
 #else
 	return get_mm_rss(mm);
 #endif
 	return 0;
 }
 
-static unsigned long spr_get_mm_swap(struct mm_struct *mm)
+static unsigned long nod_get_mm_swap(struct mm_struct *mm)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 34)
-	return spr_get_mm_counter(mm, MM_SWAPENTS);
+	return nod_get_mm_counter(mm, MM_SWAPENTS);
 #endif
 	return 0;
 }
@@ -378,7 +378,7 @@ static int addr_to_kernel(void __user *uaddr, int ulen, struct sockaddr *kaddr)
     if (unlikely(ulen == 0))
         return 0;
 
-    if (unlikely(spr_copy_from_user(kaddr, uaddr, ulen)))
+    if (unlikely(nod_copy_from_user(kaddr, uaddr, ulen)))
         return -EFAULT;
 
     return 0;
@@ -659,7 +659,7 @@ static u16 fd_to_socktuple(int fd,
 
 static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 val_len, bool fromuser, u8 dyn_idx)
 {
-    const struct spr_param_info *param_info;
+    const struct nod_param_info *param_info;
     int len = -1;
     u16 *psize = (u16 *)(args->buf_ptr + args->curarg * sizeof(u16));
     u32 max_arg_size = args->arg_data_size;
@@ -672,32 +672,32 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
             args->curarg,
             args->nargs,
             current->pid);
-        memory_dump(args->buf_ptr - sizeof(struct spr_event_hdr), 32);
-        return SPR_FAILURE_BUG;
+        memory_dump(args->buf_ptr - sizeof(struct nod_event_hdr), 32);
+        return NOD_FAILURE_BUG;
     }
 
     if (unlikely(args->arg_data_size == 0))
-        return SPR_FAILURE_BUFFER_FULL;
+        return NOD_FAILURE_BUFFER_FULL;
 
-    if (max_arg_size > SPR_MAX_ARG_SIZE)
-        max_arg_size = SPR_MAX_ARG_SIZE;
+    if (max_arg_size > NOD_MAX_ARG_SIZE)
+        max_arg_size = NOD_MAX_ARG_SIZE;
 
     param_info = &(g_event_info[args->event_type].params[args->curarg]);
     if (param_info->type == PT_DYN && param_info->info != NULL) {
-        const struct spr_param_info *dyn_params;
+        const struct nod_param_info *dyn_params;
 
         if (unlikely(dyn_idx >= param_info->ninfo)) {
-            return SPR_FAILURE_BUG;
+            return NOD_FAILURE_BUG;
         }
 
-        dyn_params = (const struct spr_param_info *)param_info->info;
+        dyn_params = (const struct nod_param_info *)param_info->info;
 
         param_info = &dyn_params[dyn_idx];
         if (likely(max_arg_size >= sizeof(u8)))	{
             *(u8 *)(args->buf_ptr + args->arg_data_offset) = dyn_idx;
             len = sizeof(u8);
         } else {
-            return SPR_FAILURE_BUFFER_FULL;
+            return NOD_FAILURE_BUFFER_FULL;
         }
         args->arg_data_offset += len;
         args->arg_data_size -= len;
@@ -713,7 +713,7 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
     case PT_FSRELPATH:
         if (likely(val != 0)) {
             if (fromuser) {
-                len = spr_strncpy_from_user(args->buf_ptr + args->arg_data_offset,
+                len = nod_strncpy_from_user(args->buf_ptr + args->arg_data_offset,
                     (const char __user *)(syscall_arg_t)val, max_arg_size);
 
                 if (unlikely(len < 0)) {
@@ -753,9 +753,9 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
                     dpi_lookahead_size = val_len;
 
                 if (unlikely(dpi_lookahead_size >= max_arg_size))
-                    return SPR_FAILURE_BUFFER_FULL;
+                    return NOD_FAILURE_BUFFER_FULL;
 
-                len = (int)spr_copy_from_user(args->buf_ptr + args->arg_data_offset,
+                len = (int)nod_copy_from_user(args->buf_ptr + args->arg_data_offset,
                         (const void __user *)(syscall_arg_t)val,
                         dpi_lookahead_size);
 
@@ -782,7 +782,7 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
                         val_len = max_arg_size;
 
                     if (val_len > dpi_lookahead_size) {
-                        len = (int)spr_copy_from_user(args->buf_ptr + args->arg_data_offset + dpi_lookahead_size,
+                        len = (int)nod_copy_from_user(args->buf_ptr + args->arg_data_offset + dpi_lookahead_size,
                                 (const uint8_t __user *)(syscall_arg_t)val + dpi_lookahead_size,
                                 val_len - dpi_lookahead_size);
 
@@ -802,7 +802,7 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
                 }
 
                 if (unlikely(val_len >= max_arg_size))
-                    return SPR_FAILURE_BUFFER_FULL;
+                    return NOD_FAILURE_BUFFER_FULL;
 
                 memcpy(args->buf_ptr + args->arg_data_offset,
                     (void *)(syscall_arg_t)val, val_len);
@@ -822,10 +822,10 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
     case PT_FDLIST:
         if (likely(val != 0)) {
             if (unlikely(val_len >= max_arg_size))
-                return SPR_FAILURE_BUFFER_FULL;
+                return NOD_FAILURE_BUFFER_FULL;
 
             if (fromuser) {
-                len = (int)spr_copy_from_user(args->buf_ptr + args->arg_data_offset,
+                len = (int)nod_copy_from_user(args->buf_ptr + args->arg_data_offset,
                         (const void __user *)(syscall_arg_t)val,
                         val_len);
 
@@ -856,7 +856,7 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
             *(u8 *)(args->buf_ptr + args->arg_data_offset) = (u8)val;
             len = sizeof(u8);
         } else {
-            return SPR_FAILURE_BUFFER_FULL;
+            return NOD_FAILURE_BUFFER_FULL;
         }
 
         break;
@@ -867,7 +867,7 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
             *(u16 *)(args->buf_ptr + args->arg_data_offset) = (u16)val;
             len = sizeof(u16);
         } else {
-            return SPR_FAILURE_BUFFER_FULL;
+            return NOD_FAILURE_BUFFER_FULL;
         }
 
         break;
@@ -881,7 +881,7 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
             *(u32 *)(args->buf_ptr + args->arg_data_offset) = (u32)val;
             len = sizeof(u32);
         } else {
-            return SPR_FAILURE_BUFFER_FULL;
+            return NOD_FAILURE_BUFFER_FULL;
         }
 
         break;
@@ -892,7 +892,7 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
             *(u64 *)(args->buf_ptr + args->arg_data_offset) = (u64)val;
             len = sizeof(u64);
         } else {
-            return SPR_FAILURE_BUFFER_FULL;
+            return NOD_FAILURE_BUFFER_FULL;
         }
 
         break;
@@ -901,7 +901,7 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
             *(s8 *)(args->buf_ptr + args->arg_data_offset) = (s8)(long)val;
             len = sizeof(s8);
         } else {
-            return SPR_FAILURE_BUFFER_FULL;
+            return NOD_FAILURE_BUFFER_FULL;
         }
 
         break;
@@ -910,7 +910,7 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
             *(s16 *)(args->buf_ptr + args->arg_data_offset) = (s16)(long)val;
             len = sizeof(s16);
         } else {
-            return SPR_FAILURE_BUFFER_FULL;
+            return NOD_FAILURE_BUFFER_FULL;
         }
 
         break;
@@ -919,7 +919,7 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
             *(s32 *)(args->buf_ptr + args->arg_data_offset) = (s32)(long)val;
             len = sizeof(s32);
         } else {
-            return SPR_FAILURE_BUFFER_FULL;
+            return NOD_FAILURE_BUFFER_FULL;
         }
 
         break;
@@ -931,7 +931,7 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
             *(s64 *)(args->buf_ptr + args->arg_data_offset) = (s64)(long)val;
             len = sizeof(s64);
         } else {
-            return SPR_FAILURE_BUFFER_FULL;
+            return NOD_FAILURE_BUFFER_FULL;
         }
 
         break;
@@ -940,17 +940,17 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
             (int)g_event_info[args->event_type].params[args->curarg].type,
             (u32)args->event_type,
             g_event_info[args->event_type].name);
-        return SPR_FAILURE_BUG;
+        return NOD_FAILURE_BUG;
     }
 
-    ASSERT(len <= SPR_MAX_ARG_SIZE); \
+    ASSERT(len <= NOD_MAX_ARG_SIZE); \
     ASSERT(len <= (int)max_arg_size); \
     *psize += (u16)len; \
     args->curarg++; \
     args->arg_data_offset += len; \
     args->arg_data_size -= len;
 
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 static int parse_sockopt(struct event_filler_arguments *args, int level, int optname, const void __user *optval, int optlen)
@@ -966,9 +966,9 @@ static int parse_sockopt(struct event_filler_arguments *args, int level, int opt
         switch (optname) {
 #ifdef SO_ERROR
             case SO_ERROR:
-                if (unlikely(spr_copy_from_user(&u.val32, optval, sizeof(u.val32))))
-                    return SPR_FAILURE_INVALID_USER_MEMORY;
-                return val_to_ring(args, -(int)u.val32, 0, false, SPR_SOCKOPT_IDX_ERRNO);
+                if (unlikely(nod_copy_from_user(&u.val32, optval, sizeof(u.val32))))
+                    return NOD_FAILURE_INVALID_USER_MEMORY;
+                return val_to_ring(args, -(int)u.val32, 0, false, NOD_SOCKOPT_IDX_ERRNO);
 #endif
 
 #ifdef SO_RCVTIMEO
@@ -977,16 +977,16 @@ static int parse_sockopt(struct event_filler_arguments *args, int level, int opt
 #ifdef SO_SNDTIMEO
             case SO_SNDTIMEO:
 #endif
-                if (unlikely(spr_copy_from_user(&u.tv, optval, sizeof(u.tv))))
-                    return SPR_FAILURE_INVALID_USER_MEMORY;
+                if (unlikely(nod_copy_from_user(&u.tv, optval, sizeof(u.tv))))
+                    return NOD_FAILURE_INVALID_USER_MEMORY;
                 ns = u.tv.tv_sec * SECOND_IN_NS + u.tv.tv_usec * 1000;
-                return val_to_ring(args, ns, 0, false, SPR_SOCKOPT_IDX_TIMEVAL);
+                return val_to_ring(args, ns, 0, false, NOD_SOCKOPT_IDX_TIMEVAL);
 
 #ifdef SO_COOKIE
             case SO_COOKIE:
-                if (unlikely(spr_copy_from_user(&u.val64, optval, sizeof(u.val64))))
-                    return SPR_FAILURE_INVALID_USER_MEMORY;
-                return val_to_ring(args, u.val64, 0, false, SPR_SOCKOPT_IDX_UINT64);
+                if (unlikely(nod_copy_from_user(&u.val64, optval, sizeof(u.val64))))
+                    return NOD_FAILURE_INVALID_USER_MEMORY;
+                return val_to_ring(args, u.val64, 0, false, NOD_SOCKOPT_IDX_UINT64);
 #endif
 
 #ifdef SO_DEBUG
@@ -1115,15 +1115,15 @@ static int parse_sockopt(struct event_filler_arguments *args, int level, int opt
 #ifdef SO_INCOMING_CPU
             case SO_INCOMING_CPU:
 #endif
-                if (unlikely(spr_copy_from_user(&u.val32, optval, sizeof(u.val32))))
-                    return SPR_FAILURE_INVALID_USER_MEMORY;
-                return val_to_ring(args, u.val32, 0, false, SPR_SOCKOPT_IDX_UINT32);
+                if (unlikely(nod_copy_from_user(&u.val32, optval, sizeof(u.val32))))
+                    return NOD_FAILURE_INVALID_USER_MEMORY;
+                return val_to_ring(args, u.val32, 0, false, NOD_SOCKOPT_IDX_UINT32);
 
             default:
-                return val_to_ring(args, (unsigned long)optval, optlen, true, SPR_SOCKOPT_IDX_UNKNOWN);
+                return val_to_ring(args, (unsigned long)optval, optlen, true, NOD_SOCKOPT_IDX_UNKNOWN);
         }
     } else {
-        return val_to_ring(args, (unsigned long)optval, optlen, true, SPR_SOCKOPT_IDX_UNKNOWN);
+        return val_to_ring(args, (unsigned long)optval, optlen, true, NOD_SOCKOPT_IDX_UNKNOWN);
     }
 }
 
@@ -1145,13 +1145,13 @@ static int32_t parse_readv_writev_bufs(struct event_filler_arguments *args, cons
 	copylen = iovcnt * sizeof(struct iovec);
 
 	if (unlikely(iovcnt >= 0xffffffff))
-		return SPR_FAILURE_BUFFER_FULL;
+		return NOD_FAILURE_BUFFER_FULL;
 
 	if (unlikely(copylen >= STR_STORAGE_SIZE))
-		return SPR_FAILURE_BUFFER_FULL;
+		return NOD_FAILURE_BUFFER_FULL;
 
-	if (unlikely(spr_copy_from_user(args->str_storage, iovsrc, copylen)))
-		return SPR_FAILURE_INVALID_USER_MEMORY;
+	if (unlikely(nod_copy_from_user(args->str_storage, iovsrc, copylen)))
+		return NOD_FAILURE_INVALID_USER_MEMORY;
 
 	iov = (const struct iovec *)(args->str_storage);
 
@@ -1174,7 +1174,7 @@ static int32_t parse_readv_writev_bufs(struct event_filler_arguments *args, cons
 				size = retval;
 
 		res = val_to_ring(args, size, 0, false, 0);
-		if (unlikely(res != SPR_SUCCESS))
+		if (unlikely(res != NOD_SUCCESS))
 			return res;
 	}
 
@@ -1186,7 +1186,7 @@ static int32_t parse_readv_writev_bufs(struct event_filler_arguments *args, cons
 			/*
 			 * Retrieve the FD. It will be used for dynamic snaplen calculation.
 			 */
-            spr_syscall_get_arguments(current, args->regs, syscall_args);
+            nod_syscall_get_arguments(current, args->regs, syscall_args);
             val = syscall_args[0];
 
 			/*
@@ -1213,7 +1213,7 @@ static int32_t parse_readv_writev_bufs(struct event_filler_arguments *args, cons
 					tocopy_len = min(iov[j].iov_len, targetbuflen - bufsize - 1);
 				}
 
-				notcopied_len = (int)spr_copy_from_user(targetbuf + bufsize,
+				notcopied_len = (int)nod_copy_from_user(targetbuf + bufsize,
 						iov[j].iov_base,
 						tocopy_len);
 
@@ -1221,7 +1221,7 @@ static int32_t parse_readv_writev_bufs(struct event_filler_arguments *args, cons
 					/*
 					 * This means we had a page fault. Skip this event.
 					 */
-					return SPR_FAILURE_INVALID_USER_MEMORY;
+					return NOD_FAILURE_INVALID_USER_MEMORY;
 				}
 
 				bufsize += tocopy_len;
@@ -1240,21 +1240,21 @@ static int32_t parse_readv_writev_bufs(struct event_filler_arguments *args, cons
 				bufsize,
 				false,
 				0);
-			if (unlikely(res != SPR_SUCCESS))
+			if (unlikely(res != NOD_SUCCESS))
 				return res;
 		} else {
 			res = val_to_ring(args, 0, 0, false, 0);
-			if (unlikely(res != SPR_SUCCESS))
+			if (unlikely(res != NOD_SUCCESS))
 				return res;
 		}
 	}
 
-	return SPR_SUCCESS;
+	return NOD_SUCCESS;
 }
 
 int f_sys_empty(struct event_filler_arguments *args)
 {
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 int f_sys_close(struct event_filler_arguments *args)
@@ -1265,15 +1265,15 @@ int f_sys_close(struct event_filler_arguments *args)
 
     syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
     res = val_to_ring(args, val, 0, true, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     retval = (int64_t)(long)syscall_get_return_value(current, args->regs);
     res = val_to_ring(args, retval, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 int f_sys_open(struct event_filler_arguments *args)
@@ -1289,7 +1289,7 @@ int f_sys_open(struct event_filler_arguments *args)
      */
     retval = (int64_t)syscall_get_return_value(current, args->regs);
     res = val_to_ring(args, retval, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
 
@@ -1298,7 +1298,7 @@ int f_sys_open(struct event_filler_arguments *args)
      */
     syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
     res = val_to_ring(args, val, 0, true, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
@@ -1307,7 +1307,7 @@ int f_sys_open(struct event_filler_arguments *args)
      */
     syscall_get_arguments_deprecated(current, args->regs, 1, 1, &flags);
     res = val_to_ring(args, open_flags_to_scap(flags), 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
@@ -1315,17 +1315,17 @@ int f_sys_open(struct event_filler_arguments *args)
      */
     syscall_get_arguments_deprecated(current, args->regs, 2, 1, &modes);
     res = val_to_ring(args, open_modes_to_scap(flags, modes), 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
      * dev
      */
     res = val_to_ring(args, get_fd_dev(retval), 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 int f_sys_read(struct event_filler_arguments *args)
@@ -1340,7 +1340,7 @@ int f_sys_read(struct event_filler_arguments *args)
      */
     syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
     res = val_to_ring(args, val, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
@@ -1348,7 +1348,7 @@ int f_sys_read(struct event_filler_arguments *args)
      */
     syscall_get_arguments_deprecated(current, args->regs, 2, 1, &val);
     res = val_to_ring(args, val, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
@@ -1356,7 +1356,7 @@ int f_sys_read(struct event_filler_arguments *args)
      */
     retval = (int64_t)(long)syscall_get_return_value(current, args->regs);
     res = val_to_ring(args, retval, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
@@ -1382,10 +1382,10 @@ int f_sys_read(struct event_filler_arguments *args)
      * Copy the buffer
      */
     res = val_to_ring(args, val, bufsize, true, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 int f_sys_write(struct event_filler_arguments *args)
@@ -1400,7 +1400,7 @@ int f_sys_write(struct event_filler_arguments *args)
      */
     syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
     res = val_to_ring(args, val, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
@@ -1409,7 +1409,7 @@ int f_sys_write(struct event_filler_arguments *args)
     syscall_get_arguments_deprecated(current, args->regs, 2, 1, &val);
     bufsize = val;
     res = val_to_ring(args, val, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
     
     /*
@@ -1418,7 +1418,7 @@ int f_sys_write(struct event_filler_arguments *args)
     retval = (int64_t)(long)syscall_get_return_value(current, args->regs);
 
     res = val_to_ring(args, retval, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
 
@@ -1427,10 +1427,10 @@ int f_sys_write(struct event_filler_arguments *args)
      */
     syscall_get_arguments_deprecated(current, args->regs, 1, 1, &val);
     res = val_to_ring(args, val, bufsize, true, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 int f_sys_exit(struct event_filler_arguments *args) {
@@ -1439,13 +1439,13 @@ int f_sys_exit(struct event_filler_arguments *args) {
 
     syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
     res = val_to_ring(args, val, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
     
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
-static int spr_get_tty(void)
+static int nod_get_tty(void)
 {
 	/* Locking of the signal structures seems too complicated across
 	 * multiple kernel versions to get it right, so simply do protected
@@ -1511,7 +1511,7 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 	 */
 	retval = (int64_t)syscall_get_return_value(current, args->regs);
 	res = val_to_ring(args, retval, 0, false, 0);
-	if (unlikely(res != SPR_SUCCESS))
+	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
 	if (unlikely(retval < 0 && args->event_type != SPRE_SYSCALL_EXECVE)) {
@@ -1524,14 +1524,14 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 		 * exe
 		 */
 		res = val_to_ring(args, (uint64_t)(long)args->str_storage, 0, false, 0);
-		if (unlikely(res != SPR_SUCCESS))
+		if (unlikely(res != NOD_SUCCESS))
 			return res;
 
 		/*
 		 * Args
 		 */
 		res = val_to_ring(args, (int64_t)(long)args->str_storage, 0, false, 0);
-		if (unlikely(res != SPR_SUCCESS))
+		if (unlikely(res != NOD_SUCCESS))
 			return res;
 	} else {
 		if (likely(retval >= 0)) {
@@ -1544,13 +1544,13 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 			if (unlikely(!mm)) {
 				args->str_storage[0] = 0;
 				pr_info("f_proc_startupdate drop, mm=NULL\n");
-				return SPR_FAILURE_BUG;
+				return NOD_FAILURE_BUG;
 			}
 
 			if (unlikely(!mm->arg_end)) {
 				args->str_storage[0] = 0;
 				pr_info("f_proc_startupdate drop, mm->arg_end=NULL\n");
-				return SPR_FAILURE_BUG;
+				return NOD_FAILURE_BUG;
 			}
 
 			args_len = mm->arg_end - mm->arg_start;
@@ -1559,7 +1559,7 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 				if (args_len > PAGE_SIZE)
 					args_len = PAGE_SIZE;
 
-				if (unlikely(spr_copy_from_user(args->str_storage, (const void __user *)mm->arg_start, args_len)))
+				if (unlikely(nod_copy_from_user(args->str_storage, (const void __user *)mm->arg_start, args_len)))
 					args_len = 0;
 				else
 					args->str_storage[args_len - 1] = 0;
@@ -1591,14 +1591,14 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 		 * exe
 		 */
 		res = val_to_ring(args, (uint64_t)(long)args->str_storage, 0, false, 0);
-		if (unlikely(res != SPR_SUCCESS))
+		if (unlikely(res != NOD_SUCCESS))
 			return res;
 
 		/*
 		 * Args
 		 */
 		res = val_to_ring(args, (int64_t)(long)args->str_storage + exe_len, args_len - exe_len, false, 0);
-		if (unlikely(res != SPR_SUCCESS))
+		if (unlikely(res != NOD_SUCCESS))
 			return res;
 	}
 
@@ -1607,14 +1607,14 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 	 * tid
 	 */
 	res = val_to_ring(args, (int64_t)current->pid, 0, false, 0);
-	if (unlikely(res != SPR_SUCCESS))
+	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
 	/*
 	 * pid
 	 */
 	res = val_to_ring(args, (int64_t)current->tgid, 0, false, 0);
-	if (unlikely(res != SPR_SUCCESS))
+	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
 	/*
@@ -1631,7 +1631,7 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 		ptid = 0;
 
 	res = val_to_ring(args, (int64_t)ptid, 0, false, 0);
-	if (unlikely(res != SPR_SUCCESS))
+	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
 	/*
@@ -1639,7 +1639,7 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 	 * with the older event format
 	 */
 	res = val_to_ring(args, (uint64_t)(long)spwd, 0, false, 0);
-	if (unlikely(res != SPR_SUCCESS))
+	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
 	/*
@@ -1650,55 +1650,55 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 #else
 	res = val_to_ring(args, (int64_t)0, 0, false, 0);
 #endif
-	if (res != SPR_SUCCESS)
+	if (res != NOD_SUCCESS)
 		return res;
 
 	/*
 	 * pgft_maj
 	 */
 	res = val_to_ring(args, current->maj_flt, 0, false, 0);
-	if (unlikely(res != SPR_SUCCESS))
+	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
 	/*
 	 * pgft_min
 	 */
 	res = val_to_ring(args, current->min_flt, 0, false, 0);
-	if (unlikely(res != SPR_SUCCESS))
+	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
 	if (mm) {
 		total_vm = mm->total_vm << (PAGE_SHIFT-10);
-		total_rss = spr_get_mm_rss(mm) << (PAGE_SHIFT-10);
-		swap = spr_get_mm_swap(mm) << (PAGE_SHIFT-10);
+		total_rss = nod_get_mm_rss(mm) << (PAGE_SHIFT-10);
+		swap = nod_get_mm_swap(mm) << (PAGE_SHIFT-10);
 	}
 
 	/*
 	 * vm_size
 	 */
 	res = val_to_ring(args, total_vm, 0, false, 0);
-	if (unlikely(res != SPR_SUCCESS))
+	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
 	/*
 	 * vm_rss
 	 */
 	res = val_to_ring(args, total_rss, 0, false, 0);
-	if (unlikely(res != SPR_SUCCESS))
+	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
 	/*
 	 * vm_swap
 	 */
 	res = val_to_ring(args, swap, 0, false, 0);
-	if (unlikely(res != SPR_SUCCESS))
+	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
 	/*
 	 * comm
 	 */
 	res = val_to_ring(args, (uint64_t)current->comm, 0, false, 0);
-	if (unlikely(res != SPR_SUCCESS))
+	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
 	if (args->event_type == SPRE_SYSCALL_CLONE ||
@@ -1732,24 +1732,24 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 20)
 		if(pidns != &init_pid_ns || pid_ns_for_children(current) != pidns)
-			in_pidns = SPR_CL_CHILD_IN_PIDNS;
+			in_pidns = NOD_CL_CHILD_IN_PIDNS;
 #endif
 		res = val_to_ring(args, (uint64_t)clone_flags_to_scap(val) | in_pidns, 0, false, 0);
-		if (unlikely(res != SPR_SUCCESS))
+		if (unlikely(res != NOD_SUCCESS))
 			return res;
 
 		/*
 		 * uid
 		 */
 		res = val_to_ring(args, euid, 0, false, 0);
-		if (unlikely(res != SPR_SUCCESS))
+		if (unlikely(res != NOD_SUCCESS))
 			return res;
 
 		/*
 		 * gid
 		 */
 		res = val_to_ring(args, egid, 0, false, 0);
-		if (unlikely(res != SPR_SUCCESS))
+		if (unlikely(res != NOD_SUCCESS))
 			return res;
 
 		/*
@@ -1761,7 +1761,7 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 		/* Not relevant in old kernels */
 		res = val_to_ring(args, 0, 0, false, 0);
 #endif
-		if (unlikely(res != SPR_SUCCESS))
+		if (unlikely(res != NOD_SUCCESS))
 			return res;
 
 		/*
@@ -1773,7 +1773,7 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 		/* Not relevant in old kernels */
 		res = val_to_ring(args, 0, 0, false, 0);
 #endif
-		if (unlikely(res != SPR_SUCCESS))
+		if (unlikely(res != NOD_SUCCESS))
 			return res;
 
 	} else if (args->event_type == SPRE_SYSCALL_EXECVE) {
@@ -1793,7 +1793,7 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 				if (env_len > PAGE_SIZE)
 					env_len = PAGE_SIZE;
 
-				if (unlikely(spr_copy_from_user(args->str_storage, (const void __user *)mm->env_start, env_len)))
+				if (unlikely(nod_copy_from_user(args->str_storage, (const void __user *)mm->env_start, env_len)))
 					env_len = 0;
 				else
 					args->str_storage[env_len - 1] = 0;
@@ -1817,15 +1817,15 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 		 * environ
 		 */
 		res = val_to_ring(args, (int64_t)(long)args->str_storage, env_len, false, 0);
-		if (unlikely(res != SPR_SUCCESS))
+		if (unlikely(res != NOD_SUCCESS))
 			return res;
 
 		/*
 		 * tty
 		 */
-		tty_nr = spr_get_tty();
+		tty_nr = nod_get_tty();
 		res = val_to_ring(args, tty_nr, 0, false, 0);
-		if (unlikely(res != SPR_SUCCESS))
+		if (unlikely(res != NOD_SUCCESS))
 			return res;
 
 		/*
@@ -1836,7 +1836,7 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 #else
 		res = val_to_ring(args, (int64_t)process_group(current), 0, false, 0);
 #endif
-		if (unlikely(res != SPR_SUCCESS))
+		if (unlikely(res != NOD_SUCCESS))
 			return res;
 
 		/*
@@ -1850,11 +1850,11 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 		val = audit_get_loginuid(current->audit_context);
 #endif
 		res = val_to_ring(args, val, 0, false, 0);
-		if (unlikely(res != SPR_SUCCESS))
+		if (unlikely(res != NOD_SUCCESS))
 			return res;
 	}
 
-	return SPR_SUCCESS;
+	return NOD_SUCCESS;
 }
 
 int f_sys_execve(struct event_filler_arguments *args)
@@ -1867,10 +1867,10 @@ int f_sys_execve(struct event_filler_arguments *args)
 	 */
 	syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
 	res = val_to_ring(args, val, 0, true, 0);
-	if (res == SPR_FAILURE_INVALID_USER_MEMORY)
+	if (res == NOD_FAILURE_INVALID_USER_MEMORY)
 		res = val_to_ring(args, (unsigned long)"<NA>", 0, false, 0);
 
-	if (unlikely(res != SPR_SUCCESS))
+	if (unlikely(res != NOD_SUCCESS))
 		return res;
     
     return f_proc_startupdate(args);
@@ -1882,10 +1882,10 @@ int f_sys_exit_group(struct event_filler_arguments *args) {
 
     syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
     res = val_to_ring(args, val, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
     
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 int f_sys_socket(struct event_filler_arguments *args) 
@@ -1895,14 +1895,14 @@ int f_sys_socket(struct event_filler_arguments *args)
     syscall_arg_t val;
     syscall_arg_t syscall_args[6] = {0};
 
-    spr_syscall_get_arguments(current, args->regs, syscall_args);
+    nod_syscall_get_arguments(current, args->regs, syscall_args);
 
     /*
      * domain
      */
     val = syscall_args[0];
     res = val_to_ring(args, val, 0, false, 0);
-    if (res != SPR_SUCCESS) {
+    if (res != NOD_SUCCESS) {
         return res;
     }
 
@@ -1911,7 +1911,7 @@ int f_sys_socket(struct event_filler_arguments *args)
      */
     val = syscall_args[1];
     res = val_to_ring(args, val, 0, false, 0);
-    if (res != SPR_SUCCESS) {
+    if (res != NOD_SUCCESS) {
         return res;
     }
 
@@ -1920,17 +1920,17 @@ int f_sys_socket(struct event_filler_arguments *args)
      */
     val = syscall_args[2];
     res = val_to_ring(args, val, 0, false, 0);
-    if (res != SPR_SUCCESS) {
+    if (res != NOD_SUCCESS) {
         return res;
     }
 
     retval = syscall_get_return_value(current, args->regs);
     res = val_to_ring(args, retval, 0, false, 0);
-    if (res != SPR_SUCCESS) {
+    if (res != NOD_SUCCESS) {
         return res;
     }
     
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 int f_sys_socket_bind(struct event_filler_arguments *args) 
@@ -1990,10 +1990,10 @@ int f_sys_socket_bind(struct event_filler_arguments *args)
                         size,
                         false,
                         0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 int f_sys_connect(struct event_filler_arguments *args) 
@@ -2062,10 +2062,10 @@ int f_sys_connect(struct event_filler_arguments *args)
                 size,
                 false,
                 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 int f_sys_listen(struct event_filler_arguments *args) 
@@ -2079,7 +2079,7 @@ int f_sys_listen(struct event_filler_arguments *args)
      */
     syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
     res = val_to_ring(args, val, 0, false, 0);
-    if (res != SPR_SUCCESS)
+    if (res != NOD_SUCCESS)
         return res;
 
     /*
@@ -2087,15 +2087,15 @@ int f_sys_listen(struct event_filler_arguments *args)
      */
     syscall_get_arguments_deprecated(current, args->regs, 1, 1, &val);
     res = val_to_ring(args, val, 0, false, 0);
-    if (res != SPR_SUCCESS)
+    if (res != NOD_SUCCESS)
         return res;
 
     retval = syscall_get_return_value(current, args->regs);
     res = val_to_ring(args, retval, 0, false, 0);
-    if (res != SPR_SUCCESS)
+    if (res != NOD_SUCCESS)
         return res;
     
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 static int f_sys_accept_common(struct event_filler_arguments *args)
@@ -2116,7 +2116,7 @@ static int f_sys_accept_common(struct event_filler_arguments *args)
      */
     fd = syscall_get_return_value(current, args->regs);
     res = val_to_ring(args, (int64_t)fd, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
@@ -2138,7 +2138,7 @@ static int f_sys_accept_common(struct event_filler_arguments *args)
                 size,
                 false,
                 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
@@ -2159,18 +2159,18 @@ static int f_sys_accept_common(struct event_filler_arguments *args)
         queuepct = (unsigned long)ack_backlog * 100 / max_ack_backlog;
 
     res = val_to_ring(args, queuepct, 0, false, 0);
-    if (res != SPR_SUCCESS)
+    if (res != NOD_SUCCESS)
         return res;
 
     res = val_to_ring(args, ack_backlog, 0, false, 0);
-    if (res != SPR_SUCCESS)
+    if (res != NOD_SUCCESS)
         return res;
 
     res = val_to_ring(args, max_ack_backlog, 0, false, 0);
-    if (res != SPR_SUCCESS)
+    if (res != NOD_SUCCESS)
         return res;
 
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 int f_sys_accept(struct event_filler_arguments *args)
@@ -2182,7 +2182,7 @@ int f_sys_accept4(struct event_filler_arguments *args) {
     int res;
 
     res = val_to_ring(args, 0, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     return f_sys_accept_common(args);
@@ -2199,7 +2199,7 @@ static int f_sys_send_common(struct event_filler_arguments *args, int *fd)
      */
     syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
     res = val_to_ring(args, val, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     if(fd) 
@@ -2210,10 +2210,10 @@ static int f_sys_send_common(struct event_filler_arguments *args, int *fd)
      */
     syscall_get_arguments_deprecated(current, args->regs, 2, 1, &size);
     res = val_to_ring(args, size, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 int f_sys_sendto(struct event_filler_arguments *args) 
@@ -2233,7 +2233,7 @@ int f_sys_sendto(struct event_filler_arguments *args)
      * Push the common params (fd, size) to the ring
      */
     res = f_sys_send_common(args, &fd);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
@@ -2273,7 +2273,7 @@ int f_sys_sendto(struct event_filler_arguments *args)
                 size,
                 false,
                 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
@@ -2281,7 +2281,7 @@ int f_sys_sendto(struct event_filler_arguments *args)
      */
     retval = (int64_t)(long)syscall_get_return_value(current, args->regs);
     res = val_to_ring(args, retval, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
@@ -2303,10 +2303,10 @@ int f_sys_sendto(struct event_filler_arguments *args)
     }
 
     res = val_to_ring(args, val, bufsize, true, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 static int f_sys_recv_common(struct event_filler_arguments *args, int *fd, uint32_t *size, int64_t *retval)
@@ -2322,7 +2322,7 @@ static int f_sys_recv_common(struct event_filler_arguments *args, int *fd, uint3
     syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
     if (fd) *fd = val;
     res = val_to_ring(args, val, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
@@ -2331,7 +2331,7 @@ static int f_sys_recv_common(struct event_filler_arguments *args, int *fd, uint3
     syscall_get_arguments_deprecated(current, args->regs, 2, 1, &val);
     if (size) *size = val;
     res = val_to_ring(args, val, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
@@ -2340,7 +2340,7 @@ static int f_sys_recv_common(struct event_filler_arguments *args, int *fd, uint3
     _retval = (int64_t)(long)syscall_get_return_value(current, args->regs);
     if (retval)	*retval = _retval;
     res = val_to_ring(args, *retval, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
@@ -2362,10 +2362,10 @@ static int f_sys_recv_common(struct event_filler_arguments *args, int *fd, uint3
     }
 
     res = val_to_ring(args, val, bufsize, true, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 int f_sys_recvfrom(struct event_filler_arguments *args) 
@@ -2385,7 +2385,7 @@ int f_sys_recvfrom(struct event_filler_arguments *args)
      * Push the common params (fd, size, res) to the ring
      */
     res = f_sys_recv_common(args, &fd, NULL, &retval);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     if (retval >= 0) {
@@ -2400,8 +2400,8 @@ int f_sys_recvfrom(struct event_filler_arguments *args)
          */
         syscall_get_arguments_deprecated(current, args->regs, 5, 1, &val);
         if (usrsockaddr != NULL && val != 0) {
-            if (unlikely(spr_copy_from_user(&addrlen, (const void __user *)val, sizeof(addrlen))))
-                return SPR_FAILURE_INVALID_USER_MEMORY;
+            if (unlikely(nod_copy_from_user(&addrlen, (const void __user *)val, sizeof(addrlen))))
+                return NOD_FAILURE_INVALID_USER_MEMORY;
 
             /*
              * Copy the address
@@ -2430,10 +2430,10 @@ int f_sys_recvfrom(struct event_filler_arguments *args)
                 size,
                 false,
                 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 int f_sys_shutdown(struct event_filler_arguments *args) 
@@ -2447,7 +2447,7 @@ int f_sys_shutdown(struct event_filler_arguments *args)
      */
     syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
     res = val_to_ring(args, val, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
@@ -2455,7 +2455,7 @@ int f_sys_shutdown(struct event_filler_arguments *args)
      */
     syscall_get_arguments_deprecated(current, args->regs, 1, 1, &val);
     res = val_to_ring(args, (unsigned long)shutdown_how_to_scap(val), 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
@@ -2463,10 +2463,10 @@ int f_sys_shutdown(struct event_filler_arguments *args)
      */
     retval = (int64_t)(long)syscall_get_return_value(current, args->regs);
     res = val_to_ring(args, retval, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 int f_sys_socketpair(struct event_filler_arguments *args) 
@@ -2486,7 +2486,7 @@ int f_sys_socketpair(struct event_filler_arguments *args)
     for (j = 0; j < 3; ++j) {
         syscall_get_arguments_deprecated(current, args->regs, j, 1, &val);
         res = val_to_ring(args, val, 0, false, 0);
-        if (unlikely(res != SPR_SUCCESS))
+        if (unlikely(res != NOD_SUCCESS))
             return res;
     }
 
@@ -2495,7 +2495,7 @@ int f_sys_socketpair(struct event_filler_arguments *args)
      */
     retval = (int64_t)syscall_get_return_value(current, args->regs);
     res = val_to_ring(args, retval, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
@@ -2506,15 +2506,15 @@ int f_sys_socketpair(struct event_filler_arguments *args)
          * fds
          */
         syscall_get_arguments_deprecated(current, args->regs, 3, 1, &val);
-        if (unlikely(spr_copy_from_user(fds, (const void __user *)val, sizeof(fds))))
-            return SPR_FAILURE_INVALID_USER_MEMORY;
+        if (unlikely(nod_copy_from_user(fds, (const void __user *)val, sizeof(fds))))
+            return NOD_FAILURE_INVALID_USER_MEMORY;
 
         res = val_to_ring(args, fds[0], 0, false, 0);
-        if (unlikely(res != SPR_SUCCESS))
+        if (unlikely(res != NOD_SUCCESS))
             return res;
 
         res = val_to_ring(args, fds[1], 0, false, 0);
-        if (unlikely(res != SPR_SUCCESS))
+        if (unlikely(res != NOD_SUCCESS))
             return res;
 
         /* get socket source and peer address */
@@ -2523,13 +2523,13 @@ int f_sys_socketpair(struct event_filler_arguments *args)
             us = unix_sk(sock->sk);
             speer = us->peer;
             res = val_to_ring(args, (unsigned long)us, 0, false, 0);
-            if (unlikely(res != SPR_SUCCESS)) {
+            if (unlikely(res != NOD_SUCCESS)) {
                 sockfd_put(sock);
                 return res;
             }
 
             res = val_to_ring(args, (unsigned long)speer, 0, false, 0);
-            if (unlikely(res != SPR_SUCCESS)) {
+            if (unlikely(res != NOD_SUCCESS)) {
                 sockfd_put(sock);
                 return res;
             }
@@ -2540,23 +2540,23 @@ int f_sys_socketpair(struct event_filler_arguments *args)
         }
     } else {
         res = val_to_ring(args, 0, 0, false, 0);
-        if (unlikely(res != SPR_SUCCESS))
+        if (unlikely(res != NOD_SUCCESS))
             return res;
 
         res = val_to_ring(args, 0, 0, false, 0);
-        if (unlikely(res != SPR_SUCCESS))
+        if (unlikely(res != NOD_SUCCESS))
             return res;
 
         res = val_to_ring(args, 0, 0, false, 0);
-        if (unlikely(res != SPR_SUCCESS))
+        if (unlikely(res != NOD_SUCCESS))
             return res;
 
         res = val_to_ring(args, 0, 0, false, 0);
-        if (unlikely(res != SPR_SUCCESS))
+        if (unlikely(res != NOD_SUCCESS))
             return res;
     }
 
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 int f_sys_setsockopt(struct event_filler_arguments *args) 
@@ -2570,35 +2570,35 @@ int f_sys_setsockopt(struct event_filler_arguments *args)
 
     /* retval */
     res = val_to_ring(args, retval, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /* fd */
     res = val_to_ring(args, val[0], 0, true, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /* level */
     res = val_to_ring(args, sockopt_level_to_scap(val[1]), 0, true, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /* optname */
     res = val_to_ring(args, sockopt_optname_to_scap(val[1], val[2]), 0, true, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /* optval */
     res = parse_sockopt(args, val[1], val[2], (const void __user*)val[3], val[4]);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /* optlen */
     res = val_to_ring(args, val[4], 0, true, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 int f_sys_getsockopt(struct event_filler_arguments *args) 
@@ -2613,38 +2613,38 @@ int f_sys_getsockopt(struct event_filler_arguments *args)
 
     /* retval */
     res = val_to_ring(args, retval, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /* fd */
     res = val_to_ring(args, val[0], 0, true, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /* level */
     res = val_to_ring(args, sockopt_level_to_scap(val[1]), 0, true, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /* optname */
     res = val_to_ring(args, sockopt_optname_to_scap(val[1], val[2]), 0, true, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
-    if (unlikely(spr_copy_from_user(&optlen, (const void __user*)val[4], sizeof(optlen))))
-        return SPR_FAILURE_INVALID_USER_MEMORY;
+    if (unlikely(nod_copy_from_user(&optlen, (const void __user*)val[4], sizeof(optlen))))
+        return NOD_FAILURE_INVALID_USER_MEMORY;
 
     /* optval */
     res = parse_sockopt(args, val[1], val[2], (const void __user*)val[3], optlen);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /* optlen */
     res = val_to_ring(args, optlen, 0, true, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 int f_sys_sendmsg(struct event_filler_arguments *args) 
@@ -2672,7 +2672,7 @@ int f_sys_sendmsg(struct event_filler_arguments *args)
      */
     syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
     res = val_to_ring(args, val, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     fd = val;
@@ -2681,8 +2681,8 @@ int f_sys_sendmsg(struct event_filler_arguments *args)
      * Retrieve the message header
      */
     syscall_get_arguments_deprecated(current, args->regs, 1, 1, &val);
-    if (unlikely(spr_copy_from_user(&mh, (const void __user *)val, sizeof(mh))))
-        return SPR_FAILURE_INVALID_USER_MEMORY;
+    if (unlikely(nod_copy_from_user(&mh, (const void __user *)val, sizeof(mh))))
+        return NOD_FAILURE_INVALID_USER_MEMORY;
 
     /*
      * size
@@ -2691,7 +2691,7 @@ int f_sys_sendmsg(struct event_filler_arguments *args)
     iovcnt = mh.msg_iovlen;
 
     res = parse_readv_writev_bufs(args, iov, iovcnt, args->snaplen, PRB_FLAG_PUSH_SIZE | PRB_FLAG_IS_WRITE);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
@@ -2725,7 +2725,7 @@ int f_sys_sendmsg(struct event_filler_arguments *args)
                 size,
                 false,
                 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     /*
@@ -2733,17 +2733,17 @@ int f_sys_sendmsg(struct event_filler_arguments *args)
 	 */
 	retval = (int64_t)syscall_get_return_value(current, args->regs);
 	res = val_to_ring(args, retval, 0, false, 0);
-	if (unlikely(res != SPR_SUCCESS))
+	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
     /*
 	 * data
 	 */
     res = parse_readv_writev_bufs(args, iov, iovcnt, args->snaplen, PRB_FLAG_PUSH_DATA | PRB_FLAG_IS_WRITE);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
-    return SPR_SUCCESS;
+    return NOD_SUCCESS;
 }
 
 int f_sys_recvmsg(struct event_filler_arguments *args) 
@@ -2771,7 +2771,7 @@ int f_sys_recvmsg(struct event_filler_arguments *args)
      */
     syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
     res = val_to_ring(args, val, 0, false, 0);
-    if (unlikely(res != SPR_SUCCESS))
+    if (unlikely(res != NOD_SUCCESS))
         return res;
 
     fd = (int)val;
@@ -2781,15 +2781,15 @@ int f_sys_recvmsg(struct event_filler_arguments *args)
 	 */
 	retval = (int64_t)syscall_get_return_value(current, args->regs);
 	res = val_to_ring(args, retval, 0, false, 0);
-	if (unlikely(res != SPR_SUCCESS))
+	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
 	/*
 	 * Retrieve the message header
 	 */
     syscall_get_arguments_deprecated(current, args->regs, 1, 1, &val);
-    if (unlikely(spr_copy_from_user(&mh, (const void __user *)val, sizeof(mh))))
-        return SPR_FAILURE_INVALID_USER_MEMORY;
+    if (unlikely(nod_copy_from_user(&mh, (const void __user *)val, sizeof(mh))))
+        return NOD_FAILURE_INVALID_USER_MEMORY;
 
     /*
         * data and size
@@ -2798,7 +2798,7 @@ int f_sys_recvmsg(struct event_filler_arguments *args)
     iovcnt = mh.msg_iovlen;
 
     res = parse_readv_writev_bufs(args, iov, iovcnt, retval, PRB_FLAG_PUSH_ALL);
-	if (unlikely(res != SPR_SUCCESS))
+	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
 	/*
@@ -2837,8 +2837,8 @@ int f_sys_recvmsg(struct event_filler_arguments *args)
 			    size,
 			    false,
 			    0);
-	if (unlikely(res != SPR_SUCCESS))
+	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
-	return SPR_SUCCESS;
+	return NOD_SUCCESS;
 }

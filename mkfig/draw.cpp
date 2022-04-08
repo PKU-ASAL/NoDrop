@@ -34,11 +34,11 @@ std::vector<std::map<nanoseconds, uint32_t>> mps;
 std::vector<struct MyStruct> params;
 std::vector<std::vector<uint32_t>> attacker;
 
-static int _parse(struct spr_event_hdr *hdr, char *buffer, void *__data)
+static int _parse(struct nod_event_hdr *hdr, char *buffer, void *__data)
 {
     size_t i;
-    const struct spr_event_info *info;
-    const struct spr_param_info *param;
+    const struct nod_event_info *info;
+    const struct nod_param_info *param;
     uint16_t *args;
     char *data;
 
@@ -140,7 +140,7 @@ static int _parse(struct spr_event_hdr *hdr, char *buffer, void *__data)
 void * resolve_buf_file(void *arg) {
     uint64_t count;
     uint32_t total, pos;
-    struct spr_event_hdr hdr;
+    struct nod_event_hdr hdr;
     char *buffer;
 
 
@@ -169,15 +169,15 @@ void * resolve_buf_file(void *arg) {
             printf("%s: read %d event header failed (pos = 0x%x)\n", filename, i, pos);
             break;
         }
-        if (hdr.magic != SPR_EVENT_HDR_MAGIC) {
+        if (hdr.magic != NOD_EVENT_HDR_MAGIC) {
             printf("%s: corrupted event %d: pos = 0x%x, magic = 0x%08x\n", filename, i, pos, hdr.magic);
             break;
         }
 
 
-        buffer = (char *)malloc(hdr.len - sizeof(struct spr_event_hdr));
+        buffer = (char *)malloc(hdr.len - sizeof(struct nod_event_hdr));
         if (buffer) {
-            if (fread(buffer, hdr.len - sizeof(struct spr_event_hdr), 1, file) != 1) {
+            if (fread(buffer, hdr.len - sizeof(struct nod_event_hdr), 1, file) != 1) {
                 free(buffer);
                 break;
             }

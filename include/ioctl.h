@@ -1,9 +1,9 @@
-#ifndef SPR_IOCTL_H_
-#define SPR_IOCTL_H_
+#ifndef NOD_IOCTL_H_
+#define NOD_IOCTL_H_
 
 
-#define SPR_IOCTL_NAME "secureprov"
-#define SPR_IOCTL_PATH "/proc/"SPR_IOCTL_NAME
+#define NOD_IOCTL_NAME "nodrop"
+#define NOD_IOCTL_PATH "/proc/"NOD_IOCTL_NAME
 
 #ifdef __KERNEL__
 #include <linux/ioctl.h>
@@ -11,13 +11,13 @@
 #include <sys/ioctl.h>
 #endif //__KERNEL__
 
-#define SPR_IOCTL_MAGIC 's'
-#define SPR_IOCTL_CLEAR_BUFFER                  _IO(SPR_IOCTL_MAGIC, 0)
-#define SPR_IOCTL_FETCH_BUFFER                  _IO(SPR_IOCTL_MAGIC, 1)
-#define SPR_IOCTL_READ_BUFFER_COUNT_INFO        _IO(SPR_IOCTL_MAGIC, 2)
-#define SPR_IOCTL_STOP_RECORDING                _IO(SPR_IOCTL_MAGIC, 3)
-#define SPR_IOCTL_START_RECORDING               _IO(SPR_IOCTL_MAGIC, 4)
-#define SPR_IOCTL_RESTORE_SECURITY              _IO(SPR_IOCTL_MAGIC, 5)
+#define NOD_IOCTL_MAGIC 's'
+#define NOD_IOCTL_CLEAR_BUFFER                  _IO(NOD_IOCTL_MAGIC, 0)
+#define NOD_IOCTL_FETCH_BUFFER                  _IO(NOD_IOCTL_MAGIC, 1)
+#define NOD_IOCTL_READ_BUFFER_COUNT_INFO        _IO(NOD_IOCTL_MAGIC, 2)
+#define NOD_IOCTL_STOP_RECORDING                _IO(NOD_IOCTL_MAGIC, 3)
+#define NOD_IOCTL_START_RECORDING               _IO(NOD_IOCTL_MAGIC, 4)
+#define NOD_IOCTL_RESTORE_SECURITY              _IO(NOD_IOCTL_MAGIC, 5)
 
 struct buffer_count_info {
 	uint64_t event_count;
@@ -30,4 +30,4 @@ struct fetch_buffer_struct {
 	char *buf;
 };
 
-#endif //SPR_IOCTL_H_
+#endif //NOD_IOCTL_H_

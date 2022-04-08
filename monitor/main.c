@@ -6,15 +6,15 @@
 #include "context.h"
 #include "events.h"
 
-#define PATH_FMT "/tmp/secureprov/%u-%ld.buf"
+#define PATH_FMT "/tmp/nodrop/%u-%ld.buf"
 #define SECOND_IN_US 1000000000
 
 char path[100];
-struct spr_buffer_info *info;
+struct nod_buffer_info *info;
 struct timeval tv;
 unsigned int tid;
 
-void spr_monitor_init(int argc, char *argv[], char *env[]) {
+void nod_monitor_init(int argc, char *argv[], char *env[]) {
     info = &g_bufp->info;
     gettimeofday(&tv, NULL);
     tid = (unsigned int)syscall(SYS_gettid);
@@ -33,11 +33,11 @@ static const char *__print_format[PT_UINT64 + 1][PF_OCT + 1] = {
     [PT_UINT64] = {"", "%"PRIu64, "0x%"PRIx64, "%010" PRIu64, "0%"PRIo64}/*PT_UINT64*/
 };
 
-static int _parse(struct spr_event_hdr *hdr, char *buffer, void *__data)
+static int _parse(struct nod_event_hdr *hdr, char *buffer, void *__data)
 {
     size_t i;
-    const struct spr_event_info *info;
-    const struct spr_param_info *param;
+    const struct nod_event_info *info;
+    const struct nod_param_info *param;
     uint16_t *args;
     char *data;
 
@@ -121,7 +121,7 @@ static int _parse(struct spr_event_hdr *hdr, char *buffer, void *__data)
 int main() {
     FILE *file;
     char *ptr, *end;
-    struct spr_event_hdr *hdr;
+    struct nod_event_hdr *hdr;
     if(!(file = fopen(path, "ab+"))) {
         perror("Cannot open log file");
         return 0;
@@ -130,7 +130,7 @@ int main() {
     ptr = g_bufp->buffer;
     end = g_bufp->buffer + info->tail;
     while (ptr < end) {
-        hdr = (struct spr_event_hdr *)ptr; 
+        hdr = (struct nod_event_hdr *)ptr; 
         // _parse(hdr, (char *)(hdr + 1), 0);
         fwrite(ptr, hdr->len, 1, file);
         ptr += hdr->len;

@@ -1,4 +1,4 @@
-MODULE := secureprov
+MODULE := nodrop
 
 all: mkfig monitor modules test ctrl
 
@@ -11,7 +11,7 @@ clean:
 	make -C StressTesting/ clean
 
 load: modules monitor
-	sudo rm -rf /tmp/secureprov; mkdir /tmp/secureprov
+	sudo rm -rf /tmp/nodrop; mkdir /tmp/nodrop
 	sudo rmmod -f $(MODULE) 2> /dev/null || true
 	sudo insmod $(MODULE).ko
 
@@ -28,5 +28,5 @@ monitor:
 test:
 	make -C StressTesting/
 
-ctrl: sprctl.c include/ioctl.h
-	$(CC) sprctl.c -o sprctl
+ctrl: nodrop-ctl.c include/ioctl.h
+	$(CC) nodrop-ctl.c -o nodrop-ctl

@@ -7,12 +7,12 @@
 #include <linux/ktime.h>
 #include <linux/rbtree.h>
 
-#include "secureprov.h"
+#include "nodrop.h"
 #include "common.h"
 #include "events.h"
 
 
-DEFINE_PER_CPU(struct spr_kbuffer, buffer);
+DEFINE_PER_CPU(struct nod_kbuffer, buffer);
 EXPORT_PER_CPU_SYMBOL(buffer);
 
 static struct elf_phdr *monitor_elf_phdata, *interp_elf_phdata;
@@ -35,13 +35,13 @@ static int
 __put_monitor_info(struct vm_area_struct const * const vma, void *arg) {
     void **arr = (void **)arg;
     m_infopack __user *infopack;
-    struct spr_kbuffer *buffer;
+    struct nod_kbuffer *buffer;
 
     if (vma->vm_flags & VM_EXEC)
         return 0;
 
     infopack = (m_infopack __user *)vma->vm_start;
-    buffer = (struct spr_kbuffer *)arr[2];
+    buffer = (struct nod_kbuffer *)arr[2];
 
     if (put_user((int)arr[0], (int __user *)&infopack->m_enter)) {
         pr_err("cannot write __monitor_enter @ %n\n", &infopack->m_enter);
@@ -54,7 +54,7 @@ __put_monitor_info(struct vm_area_struct const * const vma, void *arg) {
     }
 
     if (copy_to_user((void __user *)&infopack->m_buffer.buffer, (void *)buffer->buffer, BUFFER_SIZE) ||
-        copy_to_user((void __user *)&infopack->m_buffer.info, (void *)buffer->info, sizeof(struct spr_buffer_info))) {
+        copy_to_user((void __user *)&infopack->m_buffer.info, (void *)buffer->info, sizeof(struct nod_buffer_info))) {
         pr_err("cannot write __monitor_logmsg @ %lx\n", &infopack->m_buffer);
         return 0;
     }
@@ -122,7 +122,7 @@ create_elf_tbls(struct elfhdr *exec,
                 uint64_t interp_load_addr,
                 uint64_t *target_sp,
                 const struct pt_regs *regs,
-                const struct spr_kbuffer *log,
+                const struct nod_kbuffer *log,
                 char *argv[]) {
 
 #define STACK_ROUND(sp, items) 	(((uint64_t) (sp - (items))) &~ 15UL)
@@ -329,22 +329,22 @@ out:
 
 int event_from_monitor(void) {
     int enter = 0;
-    int retval = SPR_EVENT_FROM_APPLICATION; // syscall from application
+    int retval = NOD_EVENT_FROM_APPLICATION; // syscall from application
     // Monitor called syscall
     if (check_mapping(__check_monitor_enter, (void *)&enter) == 0) {
         if (enter == 1) {
-            retval = SPR_EVENT_FROM_MONITOR; // syscall from monitor
+            retval = NOD_EVENT_FROM_MONITOR; // syscall from monitor
         } else if (enter == -1) {
             pr_err("corrupted: cannot get monitor status!!\n");
             ASSERT(false);
-            retval = SPR_FAILURE_BUG;
+            retval = NOD_FAILURE_BUG;
         }
     }
     return retval;
 }
 
 int
-load_monitor(const struct spr_kbuffer *buffer) {
+load_monitor(const struct nod_kbuffer *buffer) {
     int retval;
     uint64_t entry, sp, load_addr, interp_load_addr;
     struct pt_regs *reg;
@@ -374,7 +374,7 @@ load_monitor(const struct spr_kbuffer *buffer) {
 
 success:
 
-    spr_prepare_security();
+    nod_prepare_security();
 
     elf_reg_init(&current->thread, reg, 0);
     reg->sp = sp;

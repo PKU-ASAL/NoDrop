@@ -1,5 +1,5 @@
-#ifndef SPR_SYSCALL_H
-#define SPR_SYSCALL_H
+#ifndef NOD_SYSCALL_H
+#define NOD_SYSCALL_H
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17,0)
 #define SYSCALL_DEF   const struct pt_regs * _syscall_regs
@@ -223,6 +223,6 @@ static inline void syscall_set_arguments(struct task_struct *task,
 
 #endif	/* CONFIG_X86_32 */
 
-#endif	/* SPR_SYSCALL_H */
+#endif	/* NOD_SYSCALL_H */
 
-#endif /* SPR_SYSCALL_H */
+#endif /* NOD_SYSCALL_H */

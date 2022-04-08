@@ -1,11 +1,11 @@
 #include <linux/init.h>
 #include <linux/module.h>
 
-#include "secureprov.h"
+#include "nodrop.h"
 
 MODULE_LICENSE("GPL");
 
-static int secureprov_init(void)
+static int nodrop_init(void)
 {
     int err;
 
@@ -44,7 +44,7 @@ out_loader:
     goto out;
 }
 
-static void secureprov_exit(void)
+static void nodrop_exit(void)
 {
     loader_destory();
     event_buffer_destory();
@@ -52,5 +52,5 @@ static void secureprov_exit(void)
     proc_destroy();
 }
 
-module_init(secureprov_init);
-module_exit(secureprov_exit);
+module_init(nodrop_init);
+module_exit(nodrop_exit);

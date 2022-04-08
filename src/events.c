@@ -4,23 +4,23 @@
 #include <linux/vmalloc.h>
 
 
-#include "secureprov.h"
+#include "nodrop.h"
 #include "syscall.h"
 #include "events.h"
 #include "common.h"
 
 static int 
-do_record_one_event(struct spr_kbuffer *buffer,
-        enum spr_event_type event_type,
+do_record_one_event(struct nod_kbuffer *buffer,
+        enum nod_event_type event_type,
         nanoseconds ts,
-        struct spr_event_data *event_datap)
+        struct nod_event_data *event_datap)
 {
     int cbret, restart;
     size_t event_size;
     uint32_t freespace; 
     struct event_filler_arguments args;
-    struct spr_buffer_info *info;
-    struct spr_event_hdr *hdr;
+    struct nod_buffer_info *info;
+    struct nod_event_hdr *hdr;
 
     info = buffer->info;
 start:
@@ -29,21 +29,21 @@ start:
     args.nargs = g_event_info[event_type].nparams;
     args.arg_data_offset = args.nargs * sizeof(uint16_t);
 
-    if (freespace < args.arg_data_offset + sizeof(struct spr_event_hdr)) {
+    if (freespace < args.arg_data_offset + sizeof(struct nod_event_hdr)) {
         restart = 1;
         goto loading;
     }
 
-    hdr = (struct spr_event_hdr *)(buffer->buffer + info->tail);
+    hdr = (struct nod_event_hdr *)(buffer->buffer + info->tail);
     hdr->ts = ts;
     hdr->tid = current->pid;
     hdr->type = event_type;
     hdr->cpuid = smp_processor_id();
     hdr->nargs = args.nargs;
-    hdr->magic = SPR_EVENT_HDR_MAGIC & 0xFFFFFFFF;
+    hdr->magic = NOD_EVENT_HDR_MAGIC & 0xFFFFFFFF;
 
-    args.buf_ptr = buffer->buffer + info->tail + sizeof(struct spr_event_hdr);
-    args.buffer_size = freespace - sizeof(struct spr_event_hdr);
+    args.buf_ptr = buffer->buffer + info->tail + sizeof(struct nod_event_hdr);
+    args.buffer_size = freespace - sizeof(struct nod_event_hdr);
     args.event_type = event_type;
     args.str_storage = buffer->str_storage;
 
@@ -60,16 +60,16 @@ start:
     args.nevents = info->nevents;
     args.snaplen = 80; // temporary MAGIC number
 
-    if (g_spr_events[event_type].filler_callback) {
-        cbret = g_spr_events[event_type].filler_callback(&args);
+    if (g_nod_events[event_type].filler_callback) {
+        cbret = g_nod_events[event_type].filler_callback(&args);
     } else {
         pr_err("corrupted filler for event type %d: NULL callback\n", event_type);
         ASSERT(0);
     }
 
-    if (cbret == SPR_SUCCESS) {
+    if (cbret == NOD_SUCCESS) {
         if (likely(args.curarg == args.nargs)) {
-            event_size = sizeof(struct spr_event_hdr) + args.arg_data_offset;
+            event_size = sizeof(struct nod_event_hdr) + args.arg_data_offset;
 
             hdr->len = event_size;
             info->tail += event_size;
@@ -82,7 +82,7 @@ start:
                     args.curarg,
                     args.nargs);
         }
-    } else if (cbret == SPR_FAILURE_BUFFER_FULL) {
+    } else if (cbret == NOD_FAILURE_BUFFER_FULL) {
         restart = 1;
         goto loading;
     }
@@ -91,16 +91,16 @@ start:
 
 loading:
     if (load_monitor(buffer) == LOAD_SUCCESS) {
-        reset_buffer(buffer, SPR_INIT_INFO);
+        reset_buffer(buffer, NOD_INIT_INFO);
         if (restart)
             goto start;
-        return SPR_SUCCESS_LOAD;
+        return NOD_SUCCESS_LOAD;
     } else {
-        return SPR_FAILURE_BUG;
+        return NOD_FAILURE_BUG;
     }
 }
 
-inline nanoseconds spr_nsecs(void) {
+inline nanoseconds nod_nsecs(void) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 17, 0)
 	return ktime_get_real_ns();
 #else
@@ -111,7 +111,7 @@ inline nanoseconds spr_nsecs(void) {
 #endif
 }
 
-int init_buffer(struct spr_kbuffer *buffer) {
+int init_buffer(struct nod_kbuffer *buffer) {
     int ret;
     unsigned int j;
 
@@ -122,7 +122,7 @@ int init_buffer(struct spr_kbuffer *buffer) {
         goto init_buffer_err;
     }
 
-    buffer->info = vmalloc(sizeof(struct spr_buffer_info));
+    buffer->info = vmalloc(sizeof(struct nod_buffer_info));
     if (!buffer->info) {
         ret = -ENOMEM;
         pr_err("Error allocating buffer memory\n");
@@ -140,7 +140,7 @@ int init_buffer(struct spr_kbuffer *buffer) {
         buffer->buffer[j] = 0;
     }
 
-    reset_buffer(buffer, SPR_INIT_INFO | SPR_INIT_COUNT | SPR_INIT_LOCK);
+    reset_buffer(buffer, NOD_INIT_INFO | NOD_INIT_COUNT | NOD_INIT_LOCK);
 
     pr_info("CPU buffer initialized, size = %d\n", BUFFER_SIZE);
     return 0;
@@ -150,7 +150,7 @@ init_buffer_err:
     return ret;
 }
 
-void free_buffer(struct spr_kbuffer *buffer) {
+void free_buffer(struct nod_kbuffer *buffer) {
     if (buffer->info) {
         vfree(buffer->info);
         buffer->info = NULL;
@@ -167,16 +167,16 @@ void free_buffer(struct spr_kbuffer *buffer) {
     }
 }
 
-void reset_buffer(struct spr_kbuffer *buffer, int flags) {
-    if (flags & SPR_INIT_INFO) {
+void reset_buffer(struct nod_kbuffer *buffer, int flags) {
+    if (flags & NOD_INIT_INFO) {
         buffer->info->nevents = 0;
         buffer->info->tail = 0;
     }
 
-    if (flags & SPR_INIT_COUNT)
+    if (flags & NOD_INIT_COUNT)
         buffer->event_count = 0;
 
-    if (flags & SPR_INIT_LOCK)
+    if (flags & NOD_INIT_LOCK)
         init_rwsem(&buffer->sem);
 }
 
@@ -184,7 +184,7 @@ int event_buffer_init(void) {
     int cpu;
     int ret;
     for_each_present_cpu(cpu) {
-        struct spr_kbuffer *bufp = &per_cpu(buffer, cpu);
+        struct nod_kbuffer *bufp = &per_cpu(buffer, cpu);
         ret = init_buffer(bufp);
         if (ret != 0)
             return ret;
@@ -195,15 +195,15 @@ int event_buffer_init(void) {
 void event_buffer_destory(void) {
     int cpu;
     for_each_present_cpu(cpu) {
-        struct spr_kbuffer *bufp = &per_cpu(buffer, cpu);
+        struct nod_kbuffer *bufp = &per_cpu(buffer, cpu);
         free_buffer(bufp);
     }
 }
 
-int record_one_event(enum spr_event_type type, struct spr_event_data *event_datap) {
+int record_one_event(enum nod_event_type type, struct nod_event_data *event_datap) {
     int cpu, retval;
-    struct spr_kbuffer *bufp;
-    nanoseconds ts = spr_nsecs();
+    struct nod_kbuffer *bufp;
+    nanoseconds ts = nod_nsecs();
 
     cpu = get_cpu();
     bufp = &per_cpu(buffer, cpu);

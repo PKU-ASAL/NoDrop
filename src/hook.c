@@ -8,7 +8,7 @@
 #include <asm/unistd.h>
 #include <asm/syscall.h>
 
-#include "secureprov.h"
+#include "nodrop.h"
 #include "syscall.h"
 #include "common.h"
 #include "events.h"
@@ -66,8 +66,8 @@ static int
 syscall_probe(struct pt_regs *regs, long id) {
     int retval;
     long table_index;
-    enum spr_event_type type;
-    struct spr_event_data event_data;
+    enum nod_event_type type;
+    struct nod_event_data event_data;
 
     table_index = id - SYSCALL_TABLE_ID0;
     if (likely(table_index >= 0 && table_index < SYSCALL_TABLE_SIZE)) {
@@ -79,7 +79,7 @@ syscall_probe(struct pt_regs *regs, long id) {
 
         retval = record_one_event(type, &event_data);
     } else {
-        retval = SPR_FAILURE_INVALID_EVENT;
+        retval = NOD_FAILURE_INVALID_EVENT;
     }
 
     return retval;
@@ -89,8 +89,8 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
 {
     int i, evt_from, id;
 
-#ifdef SPR_TEST
-    SPR_TEST(current) {
+#ifdef NOD_TEST
+    NOD_TEST(current) {
         return;
     }
 #endif
@@ -105,7 +105,7 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
 
 start:
     evt_from = event_from_monitor();
-    if (evt_from == SPR_EVENT_FROM_APPLICATION) {
+    if (evt_from == NOD_EVENT_FROM_APPLICATION) {
         syscall_probe(regs, id);
     }
 }
@@ -113,14 +113,14 @@ start:
 static long
 hook_exit(SYSCALL_DEF)
 {
-#ifdef SPR_TEST
-    SPR_TEST(current) {
+#ifdef NOD_TEST
+    NOD_TEST(current) {
         return real_exit(SYSCALL_ARGS);
     }
 #endif
 
-    if (likely(event_from_monitor() == SPR_EVENT_FROM_APPLICATION)) {
-        if (unlikely(syscall_probe(current_pt_regs(), __NR_exit) == SPR_SUCCESS_LOAD))
+    if (likely(event_from_monitor() == NOD_EVENT_FROM_APPLICATION)) {
+        if (unlikely(syscall_probe(current_pt_regs(), __NR_exit) == NOD_SUCCESS_LOAD))
             return 0;
     }
 
@@ -130,14 +130,14 @@ hook_exit(SYSCALL_DEF)
 static long
 hook_exit_group(SYSCALL_DEF)
 {
-#ifdef SPR_TEST
-    SPR_TEST(current) {
+#ifdef NOD_TEST
+    NOD_TEST(current) {
         return real_exit_group(SYSCALL_ARGS);
     }
 #endif
 
-    if (likely(event_from_monitor() == SPR_EVENT_FROM_APPLICATION)) {
-        if (unlikely(syscall_probe(current_pt_regs(), __NR_exit_group) == SPR_SUCCESS_LOAD))
+    if (likely(event_from_monitor() == NOD_EVENT_FROM_APPLICATION)) {
+        if (unlikely(syscall_probe(current_pt_regs(), __NR_exit_group) == NOD_SUCCESS_LOAD))
             return 0;
     }
 
@@ -145,16 +145,16 @@ hook_exit_group(SYSCALL_DEF)
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,3,0)
-inline void spr_write_cr0(unsigned long cr0) {
+inline void nod_write_cr0(unsigned long cr0) {
     unsigned long __force_order;
 	asm volatile("mov %0,%%cr0" : "+r"(cr0), "+m"(__force_order));
 }
 #else
-#define spr_write_cr0 write_cr0 
+#define nod_write_cr0 write_cr0 
 #endif
 
-#define WPOFF do { spr_write_cr0(read_cr0() & (~0x10000)); } while (0);
-#define WPON  do { spr_write_cr0(read_cr0() | 0x10000);    } while (0);
+#define WPOFF do { nod_write_cr0(read_cr0() & (~0x10000)); } while (0);
+#define WPON  do { nod_write_cr0(read_cr0() | 0x10000);    } while (0);
 
 int hook_syscall(void) {
     int ret;

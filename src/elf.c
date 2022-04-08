@@ -10,7 +10,7 @@
 #include <linux/ptrace.h>
 #include <linux/mm.h>
 
-#include "secureprov.h"
+#include "nodrop.h"
 
 
 #if ELF_EXEC_PAGESIZE > PAGE_SIZE

@@ -8,7 +8,7 @@
 #include <asm/prctl.h>
 #include <asm/proto.h>
 
-#include "secureprov.h"
+#include "nodrop.h"
 #include "common.h"
 #include "events.h"
 #include "ioctl.h"
@@ -19,16 +19,16 @@
 static struct proc_dir_entry *ent;
 typedef struct  {
     int status;
-} spr_private_data_t;
+} nod_private_data_t;
 
-static int spr_procopen(struct inode *inode, struct file *filp)
+static int nod_procopen(struct inode *inode, struct file *filp)
 {
     int ret;
     int status = event_from_monitor();
-    spr_private_data_t *private;
+    nod_private_data_t *private;
 
-    if (status == SPR_EVENT_FROM_APPLICATION || status == SPR_EVENT_FROM_MONITOR) {
-        private = vmalloc(sizeof(spr_private_data_t));
+    if (status == NOD_EVENT_FROM_APPLICATION || status == NOD_EVENT_FROM_MONITOR) {
+        private = vmalloc(sizeof(nod_private_data_t));
         if (!private) {
             ret = -ENOMEM;
             pr_err("proc open: No memory for allocating private data");
@@ -45,7 +45,7 @@ static int spr_procopen(struct inode *inode, struct file *filp)
 }
 
 static ssize_t
-spr_procread(struct file *filp, char __user *buf, size_t count, loff_t *off) {
+nod_procread(struct file *filp, char __user *buf, size_t count, loff_t *off) {
     int len = 0;
     unsigned int event_id, cpu;
     char kbuf[BUFSIZE];
@@ -55,7 +55,7 @@ spr_procread(struct file *filp, char __user *buf, size_t count, loff_t *off) {
 
     event_id = 0;
     for_each_present_cpu(cpu) {
-        struct spr_kbuffer *bufp = &per_cpu(buffer, cpu);
+        struct nod_kbuffer *bufp = &per_cpu(buffer, cpu);
         down_read(&bufp->sem);
         event_id += bufp->event_count;
         up_read(&bufp->sem);
@@ -70,34 +70,34 @@ spr_procread(struct file *filp, char __user *buf, size_t count, loff_t *off) {
 }
 
 static long 
-spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+nod_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
     int ret;
     uint64_t count;
     unsigned int cpu;
     char *ptr;
     struct security_data security;
-    struct spr_kbuffer *bufp;
+    struct nod_kbuffer *bufp;
     struct buffer_count_info cinfo;
     struct fetch_buffer_struct fetch;
-    spr_private_data_t *private = filp->private_data;
+    nod_private_data_t *private = filp->private_data;
     sigset_t sigset;
 
 
     switch(cmd) {
-    case SPR_IOCTL_CLEAR_BUFFER:
+    case NOD_IOCTL_CLEAR_BUFFER:
         for_each_present_cpu(cpu) {
             bufp = &per_cpu(buffer, cpu);
             down_write(&bufp->sem);
-            reset_buffer(bufp, SPR_INIT_INFO | SPR_INIT_COUNT);
+            reset_buffer(bufp, NOD_INIT_INFO | NOD_INIT_COUNT);
             up_write(&bufp->sem);
         }
 
         pr_info("proc: clean buffer");
         break;
         
-    case SPR_IOCTL_FETCH_BUFFER:
-        if (spr_copy_from_user((void *)&fetch, (void *)arg, sizeof(fetch))) {
+    case NOD_IOCTL_FETCH_BUFFER:
+        if (nod_copy_from_user((void *)&fetch, (void *)arg, sizeof(fetch))) {
             ret = -EINVAL;
             goto out;
         }
@@ -130,7 +130,7 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         ret = 0;
         break;
     
-    case SPR_IOCTL_READ_BUFFER_COUNT_INFO:
+    case NOD_IOCTL_READ_BUFFER_COUNT_INFO:
         memset(&cinfo, 0, sizeof(cinfo));
         for_each_present_cpu(cpu) {
             bufp = &per_cpu(buffer, cpu);
@@ -146,18 +146,18 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
             goto out;
         }
         break;
-    case SPR_IOCTL_STOP_RECORDING:
+    case NOD_IOCTL_STOP_RECORDING:
         restore_syscall();
 
         pr_info("proc: Stop recording");
         break;
-    case SPR_IOCTL_START_RECORDING:
+    case NOD_IOCTL_START_RECORDING:
         hook_syscall();
 
         pr_info("proc: Start recording");
         break;
-    case SPR_IOCTL_RESTORE_SECURITY:
-        if (private->status != SPR_EVENT_FROM_MONITOR) {
+    case NOD_IOCTL_RESTORE_SECURITY:
+        if (private->status != NOD_EVENT_FROM_MONITOR) {
             ret = -EINVAL;
             goto out;
         }
@@ -167,12 +167,12 @@ spr_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
             goto out;
         }
 
-        if ((ret = spr_enable_seccomp(security.seccomp_mode))) 
+        if ((ret = nod_enable_seccomp(security.seccomp_mode))) 
             goto out;
 
-        spr_write_gsbase(security.gsbase);
-        spr_write_fsbase(security.fsbase);
-        spr_cap_capset(security.cap_permitted, security.cap_effective);
+        nod_write_gsbase(security.gsbase);
+        nod_write_fsbase(security.fsbase);
+        nod_cap_capset(security.cap_permitted, security.cap_effective);
 
         sigset.sig[0] = security.sigset;
         sigprocmask(SIG_SETMASK, &sigset, 0);
@@ -189,24 +189,24 @@ out:
     return ret;
 }
 
-static int spr_procrelease(struct inode *inode, struct file *filp)
+static int nod_procrelease(struct inode *inode, struct file *filp)
 {
     vfree(filp->private_data);
     return 0;
 }
 
-static const struct file_operations g_spr_fops = {
-    .open = spr_procopen,
-    .read = spr_procread,
-    .unlocked_ioctl = spr_procioctl,
-    .release = spr_procrelease,
+static const struct file_operations g_nod_fops = {
+    .open = nod_procopen,
+    .read = nod_procread,
+    .unlocked_ioctl = nod_procioctl,
+    .release = nod_procrelease,
     .owner = THIS_MODULE
 };
 
 int proc_init(void) {
     int ret;
 
-    ent = proc_create(SPR_IOCTL_NAME, 0666, NULL, &g_spr_fops);
+    ent = proc_create(NOD_IOCTL_NAME, 0666, NULL, &g_nod_fops);
 
     if (!ent) {
         ret = -EFAULT;

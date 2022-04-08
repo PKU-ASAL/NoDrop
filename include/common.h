@@ -42,7 +42,7 @@ struct context_struct {
 typedef struct {
 	int m_enter;
 	struct context_struct m_context;
-	struct spr_buffer m_buffer;
+	struct nod_buffer m_buffer;
 } m_infopack;
 
 #endif //_COMMON_H_

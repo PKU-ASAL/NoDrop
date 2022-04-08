@@ -17,11 +17,11 @@ enum which_selector {
 	GS
 };
 
-unsigned int spr_get_seccomp(void) {
+unsigned int nod_get_seccomp(void) {
     return seccomp_mode(&current->seccomp);
 }
 
-void spr_disable_seccomp(void) {
+void nod_disable_seccomp(void) {
     if (unlikely(seccomp_mode(&current->seccomp) != SECCOMP_MODE_DISABLED)) {
         spin_lock_irq(&current->sighand->siglock);
         current->seccomp.mode = SECCOMP_MODE_DISABLED;
@@ -31,7 +31,7 @@ void spr_disable_seccomp(void) {
     }
 }
 
-int spr_enable_seccomp(unsigned int mode) {
+int nod_enable_seccomp(unsigned int mode) {
     if (mode != SECCOMP_MODE_DISABLED &&
         mode != SECCOMP_MODE_FILTER &&
         mode != SECCOMP_MODE_STRICT) 
@@ -49,13 +49,13 @@ int spr_enable_seccomp(unsigned int mode) {
     return 0;
 }
 
-void spr_cap_raise(void) {
+void nod_cap_raise(void) {
     struct cred *cred = current_cred();
 	cred->cap_permitted = CAP_FULL_SET;
 	cred->cap_effective = CAP_FULL_SET;
 }
 
-void spr_cap_capset(u32 *permitted, u32 *effective) {
+void nod_cap_capset(u32 *permitted, u32 *effective) {
     int i;
     struct cred *cred = (struct cred *)current_cred();
     for (i = 0; i < _KERNEL_CAPABILITY_U32S; ++i) {
@@ -64,7 +64,7 @@ void spr_cap_capset(u32 *permitted, u32 *effective) {
     }
 }
 
-void spr_write_fsbase(unsigned long fsbase) {
+void nod_write_fsbase(unsigned long fsbase) {
     preempt_disable();
     loadsegment(fs, 0);
     wrmsrl(MSR_FS_BASE, fsbase);
@@ -72,7 +72,7 @@ void spr_write_fsbase(unsigned long fsbase) {
     preempt_enable();
 }
 
-void spr_write_gsbase(unsigned long gsbase) {
+void nod_write_gsbase(unsigned long gsbase) {
     preempt_disable();
     load_gs_index(0);
     wrmsrl(MSR_KERNEL_GS_BASE, gsbase);
@@ -108,7 +108,7 @@ void prepare_rlimit_data(struct rlimit *rlim) {
     }
 }
 
-static void spr_set_fs_root(struct fs_struct *fs, const struct path *path) {
+static void nod_set_fs_root(struct fs_struct *fs, const struct path *path) {
     struct path old_root;
 
     path_get(path);
@@ -129,22 +129,22 @@ int prepare_root_path(char *buf) {
     get_fs_root(current->fs, &old_path);
 
     get_fs_root(init_task.fs, &real_path);
-    spr_set_fs_root(current->fs, &real_path);
+    nod_set_fs_root(current->fs, &real_path);
 
     path_get(&old_path);
     pathp = d_path(&old_path, buf, PATH_MAX);
     path_put(&old_path);
     if (IS_ERR(pathp)) {
-        spr_set_fs_root(current->fs, &old_path);
+        nod_set_fs_root(current->fs, &old_path);
         return PTR_ERR(pathp);
     }
     sprintf(buf, "%s", pathp);
 
-    spr_set_fs_root(current->fs, &old_path);
+    nod_set_fs_root(current->fs, &old_path);
     return 0;
 }
 
-void spr_disable_rlim(void) {
+void nod_disable_rlim(void) {
     struct rlimit *rlim = current->signal->rlim;
 
     rlim[RLIMIT_FSIZE] = (struct rlimit){RLIM_INFINITY, RLIM_INFINITY};
@@ -152,16 +152,16 @@ void spr_disable_rlim(void) {
     rlim[RLIMIT_NOFILE] = (struct rlimit){1024*1024, 1024*1024};
 }
 
-void spr_prepare_security(void) {
+void nod_prepare_security(void) {
     struct path real_path;
     sigset_t sigset;
 
-    spr_cap_raise();
-    spr_disable_rlim();
-    spr_disable_seccomp();
+    nod_cap_raise();
+    nod_disable_rlim();
+    nod_disable_seccomp();
 
     get_fs_root(init_task.fs, &real_path);
-    spr_set_fs_root(current->fs, &real_path);
+    nod_set_fs_root(current->fs, &real_path);
 
     sigfillset(&sigset);
     sigprocmask(SIG_SETMASK, &sigset, 0);

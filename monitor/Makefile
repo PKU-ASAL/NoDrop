@@ -1,4 +1,4 @@
-MODULE := secureprov
+MODULE := nodrop
 TARGET := monitor
 
 VPATH := ../src

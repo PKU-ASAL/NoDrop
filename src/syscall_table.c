@@ -13,14 +13,14 @@
 #include <asm/syscall.h>
 #include <linux/unistd.h>
 
-#include "secureprov.h"
+#include "nodrop.h"
 #include "events.h"
 
 
 /*
  * SYSCALL TABLE
  */
-const enum spr_event_type g_syscall_event_table[SYSCALL_TABLE_SIZE] = {
+const enum nod_event_type g_syscall_event_table[SYSCALL_TABLE_SIZE] = {
 	[__NR_read - SYSCALL_TABLE_ID0] = SPRE_SYSCALL_READ,
 	[__NR_write - SYSCALL_TABLE_ID0] = SPRE_SYSCALL_WRITE,
     [__NR_open - SYSCALL_TABLE_ID0] = SPRE_SYSCALL_OPEN,

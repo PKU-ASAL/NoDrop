@@ -15,24 +15,24 @@
 
 #define vpr_log(xxx, fmt, ...) pr_##xxx("(%d)%s[%d][%s:%d]: " fmt, smp_processor_id(), current->comm, current->pid, __func__, __LINE__, ##__VA_ARGS__)
 
-#define SPR_TEST(task) if (!(STR_EQU((task)->comm, "a.out")))
-// #define SPR_TEST(task) if (!(STR_EQU((task)->comm, "nginx") || STR_EQU((task)->comm, "httpd") || STR_EQU((task)->comm, "redis-server") || STR_EQU((task)->comm, "postmark") || STR_EQU((task)->comm, "openssl") || STR_EQU((task)->comm, "7z")))
+#define NOD_TEST(task) if (!(STR_EQU((task)->comm, "a.out")))
+// #define NOD_TEST(task) if (!(STR_EQU((task)->comm, "nginx") || STR_EQU((task)->comm, "httpd") || STR_EQU((task)->comm, "redis-server") || STR_EQU((task)->comm, "postmark") || STR_EQU((task)->comm, "openssl") || STR_EQU((task)->comm, "7z")))
 #define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
 #define ASSERT(expr) BUG_ON(!(expr))
 #define MONITOR_PATH "./monitor/monitor"
 
-#define SPR_SUCCESS 0
-#define SPR_SUCCESS_LOAD 1
-#define SPR_FAILURE_BUG -1
-#define SPR_FAILURE_BUFFER_FULL -2
-#define SPR_FAILURE_INVALID_EVENT -3
-#define SPR_FAILURE_INVALID_USER_MEMORY -4
-#define SPR_EVENT_FROM_MONITOR 1
-#define SPR_EVENT_FROM_APPLICATION 2
+#define NOD_SUCCESS 0
+#define NOD_SUCCESS_LOAD 1
+#define NOD_FAILURE_BUG -1
+#define NOD_FAILURE_BUFFER_FULL -2
+#define NOD_FAILURE_INVALID_EVENT -3
+#define NOD_FAILURE_INVALID_USER_MEMORY -4
+#define NOD_EVENT_FROM_MONITOR 1
+#define NOD_EVENT_FROM_APPLICATION 2
 
-#define SPR_INIT_INFO  (1 << 1)
-#define SPR_INIT_COUNT (1 << 2)
-#define SPR_INIT_LOCK  (1 << 3)
+#define NOD_INIT_INFO  (1 << 1)
+#define NOD_INIT_COUNT (1 << 2)
+#define NOD_INIT_LOCK  (1 << 3)
 
 typedef unsigned long syscall_arg_t;
 
@@ -41,14 +41,14 @@ int  proc_init(void);
 void proc_destroy(void);
 
 // privil.c
-unsigned int spr_get_seccomp(void);
-void spr_disable_seccomp(void);
-int spr_enable_seccomp(unsigned int mode);
-void spr_write_gsbase(unsigned long gsbase);
-void spr_write_fsbase(unsigned long fsbase);
-void spr_cap_raise(void);
-void spr_cap_capset(u32 *permitted, u32 *effective);
-void spr_prepare_security(void);
+unsigned int nod_get_seccomp(void);
+void nod_disable_seccomp(void);
+int nod_enable_seccomp(unsigned int mode);
+void nod_write_gsbase(unsigned long gsbase);
+void nod_write_fsbase(unsigned long fsbase);
+void nod_cap_raise(void);
+void nod_cap_capset(u32 *permitted, u32 *effective);
+void nod_prepare_security(void);
 int prepare_root_path(char *path);
 void prepare_rlimit_data(struct rlimit *rlims);
 void prepare_security_data(struct security_data *security);
@@ -65,26 +65,26 @@ void hook_destory(void);
 #define LOAD_NO_SYSCALL     2 // DO NOT do syscall, goto monitor directly!
 #define LOAD_FROM_MONITOR   3
 
-DECLARE_PER_CPU(struct spr_kbuffer, buffer);
+DECLARE_PER_CPU(struct nod_kbuffer, buffer);
 
 int loader_init(void);
 void loader_destory(void);
 int check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg),
                   void *arg);
-int load_monitor(const struct spr_kbuffer *buffer);
+int load_monitor(const struct nod_kbuffer *buffer);
 int event_from_monitor(void);
 
 // event.c
 #define NS_TO_SEC(_ns) ((_ns) / 1000000000)
 #define SECOND_IN_NS 1000000000 // 1s = 1e9ns
 
-nanoseconds spr_nsecs(void);
+nanoseconds nod_nsecs(void);
 int event_buffer_init(void);
 void event_buffer_destory(void);
-int record_one_event(enum spr_event_type type, struct spr_event_data *event_datap);
-int init_buffer(struct spr_kbuffer *buffer);
-void free_buffer(struct spr_kbuffer *buffer);
-void reset_buffer(struct spr_kbuffer *buffer, int flags);
+int record_one_event(enum nod_event_type type, struct nod_event_data *event_datap);
+int init_buffer(struct nod_kbuffer *buffer);
+void free_buffer(struct nod_kbuffer *buffer);
+void reset_buffer(struct nod_kbuffer *buffer, int flags);
 
 // elf.c
 #define BAD_ADDR(x) ((unsigned long)(x) >= TASK_SIZE)
@@ -99,16 +99,16 @@ void elf_reg_init(struct thread_struct *t, struct pt_regs *regs, const u16 ds);
  * These are analogous to get_user(), copy_from_user() and strncpy_from_user(),
  * but they can't sleep, barf on page fault or be preempted
  */
-#define spr_get_user(x, ptr) (spr_copy_from_user(&x, ptr, sizeof(x)) ? -EFAULT : 0)
-unsigned long spr_copy_from_user(void *to, const void __user *from, unsigned long n);
-long spr_strncpy_from_user(char *to, const char __user *from, unsigned long n);
+#define nod_get_user(x, ptr) (nod_copy_from_user(&x, ptr, sizeof(x)) ? -EFAULT : 0)
+unsigned long nod_copy_from_user(void *to, const void __user *from, unsigned long n);
+long nod_strncpy_from_user(char *to, const char __user *from, unsigned long n);
 
 // syscall_table.c
 #define SYSCALL_TABLE_ID0 0
-extern const enum spr_event_type g_syscall_event_table[];
+extern const enum nod_event_type g_syscall_event_table[];
 
 // filler_table.c
-extern const struct spr_event_entry g_spr_events[];
+extern const struct nod_event_entry g_nod_events[];
 
 
 

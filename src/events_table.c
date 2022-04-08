@@ -1,6 +1,6 @@
 #include "events.h"
 
-const struct spr_event_info g_event_info[SPRE_EVENT_MAX] = {
+const struct nod_event_info g_event_info[SPRE_EVENT_MAX] = {
 	[SPRE_GENERIC] = {"syscall", EC_OTHER, EF_NONE, 1, {{"ID", PT_SYSCALLID, PF_DEC} } },
 	[SPRE_SYSCALL_OPEN] = {"open", EC_FILE, EF_CREATES_FD | EF_MODIFIES_STATE, 5, {{"fd", PT_FD, PF_DEC}, {"name", PT_FSPATH, PF_NA}, {"flags", PT_FLAGS32, PF_HEX, file_flags}, {"mode", PT_UINT32, PF_OCT}, {"dev", PT_UINT32, PF_HEX} } },
 	[SPRE_SYSCALL_CLOSE] = {"close", EC_IO_OTHER, EF_DESTROYS_FD | EF_USES_FD | EF_MODIFIES_STATE | EF_DROP_SIMPLE_CONS, 2, {{"fd", PT_FD, PF_DEC}, {"res", PT_ERRNO, PF_DEC} } },
@@ -24,8 +24,8 @@ const struct spr_event_info g_event_info[SPRE_EVENT_MAX] = {
 	[SPRE_SYSCALL_GETSOCKNAME] = {"getsockname", EC_NET, EF_DROP_SIMPLE_CONS, 0},
 	[SPRE_SYSCALL_GETPEERNAME] = {"getpeername", EC_NET, EF_DROP_SIMPLE_CONS, 0},
 	[SPRE_SYSCALL_SOCKETPAIR] = {"socketpair", EC_IPC, EF_CREATES_FD | EF_MODIFIES_STATE, 8, {{"domain", PT_FLAGS32, PF_DEC, socket_families}, {"type", PT_UINT32, PF_DEC}, {"proto", PT_UINT32, PF_DEC}, {"res", PT_ERRNO, PF_DEC}, {"fd1", PT_FD, PF_DEC}, {"fd2", PT_FD, PF_DEC}, {"source", PT_UINT64, PF_HEX}, {"peer", PT_UINT64, PF_HEX} } },
-	[SPRE_SYSCALL_SETSOCKOPT] = {"setsockopt", EC_NET, EF_USES_FD, 6, {{"res", PT_ERRNO, PF_DEC}, {"fd", PT_FD, PF_DEC}, {"level", PT_FLAGS8, PF_DEC, sockopt_levels}, {"optname", PT_FLAGS8, PF_DEC, sockopt_options}, {"val", PT_DYN, PF_DEC, sockopt_dynamic_param, SPR_SOCKOPT_IDX_MAX}, {"optlen", PT_UINT32, PF_DEC}}},
-	[SPRE_SYSCALL_GETSOCKOPT] = {"getsockopt", EC_NET, EF_USES_FD | EF_MODIFIES_STATE| EF_DROP_SIMPLE_CONS, 6, {{"res", PT_ERRNO, PF_DEC}, {"fd", PT_FD, PF_DEC}, {"level", PT_FLAGS8, PF_DEC, sockopt_levels}, {"optname", PT_FLAGS8, PF_DEC, sockopt_options}, {"val", PT_DYN, PF_DEC, sockopt_dynamic_param, SPR_SOCKOPT_IDX_MAX}, {"optlen", PT_UINT32, PF_DEC}}},
+	[SPRE_SYSCALL_SETSOCKOPT] = {"setsockopt", EC_NET, EF_USES_FD, 6, {{"res", PT_ERRNO, PF_DEC}, {"fd", PT_FD, PF_DEC}, {"level", PT_FLAGS8, PF_DEC, sockopt_levels}, {"optname", PT_FLAGS8, PF_DEC, sockopt_options}, {"val", PT_DYN, PF_DEC, sockopt_dynamic_param, NOD_SOCKOPT_IDX_MAX}, {"optlen", PT_UINT32, PF_DEC}}},
+	[SPRE_SYSCALL_GETSOCKOPT] = {"getsockopt", EC_NET, EF_USES_FD | EF_MODIFIES_STATE| EF_DROP_SIMPLE_CONS, 6, {{"res", PT_ERRNO, PF_DEC}, {"fd", PT_FD, PF_DEC}, {"level", PT_FLAGS8, PF_DEC, sockopt_levels}, {"optname", PT_FLAGS8, PF_DEC, sockopt_options}, {"val", PT_DYN, PF_DEC, sockopt_dynamic_param, NOD_SOCKOPT_IDX_MAX}, {"optlen", PT_UINT32, PF_DEC}}},
 	[SPRE_SYSCALL_SENDMSG] = {"sendmsg", EC_IO_WRITE, EF_USES_FD | EF_WRITES_TO_FD | EF_MODIFIES_STATE, 5, {{"fd", PT_FD, PF_DEC}, {"size", PT_UINT32, PF_DEC}, {"tuple", PT_SOCKTUPLE, PF_NA}, {"res", PT_ERRNO, PF_DEC}, {"data", PT_BYTEBUF, PF_NA} } },
 	[SPRE_SYSCALL_SENDMMSG] = {"sendmmsg", EC_IO_WRITE, EF_DROP_SIMPLE_CONS, 0},
 	[SPRE_SYSCALL_RECVMSG] = {"recvmsg", EC_IO_READ, EF_USES_FD | EF_READS_FROM_FD | EF_MODIFIES_STATE, 5, {{"fd", PT_FD, PF_DEC}, {"res", PT_ERRNO, PF_DEC}, {"size", PT_UINT32, PF_DEC}, {"data", PT_BYTEBUF, PF_NA}, {"tuple", PT_SOCKTUPLE, PF_NA} } },

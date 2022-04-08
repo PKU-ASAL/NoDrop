@@ -1,11 +1,11 @@
 #include "fillers.h"
-#include "secureprov.h"
+#include "nodrop.h"
 
 #include "events.h"
 
-#define FILLER_REF(x) f_##x, SPR_FILLER_##x
+#define FILLER_REF(x) f_##x, NOD_FILLER_##x
 
-const struct spr_event_entry g_spr_events[SPRE_EVENT_MAX] = {
+const struct nod_event_entry g_nod_events[SPRE_EVENT_MAX] = {
     [SPRE_SYSCALL_READ] = {FILLER_REF(sys_read)},
     [SPRE_SYSCALL_WRITE] = {FILLER_REF(sys_write)},
     [SPRE_SYSCALL_OPEN] = {FILLER_REF(sys_open)},

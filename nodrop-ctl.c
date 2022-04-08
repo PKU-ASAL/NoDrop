@@ -19,17 +19,17 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    fd = open(SPR_IOCTL_PATH, O_RDWR);
+    fd = open(NOD_IOCTL_PATH, O_RDWR);
     if (fd < 0) {
-        fprintf(stderr, "Cannot open " SPR_IOCTL_PATH);
+        fprintf(stderr, "Cannot open " NOD_IOCTL_PATH);
         return 127;
     }
 
     if (!strcmp(argv[1], "clean")) {
-        if (!ioctl(fd, SPR_IOCTL_CLEAR_BUFFER, 0))
+        if (!ioctl(fd, NOD_IOCTL_CLEAR_BUFFER, 0))
             fprintf(stderr, "Success\n");
     } else if (!strcmp(argv[1], "fetch")) {
-        if ((ret = ioctl(fd, SPR_IOCTL_READ_BUFFER_COUNT_INFO, &cinfo))) {
+        if ((ret = ioctl(fd, NOD_IOCTL_READ_BUFFER_COUNT_INFO, &cinfo))) {
             fprintf(stderr, "Get Buffer Count Info failed, reason %d\n", ret);
             return -1;
         }
@@ -41,7 +41,7 @@ int main(int argc, char *argv[]) {
             return -1;
         }
 
-        if ((ret = ioctl(fd, SPR_IOCTL_FETCH_BUFFER, &fetch))) {
+        if ((ret = ioctl(fd, NOD_IOCTL_FETCH_BUFFER, &fetch))) {
             fprintf(stderr, "Fetch Buffer failed, reason %d\n", ret);
             return -1;
         }
@@ -63,15 +63,15 @@ int main(int argc, char *argv[]) {
             fclose(file);
 
     } else if (!strcmp(argv[1], "count")) {
-        if (!ioctl(fd, SPR_IOCTL_READ_BUFFER_COUNT_INFO, &cinfo)) {
+        if (!ioctl(fd, NOD_IOCTL_READ_BUFFER_COUNT_INFO, &cinfo)) {
             printf("event_count=%lu,unflushed_count=%lu,unflushed_len=%lu\n", cinfo.event_count, cinfo.unflushed_count, cinfo.unflushed_len);
         }
     } else if (!strcmp(argv[1], "stop")) {
-        if (!ioctl(fd, SPR_IOCTL_STOP_RECORDING, 0))
+        if (!ioctl(fd, NOD_IOCTL_STOP_RECORDING, 0))
             fprintf(stderr, "Stopped\n");
 
     } else if (!strcmp(argv[1], "start")) {
-        if (!ioctl(fd, SPR_IOCTL_START_RECORDING, 0))
+        if (!ioctl(fd, NOD_IOCTL_START_RECORDING, 0))
             fprintf(stderr, "Start\n");
 
     } else {
