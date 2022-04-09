@@ -1,11 +1,12 @@
-#ifndef SECUREPROV_H_
-#define SECUREPROV_H_
+#ifndef NODROP_H_
+#define NODROP
 
 #include <linux/ptrace.h>
 #include <linux/elf.h>
 
 #include "common.h"
 #include "events.h"
+#include "procinfo.h"
 
 #define vpr_dbg(fmt, ...)
 // #define vpr_dbg(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
@@ -34,7 +35,19 @@
 #define NOD_INIT_COUNT (1 << 2)
 #define NOD_INIT_LOCK  (1 << 3)
 
+#ifdef CONFIG_X86_64
+#define FSBASE fsbase
+#define GSBASE gsbase
+#else
+#define FSBASE fs
+#define GSBASE gs
+#endif
+
 typedef unsigned long syscall_arg_t;
+
+// exittrace.c
+int trace_register_init(void);
+void trace_register_destory(void);
 
 // proc.c
 int  proc_init(void);
@@ -42,16 +55,8 @@ void proc_destroy(void);
 
 // privil.c
 unsigned int nod_get_seccomp(void);
-void nod_disable_seccomp(void);
-int nod_enable_seccomp(unsigned int mode);
-void nod_write_gsbase(unsigned long gsbase);
-void nod_write_fsbase(unsigned long fsbase);
-void nod_cap_raise(void);
-void nod_cap_capset(u32 *permitted, u32 *effective);
 void nod_prepare_security(void);
-int prepare_root_path(char *path);
-void prepare_rlimit_data(struct rlimit *rlims);
-void prepare_security_data(struct security_data *security);
+void nod_restore_context(struct nod_proc_info *p, struct pt_regs *regs);
 
 // hook.c
 int hook_syscall(void);
@@ -59,11 +64,16 @@ void restore_syscall(void);
 int  hook_init(void);
 void hook_destory(void);
 
+// procinfo.c
+int procinfo_init(void);
+void procinfo_destroy(void);
+struct nod_proc_info * nod_set_status(enum nod_proc_status status, int ioctl_fd, const struct nod_kbuffer *buffer, struct task_struct *task);
+enum nod_proc_status nod_free_status(struct task_struct *task);
+int nod_event_from(struct nod_proc_info **p);
+void nod_copy_context(const struct pt_regs *regs);
+
 // loader.c
 #define LOAD_SUCCESS        0
-#define LOAD_FAILED         1
-#define LOAD_NO_SYSCALL     2 // DO NOT do syscall, goto monitor directly!
-#define LOAD_FROM_MONITOR   3
 
 DECLARE_PER_CPU(struct nod_kbuffer, buffer);
 
@@ -72,7 +82,6 @@ void loader_destory(void);
 int check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg),
                   void *arg);
 int load_monitor(const struct nod_kbuffer *buffer);
-int event_from_monitor(void);
 
 // event.c
 #define NS_TO_SEC(_ns) ((_ns) / 1000000000)
@@ -183,4 +192,4 @@ static inline struct inode *file_inode(struct file *f)
 	} while(0)
 #endif
 
-#endif // SECUREPROV_H_
+#endif // NODROP_H_

@@ -12,31 +12,22 @@
 #include "common.h"
 #include "events.h"
 #include "ioctl.h"
+#include "procinfo.h"
 
 
 #define BUFSIZE 30
 
 static struct proc_dir_entry *ent;
-typedef struct  {
-    int status;
-} nod_private_data_t;
 
 static int nod_procopen(struct inode *inode, struct file *filp)
 {
     int ret;
-    int status = event_from_monitor();
-    nod_private_data_t *private;
-
-    if (status == NOD_EVENT_FROM_APPLICATION || status == NOD_EVENT_FROM_MONITOR) {
-        private = vmalloc(sizeof(nod_private_data_t));
-        if (!private) {
-            ret = -ENOMEM;
-            pr_err("proc open: No memory for allocating private data");
-        } else {
-            ret = 0;
-            private->status = status;
-            filp->private_data = (void *)private;
-        }
+    struct nod_proc_info *p;
+    
+    nod_event_from(&p);
+    if (p) {
+        filp->private_data = (void *)p;
+        ret = 0;
     } else {
         ret = -ENODEV;
     }
@@ -76,13 +67,10 @@ nod_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
     uint64_t count;
     unsigned int cpu;
     char *ptr;
-    struct security_data security;
     struct nod_kbuffer *bufp;
     struct buffer_count_info cinfo;
     struct fetch_buffer_struct fetch;
-    nod_private_data_t *private = filp->private_data;
-    sigset_t sigset;
-
+    struct nod_proc_info *p = filp->private_data;
 
     switch(cmd) {
     case NOD_IOCTL_CLEAR_BUFFER:
@@ -157,25 +145,17 @@ nod_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         pr_info("proc: Start recording");
         break;
     case NOD_IOCTL_RESTORE_SECURITY:
-        if (private->status != NOD_EVENT_FROM_MONITOR) {
+        if (!p || p->status != NOD_IN) {
             ret = -EINVAL;
             goto out;
         }
 
-        if (copy_from_user(&security, (void __user *)arg, sizeof(security))) {
+        if (copy_from_user(&p->stack, (void __user *)arg, sizeof(p->stack))) {
             ret = -EFAULT;
             goto out;
         }
 
-        if ((ret = nod_enable_seccomp(security.seccomp_mode))) 
-            goto out;
-
-        nod_write_gsbase(security.gsbase);
-        nod_write_fsbase(security.fsbase);
-        nod_cap_capset(security.cap_permitted, security.cap_effective);
-
-        sigset.sig[0] = security.sigset;
-        sigprocmask(SIG_SETMASK, &sigset, 0);
+        p->status = NOD_RESTORE;
 
         break;
     default:
@@ -191,7 +171,6 @@ out:
 
 static int nod_procrelease(struct inode *inode, struct file *filp)
 {
-    vfree(filp->private_data);
     return 0;
 }
 

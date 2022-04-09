@@ -12,6 +12,7 @@
 #include "syscall.h"
 #include "common.h"
 #include "events.h"
+#include "procinfo.h"
 
 #ifndef CONFIG_HAVE_SYSCALL_TRACEPOINTS
  #error The kernel must have HAVE_SYSCALL_TRACEPOINTS in order to be useful
@@ -30,7 +31,7 @@
 int released;
 
 static int filtered_syscall[] = { 
-    __NR_write, __NR_read, __NR_open, __NR_close,
+    __NR_write, __NR_read, __NR_open, __NR_close, __NR_ioctl,
     __NR_execve, 
     __NR_clone, __NR_fork, __NR_vfork, 
     __NR_socket, __NR_bind, __NR_connect, __NR_listen, __NR_accept, __NR_accept4,
@@ -88,6 +89,7 @@ syscall_probe(struct pt_regs *regs, long id) {
 TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
 {
     int i, evt_from, id;
+    struct nod_proc_info *p;
 
 #ifdef NOD_TEST
     NOD_TEST(current) {
@@ -104,9 +106,12 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
     return;
 
 start:
-    evt_from = event_from_monitor();
-    if (evt_from == NOD_EVENT_FROM_APPLICATION) {
+    evt_from = nod_event_from(&p);
+    if (evt_from == NOD_OUT) {
         syscall_probe(regs, id);
+    } else if (p && p->status == NOD_RESTORE) {
+        nod_restore_context(p, regs);
+        nod_set_out(current);
     }
 }
 
@@ -119,7 +124,7 @@ hook_exit(SYSCALL_DEF)
     }
 #endif
 
-    if (likely(event_from_monitor() == NOD_EVENT_FROM_APPLICATION)) {
+    if (likely(nod_event_from(NULL) == NOD_EVENT_FROM_APPLICATION)) {
         if (unlikely(syscall_probe(current_pt_regs(), __NR_exit) == NOD_SUCCESS_LOAD))
             return 0;
     }
@@ -136,7 +141,7 @@ hook_exit_group(SYSCALL_DEF)
     }
 #endif
 
-    if (likely(event_from_monitor() == NOD_EVENT_FROM_APPLICATION)) {
+    if (likely(nod_event_from(NULL) == NOD_EVENT_FROM_APPLICATION)) {
         if (unlikely(syscall_probe(current_pt_regs(), __NR_exit_group) == NOD_SUCCESS_LOAD))
             return 0;
     }

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <inttypes.h>
+#include <time.h>
 #include <sys/syscall.h>
 
 #include "context.h"
@@ -9,13 +10,14 @@
 #define PATH_FMT "/tmp/nodrop/%u-%ld.buf"
 #define SECOND_IN_US 1000000000
 
-char path[100];
-struct nod_buffer_info *info;
-struct timeval tv;
-unsigned int tid;
+#define VAR(type, name) type name = *(type *) mem; mem += sizeof(type)
+#define VAR_ARRAY(type, num, name)   type (*name)[num] = (type (*)[num]) mem; mem += num * sizeof(type)
 
-void nod_monitor_init(int argc, char *argv[], char *env[]) {
-    info = &g_bufp->info;
+void nod_monitor_init(char *mem, int argc, char *argv[], char *env[]) {
+    VAR_ARRAY(char, 100, path);
+    VAR(struct timeval, tv);
+    VAR(unsigned int, tid);
+
     gettimeofday(&tv, NULL);
     tid = (unsigned int)syscall(SYS_gettid);
     sprintf(path, PATH_FMT, tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
@@ -118,25 +120,29 @@ static int _parse(struct nod_event_hdr *hdr, char *buffer, void *__data)
     return 0;
 }
 
-int main() {
-    FILE *file;
-    char *ptr, *end;
-    struct nod_event_hdr *hdr;
-    if(!(file = fopen(path, "ab+"))) {
-        perror("Cannot open log file");
-        return 0;
-    }
+int main(char *mem) {
+    VAR_ARRAY(char, 100, path);
+    VAR(struct timeval, tv);
+    VAR(unsigned int, tid);
+    // FILE *file;
+    // char *ptr, *end;
+    // struct nod_event_hdr *hdr;
+    // if(!(file = fopen(path, "ab+"))) {
+    //     perror("Cannot open log file");
+    //     return 0;
+    // }
 
-    ptr = g_bufp->buffer;
-    end = g_bufp->buffer + info->tail;
-    while (ptr < end) {
-        hdr = (struct nod_event_hdr *)ptr; 
-        // _parse(hdr, (char *)(hdr + 1), 0);
-        fwrite(ptr, hdr->len, 1, file);
-        ptr += hdr->len;
-    }
+    // ptr = g_bufp->buffer;
+    // end = g_bufp->buffer + info->tail;
+    // while (ptr < end) {
+    //     hdr = (struct nod_event_hdr *)ptr; 
+    //     // _parse(hdr, (char *)(hdr + 1), 0);
+    //     fwrite(ptr, hdr->len, 1, file);
+    //     ptr += hdr->len;
+    // }
 
-    fclose(file); 
+    // fclose(file); 
+    printf("hello\n");
 
     return 0;
 }

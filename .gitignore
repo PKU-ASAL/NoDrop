@@ -1,6 +1,7 @@
 .tmp_versions/
 .vscode/
 .gdb_history/
+.gdbinit
 .log/
 monitor/*.o
 monitor/monitor
@@ -34,3 +35,5 @@ http-test-files/
 *.patch
 *.rdb
 *.pmrc
+attacker
+.cache.mk

@@ -2842,3 +2842,44 @@ int f_sys_recvmsg(struct event_filler_arguments *args)
 
 	return NOD_SUCCESS;
 }
+
+int f_sys_ioctl(struct event_filler_arguments *args)
+{
+    unsigned long val;
+    int res;
+    int64_t retval;
+    
+    /*
+     * FD
+     */
+    syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
+    res = val_to_ring(args, val, 0, false, 0);
+    if (unlikely(res != NOD_SUCCESS))
+        return res;
+
+    /*
+     * cmd
+     */
+    syscall_get_arguments_deprecated(current, args->regs, 1, 1, &val);
+    res = val_to_ring(args, val, 0, false, 0);
+    if (unlikely(res != NOD_SUCCESS))
+        return res;
+    
+    /*
+     * argument
+     */
+    syscall_get_arguments_deprecated(current, args->regs, 1, 1, &val);
+    res = val_to_ring(args, val, 0, false, 0);
+    if (unlikely(res != NOD_SUCCESS))
+        return res;
+
+    /*
+     * retval
+     */
+    retval = (int64_t)(long)syscall_get_return_value(current, args->regs);
+    res = val_to_ring(args, retval, 0, false, 0);
+    if (unlikely(res != NOD_SUCCESS))
+        return res;
+
+    return NOD_SUCCESS;
+}

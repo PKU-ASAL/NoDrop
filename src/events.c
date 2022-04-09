@@ -90,7 +90,7 @@ start:
     return cbret; 
 
 loading:
-    if (load_monitor(buffer) == LOAD_SUCCESS) {
+    if (load_monitor(buffer) == NOD_SUCCESS) {
         reset_buffer(buffer, NOD_INIT_INFO);
         if (restart)
             goto start;

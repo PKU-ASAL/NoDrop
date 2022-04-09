@@ -7,15 +7,17 @@ $(MODULE)-objs := \
 	loader.o \
 	hook.o \
 	proc.o \
+	procinfo.o \
 	fillers.o \
 	events.o \
+	exittrace.o \
 	privil.o \
 	elf.o \
 	events_table.o \
 	fillers_table.o \
 	flags_table.o \
 	syscall_table.o \
-	dynamic_params_table.o
+	dynamic_params_table.o \
 
 ccflags-y += -I$(src) -I$(src)/../include
 

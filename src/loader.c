@@ -5,11 +5,12 @@
 #include <linux/random.h>
 #include <linux/slab.h>
 #include <linux/ktime.h>
-#include <linux/rbtree.h>
+
 
 #include "nodrop.h"
 #include "common.h"
 #include "events.h"
+#include "procinfo.h"
 
 
 DEFINE_PER_CPU(struct nod_kbuffer, buffer);
@@ -18,7 +19,6 @@ EXPORT_PER_CPU_SYMBOL(buffer);
 static struct elf_phdr *monitor_elf_phdata, *interp_elf_phdata;
 static struct elfhdr   monitor_elf_ex, interp_elf_ex;
 static struct file *monitor, *interpreter;
-
 
 static int
 __check_mapping(struct vm_area_struct const * const vma, void *arg) {
@@ -29,56 +29,6 @@ __check_mapping(struct vm_area_struct const * const vma, void *arg) {
     }
 
     return 0;
-}
-
-static int
-__put_monitor_info(struct vm_area_struct const * const vma, void *arg) {
-    void **arr = (void **)arg;
-    m_infopack __user *infopack;
-    struct nod_kbuffer *buffer;
-
-    if (vma->vm_flags & VM_EXEC)
-        return 0;
-
-    infopack = (m_infopack __user *)vma->vm_start;
-    buffer = (struct nod_kbuffer *)arr[2];
-
-    if (put_user((int)arr[0], (int __user *)&infopack->m_enter)) {
-        pr_err("cannot write __monitor_enter @ %n\n", &infopack->m_enter);
-        return 0;
-    }
-
-    if (copy_to_user((void __user *)&infopack->m_context, (void *)arr[1], sizeof(infopack->m_context))) {
-        pr_err("cannot write __monitor_context @ %lx\n", &infopack->m_context);
-        return 0;
-    }
-
-    if (copy_to_user((void __user *)&infopack->m_buffer.buffer, (void *)buffer->buffer, BUFFER_SIZE) ||
-        copy_to_user((void __user *)&infopack->m_buffer.info, (void *)buffer->info, sizeof(struct nod_buffer_info))) {
-        pr_err("cannot write __monitor_logmsg @ %lx\n", &infopack->m_buffer);
-        return 0;
-    }
-
-    // vpr_info("transfer %lld logs of %u bytes\n", buffer->info->nevents, buffer->info->tail);
-
-    return 1;
-}
-
-static int
-__check_monitor_enter(struct vm_area_struct const * const vma, void *arg) {
-    int monitor_enter;
-    vm_flags_t flags = vma->vm_flags;
-
-    if (flags & VM_EXEC)
-        return 0;
-
-    // get data from monitor's section `.monitor`
-    if(get_user(monitor_enter, (int __user *)vma->vm_start)) {
-        monitor_enter = -1;
-    }
-    *(int *)arg = monitor_enter;
-
-    return 1;
 }
 
 int
@@ -105,24 +55,13 @@ check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg
     return -1;
 }
 
-static inline void 
-prepare_context(struct context_struct *ctx, const struct pt_regs *regs) {
-    if (prepare_root_path(ctx->root_path)) {
-        sprintf(ctx->root_path, "/");
-    }
-
-    prepare_rlimit_data(ctx->rlim);
-    prepare_security_data(&ctx->securities);
-    memcpy(&ctx->regs, regs, sizeof(struct pt_regs));
-}
-
 static int
 create_elf_tbls(struct elfhdr *exec,
                 uint64_t load_addr,
                 uint64_t interp_load_addr,
-                uint64_t *target_sp,
                 const struct pt_regs *regs,
-                const struct nod_kbuffer *log,
+                const struct nod_stack_info *stack,
+                uint64_t *target_sp,
                 char *argv[]) {
 
 #define STACK_ROUND(sp, items) 	(((uint64_t) (sp - (items))) &~ 15UL)
@@ -140,12 +79,15 @@ create_elf_tbls(struct elfhdr *exec,
     elf_addr_t *elf_info = NULL;
     unsigned char k_rand_bytes[16];
 
-    struct context_struct context;
-
     p = original_rsp = regs->sp;
 
     // get the number of arg vector and env vector
     for (argc = 0; argv[argc]; argc++);
+
+    // put nod_stack_info into Runtime stack
+    p = STACK_ALLOC(p, sizeof(*stack));
+    copy_to_user((char __user *)p, stack, sizeof(*stack));
+    argv[argc] = (char *)p;
 
     for(i = argc - 1; i >= 0; --i) {
         int len = strlen(argv[i]) + 1;
@@ -175,8 +117,8 @@ create_elf_tbls(struct elfhdr *exec,
     * we only need to put the argc, argv and env onto the stack
     */
     elf_info_idx = 0;
-    if (exec && interpreter) {
-        elf_info = kmalloc(sizeof(elf_addr_t) * 12 * 2, GFP_KERNEL);
+    if (exec) {
+        elf_info = vmalloc(sizeof(elf_addr_t) * 12 * 2);
         if (!elf_info)
             goto err;
         INSERT_AUX_ENT(AT_HWCAP, ELF_HWCAP);
@@ -222,13 +164,30 @@ create_elf_tbls(struct elfhdr *exec,
     }
 
     // make stack 16-byte aligned
-    items = (argc + 1) + (envc + 1) + 1;
+    items = (argc + 1) + (envc + 1) + 1 + 1; /* argc + argv + addr of nod_stack_info + 0 + envc + 0 */
     sp = STACK_ADD(p, elf_info_idx);
     sp = STACK_ROUND(sp, items);
     *target_sp = (unsigned long)sp;
 
+    /* argc
+     * argv[0]
+     * argv[1]
+     * ...
+     * argv[-1]
+     * address of nod_stack_info
+     * 0
+     * env[0]
+     * env[1]
+     * ...
+     * env[-1]
+     * 0
+     * Aux
+     */
+
+
     // put argc
-    if (__put_user(argc, sp++))
+    // We put argc + 1 here because the additional value of address of nod_stack_info
+    if (__put_user(argc + 1, sp++))
         goto err;
 
     // put argv
@@ -238,6 +197,10 @@ create_elf_tbls(struct elfhdr *exec,
         arg_start += strlen(argv[i]) + 1;
     }
 
+    // put address of nod_stack_info
+    if(put_user((elf_addr_t)argv[argc], sp++))
+        goto err;
+    
     // put NULL to mark the end of argv
     if (put_user(0, sp++))
         goto err;
@@ -253,40 +216,27 @@ create_elf_tbls(struct elfhdr *exec,
         goto err;
 
     // put AUXV
-    if (exec && interpreter && copy_to_user(sp, elf_info, elf_info_idx * sizeof(elf_addr_t))) {
+    if (exec && copy_to_user(sp, elf_info, elf_info_idx * sizeof(elf_addr_t))) {
         goto err;
     }
 
-    prepare_context(&context, regs);
-    void *arg[] = {
-        (exec != NULL) ? (void *)1 : (void *)0,
-        (void *)&context,
-        (void *)log
-    };
-    if (check_mapping(__put_monitor_info, (void *)arg)) {
-        goto err;
-    }
-
-    return 0;
+    return NOD_SUCCESS;
 err:
     *target_sp = original_rsp;
     if (elf_info)
-        kfree(elf_info);
+        vfree(elf_info);
     return -EFAULT;
 }
 
 static int
-do_load_monitor(const struct pt_regs *reg,
-               uint64_t *entry,
-               uint64_t *load,
-               uint64_t *interp_load) {
+do_load_monitor(const struct pt_regs *regs, uint64_t *entry, uint64_t *load, uint64_t *interp_load)
+{
     int retval;
     uint64_t load_addr = 0;
     uint64_t interp_load_addr = 0;
     uint64_t interp_map_addr = 0;
     uint64_t load_entry;
     uint64_t monitor_map_addr;
-    
 
     if (interpreter) {
         interp_load_addr = elf_load_binary(&interp_elf_ex,
@@ -311,6 +261,7 @@ do_load_monitor(const struct pt_regs *reg,
         goto out;
     }
 
+
     load_entry = interpreter ? 
                 interp_load_addr + interp_elf_ex.e_entry : 
                 load_addr + monitor_elf_ex.e_entry;
@@ -321,75 +272,76 @@ do_load_monitor(const struct pt_regs *reg,
     if (load)   *load = load_addr;
     if (interp_load) *interp_load = interp_load_addr;
 
-    retval = LOAD_SUCCESS;
+    retval = NOD_SUCCESS;
 
 out:
-    return retval;
-}
-
-int event_from_monitor(void) {
-    int enter = 0;
-    int retval = NOD_EVENT_FROM_APPLICATION; // syscall from application
-    // Monitor called syscall
-    if (check_mapping(__check_monitor_enter, (void *)&enter) == 0) {
-        if (enter == 1) {
-            retval = NOD_EVENT_FROM_MONITOR; // syscall from monitor
-        } else if (enter == -1) {
-            pr_err("corrupted: cannot get monitor status!!\n");
-            ASSERT(false);
-            retval = NOD_FAILURE_BUG;
-        }
-    }
     return retval;
 }
 
 int
 load_monitor(const struct nod_kbuffer *buffer) {
-    int retval;
+    int retval, free = 1;
     uint64_t entry, sp, load_addr, interp_load_addr;
-    struct pt_regs *reg;
+    struct pt_regs *regs;
+    struct nod_proc_info *p;
     char *argv[] = { MONITOR_PATH, NULL };
 
-    reg = current_pt_regs();
+    regs = current_pt_regs();
 
     if(check_mapping(__check_mapping, (void *)&entry) == 0) {
-        retval = create_elf_tbls(NULL, 0, 0, &sp, reg, buffer, argv);
-        if (retval == LOAD_SUCCESS) {
-            entry += monitor_elf_ex.e_entry;
-            goto success;
-        } else {
+        free = 0;
+        p = nod_set_in(current, buffer);
+        if (!p) {
+            retval = -ENOMEM;
+            goto out;
+        }
+        nod_copy_context(regs);
+
+        retval = create_elf_tbls(NULL, 0, 0, regs, &p->stack, &sp, argv);
+        if (retval != NOD_SUCCESS) {
+            goto out;
+        }
+        entry += monitor_elf_ex.e_entry;
+    } else {
+        retval = do_load_monitor(regs, &entry, &load_addr, &interp_load_addr);
+        if (retval != NOD_SUCCESS) {
+            goto out;
+        }
+
+        free = 1;
+        p = nod_set_in(current, buffer);
+        if (!p) {
+            retval = -ENOMEM;
+            goto out;
+        }
+        nod_copy_context(regs);
+
+        retval = create_elf_tbls(&monitor_elf_ex, load_addr, interp_load_addr, regs, &p->stack, &sp, argv);
+        if (retval != NOD_SUCCESS) {
             goto out;
         }
     }
 
-    retval = do_load_monitor(reg, &entry, &load_addr, &interp_load_addr);
-    if (retval != LOAD_SUCCESS) {
-        goto out;
-    }
-
-    retval = create_elf_tbls(&monitor_elf_ex, load_addr, interp_load_addr, &sp, reg, buffer, argv);
-    if(retval != LOAD_SUCCESS) {
-        goto out;
-    }
-
-success:
-
     nod_prepare_security();
 
-    elf_reg_init(&current->thread, reg, 0);
-    reg->sp = sp;
-    reg->cx = reg->ip = entry;
+    elf_reg_init(&current->thread, regs, 0);
+    regs->sp = sp;
+    regs->cx = regs->ip = entry;
 
-    retval = LOAD_SUCCESS;
+    return NOD_SUCCESS;
 
 out:
-    if (retval != LOAD_SUCCESS) {
-        pr_err("(%d)load_monitor: cannot transfer logging buffer", smp_processor_id());
+    pr_err("(%d)load_monitor: cannot transfer logging buffer", smp_processor_id());
+    if (free == 0) {
+        nod_set_out(current);
+    } else {
+        nod_free_status(current);
     }
     return retval;
 }
 
-int loader_init(void) {
+int loader_init(void)
+{
     int i, retval;
     loff_t pos;
     char *elf_interpreter = NULL;
@@ -493,6 +445,7 @@ int loader_init(void) {
         goto out_free_dentry;
 
 success:
+
     retval = 0;
 
 out:
