@@ -58,11 +58,11 @@ unsigned int nod_get_seccomp(void);
 void nod_prepare_security(void);
 void nod_restore_context(struct nod_proc_info *p, struct pt_regs *regs);
 
-// hook.c
-int hook_syscall(void);
-void restore_syscall(void);
-int  hook_init(void);
-void hook_destory(void);
+// trace.c
+int trace_syscall(void);
+void untrace_syscall(void);
+int  tracepoint_init(void);
+void tracepoint_destory(void);
 
 // procinfo.c
 int procinfo_init(void);
@@ -70,11 +70,8 @@ void procinfo_destroy(void);
 struct nod_proc_info * nod_set_status(enum nod_proc_status status, int ioctl_fd, const struct nod_kbuffer *buffer, struct task_struct *task);
 enum nod_proc_status nod_free_status(struct task_struct *task);
 int nod_event_from(struct nod_proc_info **p);
-void nod_copy_context(const struct pt_regs *regs);
 
 // loader.c
-#define LOAD_SUCCESS        0
-
 DECLARE_PER_CPU(struct nod_kbuffer, buffer);
 
 int loader_init(void);

@@ -13,7 +13,7 @@ S_FILES := misc.S
 
 INCLUDE_PATH := -I. -I../include
 CFLAGS := $(INCLUDE_PATH) -std=gnu11 -fPIE -g -Ofast -fno-stack-protector
-LDFLAGS := -nostartfiles -Wl,-znow -pie #-Wl,-Tscript_x86-64.ld
+LDFLAGS := -nostartfiles -Wl,-znow -pie -Wl,-Tscript_x86-64.ld
 
 O_FILES := $(patsubst %.c,%.o,$(notdir $(C_FILES))) 
 O_FILES += $(patsubst %.S,%.o,$(notdir $(S_FILES)))

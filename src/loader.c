@@ -5,11 +5,14 @@
 #include <linux/random.h>
 #include <linux/slab.h>
 #include <linux/ktime.h>
+#include <linux/fs_struct.h>
+#include <linux/delay.h>
 
 
 #include "nodrop.h"
 #include "common.h"
 #include "events.h"
+#include "syscall.h"
 #include "procinfo.h"
 
 
@@ -20,39 +23,80 @@ static struct elf_phdr *monitor_elf_phdata, *interp_elf_phdata;
 static struct elfhdr   monitor_elf_ex, interp_elf_ex;
 static struct file *monitor, *interpreter;
 
+#define MAPPING_OK          0 
+#define MAPPING_NEXT        1
+#define MAPPING_FINISH      2
+#define MAPPING_NOTFOUND    3
+
+#define MAPPING_FIND
+
 static int
-__check_mapping(struct vm_area_struct const * const vma, void *arg) {
+__check_mapping(struct vm_area_struct const * const vma, void *arg)
+{
     vm_flags_t flags = vma->vm_flags;
     if (flags & VM_EXEC) {
         *(unsigned long*)arg = vma->vm_start;
-        return 1;
+        return MAPPING_OK;
     }
 
-    return 0;
+    return MAPPING_NEXT;
+}
+
+static int
+wait_dynamic_linker_ready(struct vm_area_struct const * const vma, void *arg)
+{
+    int count = 0;
+    vm_flags_t flags = vma->vm_flags;
+    if (flags & VM_EXEC) {
+        return MAPPING_NEXT;
+    }
+
+    /* 
+     * Since the monitor may be loaded but not initialized yet, 
+     * we should wait here until it is initialized.
+     * When the monitor is initialized, the flag in .monitor.info will be set to tls.
+     */
+    while (count++ < 100 && !nod_copy_from_user(arg, (const void *)vma->vm_start, sizeof(unsigned long))) {
+        if (*(unsigned long *)arg != 0) {
+            return MAPPING_OK;
+        }
+        msleep(1);
+    }
+    return MAPPING_FINISH;
 }
 
 int
 check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg),
-              void *arg) {
+              void *arg)
+{
+    int retval;
     struct mm_struct *mm;
     struct vm_area_struct *vma;
-    struct file *file;
 
     mm = current->mm;
 
     down_read(&mm->mmap_sem);
     for (vma = mm->mmap; vma; vma = vma->vm_next) {
-        file = vma->vm_file;
-        if (file == monitor) {
-            if ((*resolve)((struct vm_area_struct const * const)vma, arg)) {
+        if (vma->vm_file == monitor) {
+            retval = (*resolve)((struct vm_area_struct const * const)vma, arg);
+            switch(retval) {
+            case MAPPING_OK:
+            case MAPPING_FINISH:
+                goto out;
+            case MAPPING_NEXT:
+                break;
+            default:
                 up_read(&mm->mmap_sem);
-                return 0;
+                ASSERT(false);
             }
         }
     }
-    up_read(&mm->mmap_sem);
 
-    return -1;
+    retval = MAPPING_NOTFOUND;
+
+out:
+    up_read(&mm->mmap_sem);
+    return retval;
 }
 
 static int
@@ -64,7 +108,7 @@ create_elf_tbls(struct elfhdr *exec,
                 uint64_t *target_sp,
                 char *argv[]) {
 
-#define STACK_ROUND(sp, items) 	(((uint64_t) (sp - (items))) &~ 15UL)
+#define STACK_ROUND(sp, items) 	((elf_addr_t __user *)(((uint64_t) (sp - (items))) &~ 15UL))
 #define STACK_ADD(sp, items) ((elf_addr_t __user *)(sp) - (items))
 #define STACK_ALLOC(sp, len) ({sp -= (len); sp;})
 
@@ -173,13 +217,13 @@ create_elf_tbls(struct elfhdr *exec,
      * argv[0]
      * argv[1]
      * ...
-     * argv[-1]
+     * argv[argc - 1]
      * address of nod_stack_info
      * 0
      * env[0]
      * env[1]
      * ...
-     * env[-1]
+     * env[envc - 1]
      * 0
      * Aux
      */
@@ -278,48 +322,69 @@ out:
     return retval;
 }
 
+static void
+copy_context(struct nod_proc_info *p, const struct pt_regs *regs)
+{
+    struct nod_proc_context *ctxp;
+
+    ctxp = &p->ctx;
+
+    // no one will delete our rbnode
+    ctxp->fsbase = current->thread.FSBASE;
+    ctxp->gsbase = current->thread.GSBASE;
+    ctxp->seccomp_mode = nod_get_seccomp();
+    ctxp->cap_effective = current_cred()->cap_effective;
+    ctxp->cap_permitted = current_cred()->cap_permitted;
+    get_fs_root(current->fs, &ctxp->root_path);
+    sigprocmask(-1, 0, &ctxp->sigset);
+    memcpy(ctxp->rlim, current->signal->rlim, sizeof(ctxp->rlim));
+    memcpy(&ctxp->regs, regs, sizeof(*regs));
+
+    p->stack.nr = regs->orig_ax;
+    syscall_get_arguments_deprecated(current, regs, 0, 1, &p->stack.code);
+}
+
 int
 load_monitor(const struct nod_kbuffer *buffer) {
     int retval, free = 1;
-    uint64_t entry, sp, load_addr, interp_load_addr;
+    uint64_t entry, sp;
     struct pt_regs *regs;
     struct nod_proc_info *p;
+    struct elf64_hdr *cur_elf_ex = &monitor_elf_ex;
+    uint64_t load_addr = 0, interp_load_addr = 0;
+
     char *argv[] = { MONITOR_PATH, NULL };
 
     regs = current_pt_regs();
 
-    if(check_mapping(__check_mapping, (void *)&entry) == 0) {
-        free = 0;
-        p = nod_set_in(current, buffer);
-        if (!p) {
-            retval = -ENOMEM;
-            goto out;
-        }
-        nod_copy_context(regs);
+    p = nod_set_in(current, buffer);
+    if (!p) {
+        retval = -ENOMEM;
+        goto out;
+    }
 
-        retval = create_elf_tbls(NULL, 0, 0, regs, &p->stack, &sp, argv);
-        if (retval != NOD_SUCCESS) {
-            goto out;
+    copy_context(p, regs);
+
+    if (!p->load_addr) {
+        if(check_mapping(__check_mapping, (void *)&load_addr) == MAPPING_OK &&
+            check_mapping(wait_dynamic_linker_ready, (void *)&p->stack.fsbase) == MAPPING_OK) {
+            free = 0;
+            cur_elf_ex = NULL;
+            entry = load_addr + monitor_elf_ex.e_entry;
+        } else {
+            retval = do_load_monitor(regs, &entry, &load_addr, &interp_load_addr);
+            if (retval != NOD_SUCCESS) {
+                goto out;
+            }
         }
-        entry += monitor_elf_ex.e_entry;
+        p->load_addr = load_addr;
     } else {
-        retval = do_load_monitor(regs, &entry, &load_addr, &interp_load_addr);
-        if (retval != NOD_SUCCESS) {
-            goto out;
-        }
+        entry = p->load_addr + monitor_elf_ex.e_entry;
+    }
 
-        free = 1;
-        p = nod_set_in(current, buffer);
-        if (!p) {
-            retval = -ENOMEM;
-            goto out;
-        }
-        nod_copy_context(regs);
-
-        retval = create_elf_tbls(&monitor_elf_ex, load_addr, interp_load_addr, regs, &p->stack, &sp, argv);
-        if (retval != NOD_SUCCESS) {
-            goto out;
-        }
+    retval = create_elf_tbls(cur_elf_ex, load_addr, interp_load_addr, regs, &p->stack, &sp, argv);
+    if (retval != NOD_SUCCESS) {
+        goto out;
     }
 
     nod_prepare_security();

@@ -100,7 +100,7 @@ static inline int syscall_get_arch(void)
 #else	 /* CONFIG_X86_64 */
 
 static inline void syscall_get_arguments(struct task_struct *task,
-					 struct pt_regs *regs,
+					 const struct pt_regs *regs,
 					 unsigned int i, unsigned int n,
 					 unsigned long *args)
 {

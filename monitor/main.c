@@ -120,29 +120,26 @@ static int _parse(struct nod_event_hdr *hdr, char *buffer, void *__data)
     return 0;
 }
 
-int main(char *mem) {
+int main(char *mem, struct nod_buffer *buffer) {
     VAR_ARRAY(char, 100, path);
-    VAR(struct timeval, tv);
-    VAR(unsigned int, tid);
-    // FILE *file;
-    // char *ptr, *end;
-    // struct nod_event_hdr *hdr;
-    // if(!(file = fopen(path, "ab+"))) {
-    //     perror("Cannot open log file");
-    //     return 0;
-    // }
+    FILE *file;
+    char *ptr, *end;
+    struct nod_event_hdr *hdr;
+    if(!(file = fopen(path, "ab+"))) {
+        perror("Cannot open log file");
+        return 0;
+    }
 
-    // ptr = g_bufp->buffer;
-    // end = g_bufp->buffer + info->tail;
-    // while (ptr < end) {
-    //     hdr = (struct nod_event_hdr *)ptr; 
-    //     // _parse(hdr, (char *)(hdr + 1), 0);
-    //     fwrite(ptr, hdr->len, 1, file);
-    //     ptr += hdr->len;
-    // }
+    ptr = buffer->buffer;
+    end = buffer->buffer + buffer->info.tail;
+    while (ptr < end) {
+        hdr = (struct nod_event_hdr *)ptr; 
+        _parse(hdr, (char *)(hdr + 1), 0);
+        // fwrite(ptr, hdr->len, 1, file);
+        ptr += hdr->len;
+    }
 
-    // fclose(file); 
-    printf("hello\n");
+    fclose(file); 
 
     return 0;
 }

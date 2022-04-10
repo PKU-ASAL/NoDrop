@@ -33,9 +33,10 @@ struct nod_proc_info {
 	struct rb_node node;
 	pid_t pid;
 	int ioctl_fd;
+	unsigned long load_addr;
 	enum nod_proc_status status;
 	struct nod_proc_context ctx;
-	struct nod_kbuffer buffer;
+	struct nod_buffer *buffer;
 	struct nod_stack_info stack;
 };
 

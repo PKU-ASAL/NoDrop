@@ -5,12 +5,11 @@ obj-m  += $(MODULE).o
 $(MODULE)-objs := \
 	main.o \
 	loader.o \
-	hook.o \
+	trace.o \
 	proc.o \
 	procinfo.o \
 	fillers.o \
 	events.o \
-	exittrace.o \
 	privil.o \
 	elf.o \
 	events_table.o \

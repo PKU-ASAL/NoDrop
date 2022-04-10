@@ -28,7 +28,7 @@
     #define TRACEPOINT_PROBE(probe, args...) static void probe(void *__data, args)
 #endif
 
-int released;
+static int tracepoint_registered;
 
 static int filtered_syscall[] = { 
     __NR_write, __NR_read, __NR_open, __NR_close, __NR_ioctl,
@@ -43,6 +43,7 @@ static sys_call_ptr_t real_exit, real_exit_group;
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 20)
 static struct tracepoint *tp_sys_exit;
 #endif
+static struct tracepoint *tp_sched_process_exit;
 
 /* compat tracepoint functions */
 static int compat_register_trace(void *func, const char *probename, struct tracepoint *tp)
@@ -115,8 +116,18 @@ start:
     }
 }
 
+TRACEPOINT_PROBE(syscall_procexit_probe, struct task_struct *p)
+{
+#ifdef NOD_TEST
+    NOD_TEST(p) {
+        return;
+    }
+#endif
+    nod_free_status(p);
+}
+
 static long
-hook_exit(SYSCALL_DEF)
+__real_exit(SYSCALL_DEF)
 {
 #ifdef NOD_TEST
     NOD_TEST(current) {
@@ -133,7 +144,7 @@ hook_exit(SYSCALL_DEF)
 }
 
 static long
-hook_exit_group(SYSCALL_DEF)
+__real_exit_group(SYSCALL_DEF)
 {
 #ifdef NOD_TEST
     NOD_TEST(current) {
@@ -161,11 +172,13 @@ inline void nod_write_cr0(unsigned long cr0) {
 #define WPOFF do { nod_write_cr0(read_cr0() & (~0x10000)); } while (0);
 #define WPON  do { nod_write_cr0(read_cr0() | 0x10000);    } while (0);
 
-int hook_syscall(void) {
+int trace_syscall(void) {
     int ret;
 
-    if (released == 0)
-        return 0;
+    if (tracepoint_registered == 0) {
+        ret = 0;
+        goto out;
+    }
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 20)
     ret = compat_register_trace(syscall_exit_probe, "sys_exit", tp_sys_exit);
@@ -174,24 +187,38 @@ int hook_syscall(void) {
 #endif
     if (ret) {
         pr_err("can't create the sys_exit tracepoint\n");
-        return ret;
+        goto err_syscall_exit;
+    }
+
+    ret = compat_register_trace(syscall_procexit_probe, "sched_process_exit", tp_sched_process_exit);
+    if (ret) {
+        pr_err("can't create the sched_process_exit tracepoint\n");
+        goto err_sched_procexit;
     }
 
     WPOFF
     real_exit = syscall_table[__NR_exit];
     real_exit_group = syscall_table[__NR_exit_group];
-    syscall_table[__NR_exit] = (sys_call_ptr_t)hook_exit;
-    syscall_table[__NR_exit_group] = (sys_call_ptr_t)hook_exit_group;
+    syscall_table[__NR_exit] = (sys_call_ptr_t)__real_exit;
+    syscall_table[__NR_exit_group] = (sys_call_ptr_t)__real_exit_group;
     WPON
 
-    released = 0;
+    tracepoint_registered = 0;
     return 0;
+
+err_sched_procexit:
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 20)
+	compat_unregister_trace(syscall_exit_probe, "sys_exit", tp_sys_exit);
+#else
+	unregister_trace_syscall_exit(syscall_exit_probe);
+#endif
+err_syscall_exit:
+out:
+    return ret;
 }
 
-void restore_syscall(void) {
-    // int nr, sz, i;
-
-    if (released == 1)
+void untrace_syscall(void) {
+    if (tracepoint_registered == 1)
         return;
 
     WPOFF
@@ -205,7 +232,9 @@ void restore_syscall(void) {
     unregister_trace_syscall_exit(syscall_exit_probe);
 #endif
 
-    released = 1;
+    compat_unregister_trace(syscall_procexit_probe, "sched_process_exit", tp_sched_process_exit);
+
+    tracepoint_registered = 1;
 }
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0))
@@ -213,6 +242,8 @@ static void visit_tracepoint(struct tracepoint *tp, void *priv)
 {
 	if (!strcmp(tp->name, "sys_exit"))
 		tp_sys_exit = tp;
+    else if (!strcmp(tp->name, "sched_process_exit"))
+		tp_sched_process_exit = tp;
 }
 
 static int get_tracepoint_handles(void)
@@ -231,10 +262,10 @@ static int get_tracepoint_handles(void)
 }
 #endif
 
-int hook_init(void) {
+int tracepoint_init(void) {
     int ret;
 
-    released = 1;
+    tracepoint_registered = 1;
 
     syscall_table = (sys_call_ptr_t *)kallsyms_lookup_name("sys_call_table");
     if (syscall_table == 0) {
@@ -246,7 +277,7 @@ int hook_init(void) {
     if (ret)
         goto out;
 
-    ret = hook_syscall();
+    ret = trace_syscall();
     if (ret) {
         goto out;
     }
@@ -257,6 +288,6 @@ out:
     return ret;
 }
 
-void hook_destory(void) {
-    restore_syscall();
+void tracepoint_destory(void) {
+    untrace_syscall();
 }

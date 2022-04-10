@@ -26,6 +26,7 @@ struct nod_stack_info {
 	long code;
 	unsigned long fsbase;
 	char *mem;
+	struct nod_buffer *buffer;
 };
 
 #endif //_COMMON_H_

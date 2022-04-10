@@ -755,6 +755,12 @@ struct nod_kbuffer {
 	struct rw_semaphore sem;
 	uint64_t event_count;
 };
+
+static inline void copy_to_user_buffer(const struct nod_kbuffer *kbuf, struct nod_buffer *ubuf)
+{
+	memcpy(ubuf->buffer, kbuf->buffer, BUFFER_SIZE);
+	memcpy(&ubuf->info, kbuf->info, sizeof(struct nod_buffer_info));
+}
 #endif //__KERNEL__
 
 #define NOD_EVENT_HDR_MAGIC 0xCAFEBABE

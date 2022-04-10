@@ -19,19 +19,14 @@ static int nodrop_init(void)
         goto out_buffer;
     }
 
-    if ((err = trace_register_init())) {
-        pr_err("register trace failed (%d)\n", err);
-        goto out_trace;
-    }
-
     if ((err = procinfo_init())) {
         pr_err("procinfo initialization failed (%d)\n", err);
         goto out_procinfo;
     }
 
-    if((err = hook_init())) {
+    if((err = tracepoint_init())) {
         pr_err("hook syscall_table failed (%d)\n", err);
-        goto out_hook;
+        goto out_trace;
     }
 
     if ((err = proc_init())) {
@@ -45,12 +40,10 @@ out:
 
 out_proc:
     proc_destroy();
-out_hook:
-    hook_destory();
+out_trace:
+    tracepoint_destory();
 out_procinfo:
     procinfo_destroy();
-out_trace:
-    trace_register_destory();
 out_buffer:
     event_buffer_destory();
 out_loader:
@@ -62,10 +55,10 @@ static void nodrop_exit(void)
 {
     loader_destory();
     event_buffer_destory();
-    trace_register_destory();
     procinfo_destroy();
-    hook_destory();
+    tracepoint_destory();
     proc_destroy();
+    pr_info("NoDrop: Uninstalled\n");
 }
 
 module_init(nodrop_init);

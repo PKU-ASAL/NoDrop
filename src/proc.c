@@ -4,9 +4,7 @@
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <linux/mutex.h>
-#include <linux/signal.h>
-#include <asm/prctl.h>
-#include <asm/proto.h>
+#include <linux/mman.h>
 
 #include "nodrop.h"
 #include "common.h"
@@ -19,24 +17,18 @@
 
 static struct proc_dir_entry *ent;
 
-static int nod_procopen(struct inode *inode, struct file *filp)
+static int nod_dev_open(struct inode *inode, struct file *filp)
 {
-    int ret;
     struct nod_proc_info *p;
     
     nod_event_from(&p);
-    if (p) {
-        filp->private_data = (void *)p;
-        ret = 0;
-    } else {
-        ret = -ENODEV;
-    }
+    filp->private_data = (void *)p;
+    return 0;
 
-    return ret;
 }
 
 static ssize_t
-nod_procread(struct file *filp, char __user *buf, size_t count, loff_t *off) {
+nod_dev_read(struct file *filp, char __user *buf, size_t count, loff_t *off) {
     int len = 0;
     unsigned int event_id, cpu;
     char kbuf[BUFSIZE];
@@ -61,7 +53,7 @@ nod_procread(struct file *filp, char __user *buf, size_t count, loff_t *off) {
 }
 
 static long 
-nod_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
     int ret;
     uint64_t count;
@@ -86,7 +78,7 @@ nod_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         
     case NOD_IOCTL_FETCH_BUFFER:
         if (nod_copy_from_user((void *)&fetch, (void *)arg, sizeof(fetch))) {
-            ret = -EINVAL;
+            ret = -EFAULT;
             goto out;
         }
         count = 0;
@@ -111,7 +103,7 @@ nod_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
         fetch.len = count;
         if (copy_to_user((void *)ptr, (void *)&fetch, sizeof(fetch))) {
-            ret = -EINVAL;
+            ret = -EFAULT;
             goto out;
         }
 
@@ -130,27 +122,27 @@ nod_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         }
 
         if (copy_to_user((void *)arg, (void *)&cinfo, sizeof(cinfo))) {
-            ret = -EINVAL;
+            ret = -EFAULT;
             goto out;
         }
         break;
     case NOD_IOCTL_STOP_RECORDING:
-        restore_syscall();
+        untrace_syscall();
 
         pr_info("proc: Stop recording");
         break;
     case NOD_IOCTL_START_RECORDING:
-        hook_syscall();
+        trace_syscall();
 
         pr_info("proc: Start recording");
         break;
     case NOD_IOCTL_RESTORE_SECURITY:
         if (!p || p->status != NOD_IN) {
-            ret = -EINVAL;
+            ret = -ENODEV;
             goto out;
         }
 
-        if (copy_from_user(&p->stack, (void __user *)arg, sizeof(p->stack))) {
+        if (nod_copy_from_user(&p->stack, (void __user *)arg, sizeof(p->stack))) {
             ret = -EFAULT;
             goto out;
         }
@@ -159,7 +151,7 @@ nod_procioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
         break;
     default:
-        ret = -ENOTTY;
+        ret = -EINVAL;
         goto out;
     }
 
@@ -169,16 +161,47 @@ out:
     return ret;
 }
 
-static int nod_procrelease(struct inode *inode, struct file *filp)
+static int nod_dev_mmap(struct file *filp, struct vm_area_struct *vma)
 {
+    int ret;
+    struct nod_proc_info *p;
+
+    p = filp->private_data;
+    if (!p || p->status != NOD_IN) {
+        return -ENODEV;
+    }
+
+    if (vma->vm_pgoff != 0) {
+        pr_err("invalid pgoff %lu, must be 0\n", vma->vm_pgoff);
+        return -EINVAL;
+    }
+
+    if (vma->vm_flags & VM_WRITE) {
+        pr_err("invalid mmap flags 0x%lx\n", vma->vm_flags);
+        return -EINVAL;
+    }
+
+    ret = remap_vmalloc_range(vma, p->buffer, 0);
+    if (ret < 0) {
+        pr_err("remap_vmalloc_range failed (%d)\n", ret);
+        return ret;
+    }
+
+    return 0;
+}
+
+static int nod_dev_release(struct inode *inode, struct file *filp)
+{
+    filp->private_data = NULL;
     return 0;
 }
 
 static const struct file_operations g_nod_fops = {
-    .open = nod_procopen,
-    .read = nod_procread,
-    .unlocked_ioctl = nod_procioctl,
-    .release = nod_procrelease,
+    .open = nod_dev_open,
+    .read = nod_dev_read,
+    .unlocked_ioctl = nod_dev_ioctl,
+    .release = nod_dev_release,
+    .mmap = nod_dev_mmap,
     .owner = THIS_MODULE
 };
 

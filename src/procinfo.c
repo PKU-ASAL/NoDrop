@@ -4,7 +4,6 @@
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 #include <linux/signal.h>
-#include <linux/fs_struct.h>
 
 #include "nodrop.h"
 #include "procinfo.h"
@@ -16,6 +15,17 @@ struct {
     struct rb_root root;
     struct rw_semaphore sem;
 } proc_info_rt;
+
+
+#define rb_traverse(root, ptr, type, member, cmd) \
+do { \
+    struct rb_node *node = rb_first(root); \
+    while(node) { \
+        ptr = rb_entry(node, type, member); \
+        node = rb_next(node); \
+        cmd; \
+    } \
+} while(0)
 
 static inline struct nod_proc_info *
 __find_proc_info(struct rb_root *rt, struct task_struct *task)
@@ -42,19 +52,18 @@ __insert_proc_info(struct rb_root *rt, struct nod_proc_info *p)
     struct nod_proc_info *n;
     struct rb_node **new = &rt->rb_node, *parent = NULL;
     while (*new) {
-        n = rb_entry(*new, struct nod_proc_info, node);
         parent = *new;
+        n = rb_entry(parent, struct nod_proc_info, node);
         if (p->pid < n->pid)
-            new = &parent->rb_left;
+            new = &(*new)->rb_left;
         else if (p->pid > n->pid)
-            new = &parent->rb_right;
+            new = &(*new)->rb_right;
         else
             return false;
     }
 
     rb_link_node(&p->node, parent, new);
     rb_insert_color(&p->node, rt);
-    smp_mb();
     return true;
 }
 
@@ -79,19 +88,29 @@ nod_set_status(enum nod_proc_status status,
     if (!p) {
         goto out;
     }
-
-    down_write(&proc_info_rt.sem);
-    ASSERT(__insert_proc_info(&proc_info_rt.root, p) == true);
-    up_write(&proc_info_rt.sem);
+    memset(p, 0, sizeof(struct nod_proc_info));
+    if (buffer) {
+        p->buffer = vmalloc_user(sizeof(struct nod_buffer));
+        if (!p->buffer) {
+            kmem_cache_free(proc_info_cachep, p);
+            p = NULL;
+            goto out;
+        }
+    }
 
     p->pid = task->pid;
     memset(&p->stack, 0, sizeof(p->stack));
 
+    down_write(&proc_info_rt.sem);
+    ASSERT(__insert_proc_info(&proc_info_rt.root, p) == true);
+    smp_mb();
+    up_write(&proc_info_rt.sem);
+
 success:
     p->ioctl_fd = ioctl_fd;
     p->status = status;
-    if (buffer) {
-        memcpy(&p->buffer, buffer, sizeof(p->buffer));
+    if (buffer && p->buffer) {
+        copy_to_user_buffer(buffer, p->buffer);
     }
 
 out:
@@ -117,7 +136,10 @@ nod_free_status(struct task_struct *task)
     up_write(&proc_info_rt.sem);
 
     retval = p->status;
+
+    if(p->buffer) vfree(p->buffer);
     kmem_cache_free(proc_info_cachep, p);
+
     return retval;
 }
 
@@ -132,36 +154,6 @@ nod_event_from(struct nod_proc_info **p)
 
     if (p)  *p = n;    
     return n ? n->status : NOD_OUT;
-}
-
-void
-nod_copy_context(const struct pt_regs *regs)
-{
-    struct nod_proc_info *p;
-    struct nod_proc_context *ctxp;
-
-    down_read(&proc_info_rt.sem);
-    p = __find_proc_info(&proc_info_rt.root, current);
-    up_read(&proc_info_rt.sem);
-
-    ASSERT(p != NULL);
-    ctxp = &p->ctx;
-
-    // no one will delete our rbnode
-    ctxp->fsbase = current->thread.FSBASE;
-    ctxp->gsbase = current->thread.GSBASE;
-    ctxp->seccomp_mode = nod_get_seccomp();
-    ctxp->cap_effective = current_cred()->cap_effective;
-    ctxp->cap_permitted = current_cred()->cap_permitted;
-    get_fs_root(current->fs, &ctxp->root_path);
-    sigprocmask(-1, 0, &ctxp->sigset);
-    memcpy(ctxp->rlim, current->signal->rlim, sizeof(ctxp->rlim));
-    memcpy(&ctxp->regs, regs, sizeof(*regs));
-
-    p->stack.nr = regs->orig_ax;
-    p->stack.code = regs->di;
-    
-    pr_info("%d %d\n", regs->orig_ax, regs->di);
 }
 
 int

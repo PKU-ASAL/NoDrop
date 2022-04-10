@@ -15,13 +15,13 @@ int main(int argc, char *argv[]) {
     struct fetch_buffer_struct fetch;
 
     if (argc < 2) {
-        fprintf(stderr, "Usage: sprctl <cmd>\n");
+        fprintf(stderr, "Usage: %s [clean|fetch|start|stop|count]\n", argv[0]);
         return 0;
     }
 
     fd = open(NOD_IOCTL_PATH, O_RDWR);
     if (fd < 0) {
-        fprintf(stderr, "Cannot open " NOD_IOCTL_PATH);
+        perror("Cannot open " NOD_IOCTL_PATH);
         return 127;
     }
 
