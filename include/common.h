@@ -20,12 +20,15 @@
 #define likely(x) 	__builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
+#define NOD_MEM_RND_MASK 0x7ff
+
 struct nod_stack_info {
 	int come;
 	int ioctl_fd;
 	long nr;
 	long code;
 	unsigned long fsbase;
+	unsigned long memoff;
 	char *mem;
 	struct nod_buffer *buffer;
 };

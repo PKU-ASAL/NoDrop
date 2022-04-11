@@ -22,7 +22,9 @@ unsigned long __attribute__((section(".monitor.infopack"))) dynamic_linker_ready
 static void 
 __m_restore_context(struct nod_stack_info *p) {
     if (unlikely(SYSCALL_EXIT_FAMILY(p->nr))) {
-        nod_monitor_exit(p->mem, p->nr);
+        nod_monitor_exit(p->mem + p->memoff, p->nr);
+        munmap(p->mem, NOD_MONITOR_MEM_SIZE);
+        munmap(p->buffer, sizeof(struct nod_buffer));
         syscall(p->nr, p->code);
     } else {
         if (mprotect(p->mem, NOD_MONITOR_MEM_SIZE, PROT_READ) == -1) {
@@ -42,9 +44,9 @@ __m_start_main(int argc, char *argv[])
 
     if (unlikely(p->fsbase == 0)) {
         syscall(SYS_arch_prctl, ARCH_GET_FS, (unsigned long)&p->fsbase);
-        mallopt(M_MMAP_THRESHOLD, 0);
         if (unlikely(dynamic_linker_ready == 0)) {
             dynamic_linker_ready = p->fsbase;
+            mallopt(M_MMAP_THRESHOLD, 0);
             mprotect(&dynamic_linker_ready, 4096, PROT_READ);
         }
     } else {
@@ -56,23 +58,25 @@ __m_start_main(int argc, char *argv[])
         perror("Open " NOD_IOCTL_PATH " failed");
         goto out;
     }
-    if(!p->buffer) {
+    if(unlikely(p->buffer == 0)) {
         p->buffer = (struct nod_buffer *)mmap(NULL, sizeof(struct nod_buffer), 
                                         PROT_READ, MAP_PRIVATE, p->ioctl_fd, 0);
         if (p->buffer == MAP_FAILED) {
+            p->buffer = 0;
             perror("Cannot get buffer");
             goto out;
         }
     }
 
-    if (unlikely(p->come++ == 0)) {
+    if (unlikely(p->mem == 0)) {
         p->mem = mmap(NULL, NOD_MONITOR_MEM_SIZE, 
                     PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (p->mem == MAP_FAILED) {
+            p->mem = 0;
             perror("Cannot allocate memory\n");
             goto out;
         }
-        nod_monitor_init(p->mem, argc, argv, (char **)argv[argc + 2]);
+        nod_monitor_init(p->mem + p->memoff, argc, argv, (char **)argv[argc + 2]);
     } else {
         if (mprotect(p->mem, NOD_MONITOR_MEM_SIZE, 
                 PROT_READ | PROT_WRITE) == -1) {
@@ -81,7 +85,7 @@ __m_start_main(int argc, char *argv[])
         }
     }
 
-    main(p->mem, p->buffer);
+    main(p->mem + p->memoff, p->buffer);
 
 out:
     __m_restore_context(p);

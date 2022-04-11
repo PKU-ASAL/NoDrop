@@ -4,6 +4,7 @@
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 #include <linux/signal.h>
+#include <linux/random.h>
 
 #include "nodrop.h"
 #include "procinfo.h"
@@ -99,6 +100,8 @@ nod_set_status(enum nod_proc_status status,
     }
 
     p->pid = task->pid;
+    p->stack.memoff = (unsigned long)get_random_int();
+    p->stack.memoff &= NOD_MEM_RND_MASK;
 
     down_write(&proc_info_rt.sem);
     ASSERT(__insert_proc_info(&proc_info_rt.root, p) == true);
