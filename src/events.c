@@ -115,6 +115,12 @@ int init_buffer(struct nod_kbuffer *buffer) {
     int ret;
     unsigned int j;
 
+    if (BUFFER_SIZE / PAGE_SIZE * PAGE_SIZE != BUFFER_SIZE) {
+        ret = -EINVAL;
+        pr_err("Buffer size is not a multiple of the page size\n");
+        goto init_buffer_err;
+    }
+
     buffer->str_storage = (char *)__get_free_page(GFP_USER);
     if (!buffer->str_storage) {
         ret = -ENOMEM;

@@ -137,7 +137,7 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         pr_info("proc: Start recording");
         break;
     case NOD_IOCTL_RESTORE_SECURITY:
-        if (!p || p->status != NOD_IN) {
+        if (!p || p->status != NOD_IN || p->pid != current->pid) {
             ret = -ENODEV;
             goto out;
         }
@@ -147,6 +147,7 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
             goto out;
         }
 
+        p->ioctl_fd = p->stack.ioctl_fd;
         p->status = NOD_RESTORE;
 
         break;

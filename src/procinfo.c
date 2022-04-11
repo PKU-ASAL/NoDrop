@@ -99,7 +99,6 @@ nod_set_status(enum nod_proc_status status,
     }
 
     p->pid = task->pid;
-    memset(&p->stack, 0, sizeof(p->stack));
 
     down_write(&proc_info_rt.sem);
     ASSERT(__insert_proc_info(&proc_info_rt.root, p) == true);

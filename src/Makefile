@@ -3,7 +3,7 @@ PWD  := $(shell pwd)
 
 obj-m  += $(MODULE).o
 $(MODULE)-objs := \
-	main.o \
+	nod_main.o \
 	loader.o \
 	trace.o \
 	proc.o \

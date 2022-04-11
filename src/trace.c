@@ -108,7 +108,8 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
 
 start:
     evt_from = nod_event_from(&p);
-    if (evt_from == NOD_OUT) {
+    if (evt_from == NOD_OUT && 
+        !(id == __NR_clone && syscall_get_return_value(current, regs) == 0)) {
         syscall_probe(regs, id);
     } else if (p && p->status == NOD_RESTORE) {
         nod_restore_context(p, regs);
@@ -240,10 +241,10 @@ void untrace_syscall(void) {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0))
 static void visit_tracepoint(struct tracepoint *tp, void *priv)
 {
-	if (!strcmp(tp->name, "sys_exit"))
-		tp_sys_exit = tp;
+    if (!strcmp(tp->name, "sys_exit"))
+        tp_sys_exit = tp;
     else if (!strcmp(tp->name, "sched_process_exit"))
-		tp_sched_process_exit = tp;
+        tp_sched_process_exit = tp;
 }
 
 static int get_tracepoint_handles(void)

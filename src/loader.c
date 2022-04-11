@@ -350,7 +350,7 @@ load_monitor(const struct nod_kbuffer *buffer) {
     uint64_t entry, sp;
     struct pt_regs *regs;
     struct nod_proc_info *p;
-    struct elf64_hdr *cur_elf_ex = &monitor_elf_ex;
+    struct elf64_hdr *cur_elf_ex;
     uint64_t load_addr = 0, interp_load_addr = 0;
 
     char *argv[] = { MONITOR_PATH, NULL };
@@ -376,9 +376,13 @@ load_monitor(const struct nod_kbuffer *buffer) {
             if (retval != NOD_SUCCESS) {
                 goto out;
             }
+            free = 1;
+            cur_elf_ex = &monitor_elf_ex;
         }
         p->load_addr = load_addr;
     } else {
+        free = 0;
+        cur_elf_ex = 0;
         entry = p->load_addr + monitor_elf_ex.e_entry;
     }
 

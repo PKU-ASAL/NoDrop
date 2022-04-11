@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <inttypes.h>
-#include <time.h>
+#include <sys/time.h>
 #include <sys/syscall.h>
 
 #include "context.h"
@@ -20,7 +20,7 @@ void nod_monitor_init(char *mem, int argc, char *argv[], char *env[]) {
 
     gettimeofday(&tv, NULL);
     tid = (unsigned int)syscall(SYS_gettid);
-    sprintf(path, PATH_FMT, tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
+    sprintf((char *)path, PATH_FMT, tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
 }
 
 static const char *__print_format[PT_UINT64 + 1][PF_OCT + 1] = {
@@ -35,7 +35,7 @@ static const char *__print_format[PT_UINT64 + 1][PF_OCT + 1] = {
     [PT_UINT64] = {"", "%"PRIu64, "0x%"PRIx64, "%010" PRIu64, "0%"PRIo64}/*PT_UINT64*/
 };
 
-static int _parse(struct nod_event_hdr *hdr, char *buffer, void *__data)
+static int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer, void *__data)
 {
     size_t i;
     const struct nod_event_info *info;
@@ -50,29 +50,29 @@ static int _parse(struct nod_event_hdr *hdr, char *buffer, void *__data)
     args = (uint16_t *)buffer;
     data = (char *)(args + info->nparams);
     
-    printf("%lu %u (%u): %s(", hdr->ts, hdr->tid, hdr->cpuid, info->name);
+    fprintf(out, "%lu %u (%u): %s(", hdr->ts, hdr->tid, hdr->cpuid, info->name);
 
     for (i = 0; i < info->nparams; ++i) {
         param = &info->params[i];
-        if (i > 0)  printf(", ");
-        printf("%s=", param->name);
+        if (i > 0)  fprintf(out, ", ");
+        fprintf(out, "%s=", param->name);
         switch(param->type) {
         case PT_CHARBUF:
         case PT_FSPATH:
         case PT_FSRELPATH:
         case PT_BYTEBUF:
-            fwrite(data, args[i], 1, stdout);
+            fwrite(data, args[i], 1, out);
             break;
 
         case PT_FLAGS8:
         case PT_UINT8:
         case PT_SIGTYPE:
-            printf(__print_format[PT_UINT8][param->fmt], *(uint8_t *)data);
+            fprintf(out, __print_format[PT_UINT8][param->fmt], *(uint8_t *)data);
             break;
         case PT_FLAGS16:
         case PT_UINT16:
         case PT_SYSCALLID:
-            printf(__print_format[PT_UINT16][param->fmt], *(uint16_t *)data);
+            fprintf(out, __print_format[PT_UINT16][param->fmt], *(uint16_t *)data);
             break;
         
         case PT_FLAGS32:
@@ -81,42 +81,42 @@ static int _parse(struct nod_event_hdr *hdr, char *buffer, void *__data)
         case PT_UID:
         case PT_GID:
         case PT_SIGSET:
-            printf(__print_format[PT_UINT32][param->fmt], *(uint32_t *)data);
+            fprintf(out, __print_format[PT_UINT32][param->fmt], *(uint32_t *)data);
             break;
         
         case PT_RELTIME:
         case PT_ABSTIME:
         case PT_UINT64:
-            printf(__print_format[PT_UINT64][param->fmt], *(uint64_t *)data);
+            fprintf(out, __print_format[PT_UINT64][param->fmt], *(uint64_t *)data);
             break;
 
         case PT_INT8:
-            printf(__print_format[PT_INT8][param->fmt], *(int8_t *)data);
+            fprintf(out, __print_format[PT_INT8][param->fmt], *(int8_t *)data);
             break;
 
         case PT_INT16:
-            printf(__print_format[PT_INT16][param->fmt], *(int16_t *)data);
+            fprintf(out, __print_format[PT_INT16][param->fmt], *(int16_t *)data);
             break;
         
         case PT_INT32:
-            printf(__print_format[PT_INT32][param->fmt], *(int32_t *)data);
+            fprintf(out, __print_format[PT_INT32][param->fmt], *(int32_t *)data);
             break;
 
         case PT_INT64:
         case PT_ERRNO:
         case PT_FD:
         case PT_PID:
-            printf(__print_format[PT_INT64][param->fmt], *(int64_t *)data);
+            fprintf(out, __print_format[PT_INT64][param->fmt], *(int64_t *)data);
             break;
 
         default:
-            printf("<unknown>");
+            fprintf(out, "<unknown>");
             break;
         }
 
         data += args[i];
     }
-    printf(")\n");
+    fprintf(out, ")\n");
     return 0;
 }
 
@@ -125,7 +125,7 @@ int main(char *mem, struct nod_buffer *buffer) {
     FILE *file;
     char *ptr, *end;
     struct nod_event_hdr *hdr;
-    if(!(file = fopen(path, "ab+"))) {
+    if(!(file = fopen((const char *)path, "ab+"))) {
         perror("Cannot open log file");
         return 0;
     }
@@ -134,12 +134,12 @@ int main(char *mem, struct nod_buffer *buffer) {
     end = buffer->buffer + buffer->info.tail;
     while (ptr < end) {
         hdr = (struct nod_event_hdr *)ptr; 
-        _parse(hdr, (char *)(hdr + 1), 0);
-        // fwrite(ptr, hdr->len, 1, file);
+        // _parse(file, hdr, (char *)(hdr + 1), 0);
+        fwrite(ptr, hdr->len, 1, file);
         ptr += hdr->len;
     }
 
-    fclose(file); 
+    fclose(file);
 
     return 0;
 }

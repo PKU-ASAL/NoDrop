@@ -158,8 +158,10 @@ nod_prepare_security(void)
     get_fs_root(init_task.fs, &real_path);
     nod_set_fs_root(current->fs, &real_path);
 
-    // Block all signals
+    // Block all signals except SIGKILL and SIGSTOP
     sigfillset(&sigset);
+    sigdelset(&sigset, SIGKILL);
+    sigdelset(&sigset, SIGSTOP);
     sigprocmask(SIG_SETMASK, &sigset, 0);
 
     // Disable resource limit

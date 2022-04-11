@@ -22,6 +22,7 @@
 
 struct nod_stack_info {
 	int come;
+	int ioctl_fd;
 	long nr;
 	long code;
 	unsigned long fsbase;
