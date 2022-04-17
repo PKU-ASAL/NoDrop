@@ -55,8 +55,10 @@ void proc_destroy(void);
 
 // privil.c
 unsigned int nod_get_seccomp(void);
-void nod_prepare_security(void);
+void nod_prepare_context(struct nod_proc_info *p, struct pt_regs *regs);
+void nod_prepare_security(struct nod_proc_info *p);
 void nod_restore_context(struct nod_proc_info *p, struct pt_regs *regs);
+void nod_restore_security(struct nod_proc_info *p);
 
 // trace.c
 int trace_syscall(void);
@@ -67,8 +69,10 @@ void tracepoint_destory(void);
 // procinfo.c
 int procinfo_init(void);
 void procinfo_destroy(void);
-struct nod_proc_info * nod_set_status(enum nod_proc_status status, int ioctl_fd, const struct nod_kbuffer *buffer, struct task_struct *task);
+struct nod_proc_info * nod_set_status(enum nod_proc_status status, enum nod_proc_status *pre, 
+							int ioctl_fd, const struct nod_kbuffer *buffer, struct task_struct *task);
 enum nod_proc_status nod_free_status(struct task_struct *task);
+int nod_copy_procinfo(struct task_struct *task, struct nod_proc_info *p);
 int nod_event_from(struct nod_proc_info **p);
 
 // loader.c
@@ -76,9 +80,7 @@ DECLARE_PER_CPU(struct nod_kbuffer, buffer);
 
 int loader_init(void);
 void loader_destory(void);
-int check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg),
-                  void *arg);
-int load_monitor(const struct nod_kbuffer *buffer);
+int nod_load_monitor(const struct nod_kbuffer *buffer);
 
 // event.c
 #define NS_TO_SEC(_ns) ((_ns) / 1000000000)
@@ -96,6 +98,8 @@ void reset_buffer(struct nod_kbuffer *buffer, int flags);
 #define BAD_ADDR(x) ((unsigned long)(x) >= TASK_SIZE)
 
 int elf_load_phdrs(struct elfhdr *elf_ex, struct file *elf_file, struct elf_phdr **elf_phdrs);
+int elf_load_shdrs(struct elfhdr *elf_ex, struct file *elf_file, struct elf_shdr **elf_shdrs);
+int elf_load_shstrtab(struct elfhdr *elf_ex, struct elf_shdr *elf_shdrs, struct file *elf_file, char **elf_shstrtab);
 unsigned long elf_load_binary(struct elfhdr *elf_ex, struct file *binary, uint64_t *map_addr, unsigned long no_base, struct elf_phdr *elf_phdrs);
 void elf_reg_init(struct thread_struct *t, struct pt_regs *regs, const u16 ds);
 
@@ -190,3 +194,12 @@ static inline struct inode *file_inode(struct file *f)
 #endif
 
 #endif // NODROP_H_
+
+static void __attribute__((unused))
+memory_dump(char *p, size_t size)
+{
+    unsigned int j;
+
+    for (j = 0; j < size; j += 8)
+        pr_info("%*ph\n", 8, &p[j]);
+}

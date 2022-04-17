@@ -6,6 +6,7 @@
 monitor/*.o
 monitor/monitor
 *.o
+!monitor/rcrt1.o
 *.ko
 *.txt
 *.cmd
@@ -37,3 +38,5 @@ http-test-files/
 *.pmrc
 attacker
 .cache.mk
+.fuse_*
+musl/

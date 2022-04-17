@@ -98,7 +98,8 @@ elf_map(struct file *filep, unsigned long addr,
 int
 elf_load_phdrs(struct elfhdr *elf_ex,
                struct file *elf_file,
-               struct elf_phdr **elf_phdrs) {
+               struct elf_phdr **elf_phdrs)
+{
     struct elf_phdr *elf_phdata;
     int retval, size, err = -1;
     loff_t pos = elf_ex->e_phoff;
@@ -139,6 +140,91 @@ out:
         elf_phdata = NULL;
     }
     *elf_phdrs = elf_phdata;
+    return err;
+}
+
+int
+elf_load_shdrs(struct elfhdr *elf_ex,
+               struct file *elf_file,
+               struct elf_shdr **elf_shdrs)
+{
+    struct elf_shdr *elf_shdata;
+    int retval, size, err = -1;
+    loff_t pos = elf_ex->e_shoff;
+
+    /*
+     * If the size of this structure has changed, then punt, since
+     * we will be doing the wrong thing.
+     */
+    if (elf_ex->e_shentsize != sizeof(struct elf_shdr))
+        goto out;
+
+    /* Sanity check the number of section headers... */
+    if (elf_ex->e_shnum < 1 ||
+        elf_ex->e_shnum > 65536U / sizeof(struct elf_shdr))
+        goto out;
+
+    /* ...and their total size. */
+    size = sizeof(struct elf_shdr) * elf_ex->e_shnum;
+    if (size > ELF_MIN_ALIGN)
+        goto out;
+
+    elf_shdata = kmalloc(size, GFP_KERNEL);
+    if (!elf_shdata)
+        goto out;
+    /* Read in the section headers */
+    retval = kernel_read(elf_file, elf_shdata, size, &pos);
+    if (retval != size) {
+        err = (retval < 0) ? retval : -EIO;
+        goto out;
+    }
+
+    /* Success! */
+    err = 0;
+out:
+    if (err) {
+        kfree(elf_shdata);
+        elf_shdata = NULL;
+    }
+    *elf_shdrs = elf_shdata;
+    return err;
+}
+
+int
+elf_load_shstrtab(struct elfhdr *elf_ex,
+                  struct elf_shdr *elf_shdrs,
+                  struct file *elf_file,
+                  char **elf_shstrtab)
+{
+    int retval, size, err = -1;
+    char *elf_shstrdata;
+    loff_t pos;
+    struct elf_shdr *str_shdr = &elf_shdrs[elf_ex->e_shstrndx];
+
+    if (elf_ex->e_shstrndx < 1 || elf_ex->e_shstrndx >= elf_ex->e_shnum)
+        goto out;
+
+    size = str_shdr->sh_size;
+    pos = str_shdr->sh_offset;
+
+    elf_shstrdata = kmalloc(size, GFP_KERNEL);    
+    if (!elf_shstrdata)
+        goto out;
+
+    retval = kernel_read(elf_file, elf_shstrdata, size, &pos);
+    if (retval != size) {
+        err = (retval < 0) ? retval : -EIO;
+        goto out;
+    }
+
+    err = 0;
+
+out:
+    if (err) {
+        kfree(elf_shstrdata);
+        elf_shstrdata = NULL;
+    }
+    *elf_shstrtab = elf_shstrdata;
     return err;
 }
 
@@ -183,7 +269,7 @@ elf_load_binary(struct elfhdr *elf_ex,
             vaddr = eppnt->p_vaddr;
             if (load_addr_set)
                 elf_type |= MAP_FIXED;
-            else if (elf_ex->e_type == ET_DYN)
+            else if (elf_ex->e_type == ET_DYN || elf_ex->e_type == ET_EXEC)
                 load_addr = -vaddr;
             
             _addr = elf_map(binary, load_addr + vaddr,

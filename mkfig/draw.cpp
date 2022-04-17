@@ -44,7 +44,7 @@ static int _parse(struct nod_event_hdr *hdr, char *buffer, void *__data)
 
     // std::vector<uint32_t> *attackers = (std::vector<uint32_t> *)__data;
 
-    if (hdr->type < 0 || hdr->type >= SPRE_EVENT_MAX)
+    if (hdr->type < 0 || hdr->type >= NODE_EVENT_MAX)
         return -1;
 
     info = &g_event_info[hdr->type];
@@ -53,7 +53,7 @@ static int _parse(struct nod_event_hdr *hdr, char *buffer, void *__data)
 
     // if (std::count(attackers->begin(), attackers->end(), hdr->tid)) {
     //     ;
-    // } else if (hdr->type == SPRE_SYSCALL_EXECVE) {
+    // } else if (hdr->type == NODE_SYSCALL_EXECVE) {
     //     char tmp = *(data + args[0] + args[1] + args[2]);
     //     *(data + args[0] + args[1] + args[2]) = 0;
     //     if (strstr(data + args[0] + args[1], "attacker")) {

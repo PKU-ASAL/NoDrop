@@ -65,11 +65,13 @@ __insert_proc_info(struct rb_root *rt, struct nod_proc_info *p)
 
     rb_link_node(&p->node, parent, new);
     rb_insert_color(&p->node, rt);
+    smp_mb();
     return true;
 }
 
 struct nod_proc_info *
 nod_set_status(enum nod_proc_status status, 
+            enum nod_proc_status *pre,
             int ioctl_fd, 
             const struct nod_kbuffer *buffer,
             struct task_struct *task)
@@ -83,20 +85,21 @@ nod_set_status(enum nod_proc_status status,
         goto success;
     }
 
-    ASSERT(status == NOD_IN);
-
     p = kmem_cache_alloc(proc_info_cachep, GFP_KERNEL);
     if (!p) {
+        if (pre)    *pre = NOD_UNKNOWN;
         goto out;
     }
     memset(p, 0, sizeof(struct nod_proc_info));
-    if (buffer) {
-        p->buffer = vmalloc_user(sizeof(struct nod_buffer));
-        if (!p->buffer) {
-            kmem_cache_free(proc_info_cachep, p);
-            p = NULL;
-            goto out;
-        }
+
+    /* TODO: lazy allocation
+     *  - Only allocate buffer when it is needed */
+    p->buffer = vmalloc_user(sizeof(struct nod_buffer));
+    if (!p->buffer) {
+        kmem_cache_free(proc_info_cachep, p);
+        p = NULL;
+        if (pre)    *pre = NOD_UNKNOWN;
+        goto out;
     }
 
     p->pid = task->pid;
@@ -105,11 +108,11 @@ nod_set_status(enum nod_proc_status status,
 
     down_write(&proc_info_rt.sem);
     ASSERT(__insert_proc_info(&proc_info_rt.root, p) == true);
-    smp_mb();
     up_write(&proc_info_rt.sem);
 
 success:
     p->ioctl_fd = ioctl_fd;
+    if (pre)    *pre = p->status;
     p->status = status;
     if (buffer && p->buffer) {
         copy_to_user_buffer(buffer, p->buffer);
@@ -138,11 +141,32 @@ nod_free_status(struct task_struct *task)
     up_write(&proc_info_rt.sem);
 
     retval = p->status;
+    p->ctx.available = p->sec.available = 0;
 
     if(p->buffer) vfree(p->buffer);
     kmem_cache_free(proc_info_cachep, p);
 
     return retval;
+}
+
+int
+nod_copy_procinfo(struct task_struct *task, struct nod_proc_info *p)
+{
+    struct nod_proc_info *parent;
+
+    if (!task->real_parent) 
+        return NOD_SUCCESS;
+
+    down_read(&proc_info_rt.sem);
+    parent = __find_proc_info(&proc_info_rt.root, task->real_parent);
+    up_read(&proc_info_rt.sem);
+
+    if (parent) {
+        p->load_addr = parent->load_addr;
+        memcpy(&p->stack, &parent->stack, sizeof(struct nod_stack_info));
+    }
+    
+    return NOD_SUCCESS;    
 }
 
 int

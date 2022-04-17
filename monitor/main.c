@@ -4,8 +4,8 @@
 #include <sys/time.h>
 #include <sys/syscall.h>
 
-#include "context.h"
 #include "events.h"
+#include "common.h"
 
 #define PATH_FMT "/tmp/nodrop/%u-%ld.buf"
 #define SECOND_IN_US 1000000000
@@ -43,7 +43,7 @@ static int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer, void *__da
     uint16_t *args;
     char *data;
 
-    if (hdr->type < 0 || hdr->type >= SPRE_EVENT_MAX)
+    if (hdr->type < 0 || hdr->type >= NODE_EVENT_MAX)
         return -1;
 
     info = &g_event_info[hdr->type];
@@ -120,22 +120,23 @@ static int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer, void *__da
     return 0;
 }
 
-int main(char *mem, struct nod_buffer *buffer) {
+int nod_monitor_main(char *mem, struct nod_buffer *buffer) {
     VAR_ARRAY(char, 100, path);
     FILE *file;
-    char *ptr, *end;
+    char *ptr, *buffer_end;
     struct nod_event_hdr *hdr;
+
     if(!(file = fopen((const char *)path, "ab+"))) {
         perror("Cannot open log file");
         return 0;
     }
 
     ptr = buffer->buffer;
-    end = buffer->buffer + buffer->info.tail;
-    while (ptr < end) {
+    buffer_end = buffer->buffer + buffer->info.tail;
+    while (ptr < buffer_end) {
         hdr = (struct nod_event_hdr *)ptr; 
-        // _parse(file, hdr, (char *)(hdr + 1), 0);
-        fwrite(ptr, hdr->len, 1, file);
+        _parse(file, hdr, (char *)(hdr + 1), 0);
+        // fwrite(ptr, hdr->len, 1, file);
         ptr += hdr->len;
     }
 

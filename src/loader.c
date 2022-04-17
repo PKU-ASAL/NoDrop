@@ -10,62 +10,45 @@
 
 
 #include "nodrop.h"
-#include "common.h"
-#include "events.h"
 #include "syscall.h"
 #include "procinfo.h"
 
+#include "common.h"
+#include "events.h"
 
 DEFINE_PER_CPU(struct nod_kbuffer, buffer);
 EXPORT_PER_CPU_SYMBOL(buffer);
 
 static struct elf_phdr *monitor_elf_phdata, *interp_elf_phdata;
+static struct elf_shdr *monitor_elf_shdata;
 static struct elfhdr   monitor_elf_ex, interp_elf_ex;
-static struct file *monitor, *interpreter;
+static struct file *filp_monitor, *filp_interpreter;
+
+static unsigned long monitor_info_off;
 
 #define MAPPING_OK          0 
 #define MAPPING_NEXT        1
 #define MAPPING_FINISH      2
 #define MAPPING_NOTFOUND    3
 
-#define MAPPING_FIND
-
 static int
-__check_mapping(struct vm_area_struct const * const vma, void *arg)
+get_monitor_addr(struct vm_area_struct const * const vma, void *arg)
 {
-    vm_flags_t flags = vma->vm_flags;
-    if (flags & VM_EXEC) {
-        *(unsigned long*)arg = vma->vm_start;
-        return MAPPING_OK;
+    struct nod_monitor_info i;
+    unsigned long *load_addr = ((unsigned long **)arg)[0];
+    unsigned long *fsbase = ((unsigned long **)arg)[1];
+
+    if (nod_copy_from_user(&i, (const void *)(vma->vm_start + monitor_info_off), sizeof(i))) {
+        i.fsbase = 0;
     }
 
-    return MAPPING_NEXT;
+    *load_addr = vma->vm_start;
+    *fsbase = i.fsbase;
+
+    return MAPPING_OK;
 }
 
 static int
-wait_dynamic_linker_ready(struct vm_area_struct const * const vma, void *arg)
-{
-    int count = 0;
-    vm_flags_t flags = vma->vm_flags;
-    if (flags & VM_EXEC) {
-        return MAPPING_NEXT;
-    }
-
-    /* 
-     * Since the monitor may be loaded but not initialized yet, 
-     * we should wait here until it is initialized.
-     * When the monitor is initialized, the flag in .monitor.info will be set to tls.
-     */
-    while (count++ < 100 && !nod_copy_from_user(arg, (const void *)vma->vm_start, sizeof(unsigned long))) {
-        if (*(unsigned long *)arg != 0) {
-            return MAPPING_OK;
-        }
-        msleep(1);
-    }
-    return MAPPING_FINISH;
-}
-
-int
 check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg),
               void *arg)
 {
@@ -77,7 +60,7 @@ check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg
 
     down_read(&mm->mmap_sem);
     for (vma = mm->mmap; vma; vma = vma->vm_next) {
-        if (vma->vm_file == monitor) {
+        if (vma->vm_file == filp_monitor) {
             retval = (*resolve)((struct vm_area_struct const * const)vma, arg);
             switch(retval) {
             case MAPPING_OK:
@@ -145,7 +128,7 @@ create_elf_tbls(struct elfhdr *exec,
     get_random_bytes(k_rand_bytes, sizeof(k_rand_bytes));
     u_rand_bytes = (elf_addr_t __user *)
                STACK_ALLOC(p, sizeof(k_rand_bytes));
-    if (__copy_to_user(u_rand_bytes, k_rand_bytes, sizeof(k_rand_bytes)))
+    if (copy_to_user(u_rand_bytes, k_rand_bytes, sizeof(k_rand_bytes)))
         goto err;
 
 #define INSERT_AUX_ENT(id, val) \
@@ -163,8 +146,7 @@ create_elf_tbls(struct elfhdr *exec,
     elf_info_idx = 0;
     if (exec) {
         elf_info = vmalloc(sizeof(elf_addr_t) * 12 * 2);
-        if (!elf_info)
-            goto err;
+        if (!elf_info) goto err;
         INSERT_AUX_ENT(AT_HWCAP, ELF_HWCAP);
         INSERT_AUX_ENT(AT_PAGESZ, ELF_EXEC_PAGESIZE);
         INSERT_AUX_ENT(AT_CLKTCK, CLOCKS_PER_SEC);
@@ -264,11 +246,12 @@ create_elf_tbls(struct elfhdr *exec,
         goto err;
     }
 
+    if (elf_info) vfree(elf_info);
     return NOD_SUCCESS;
+
 err:
     *target_sp = original_rsp;
-    if (elf_info)
-        vfree(elf_info);
+    if (elf_info) vfree(elf_info);
     return -EFAULT;
 }
 
@@ -282,10 +265,8 @@ do_load_monitor(const struct pt_regs *regs, uint64_t *entry, uint64_t *load, uin
     uint64_t load_entry;
     uint64_t monitor_map_addr;
 
-    if (interpreter) {
-        interp_load_addr = elf_load_binary(&interp_elf_ex,
-                        interpreter,
-                        &interp_map_addr,
+    if (filp_interpreter) {
+        interp_load_addr = elf_load_binary(&interp_elf_ex, filp_interpreter, &interp_map_addr,
                         ELF_ET_DYN_BASE, interp_elf_phdata);
         if (BAD_ADDR(interp_load_addr)) {
             retval = IS_ERR((void *)interp_load_addr) ?	
@@ -294,9 +275,7 @@ do_load_monitor(const struct pt_regs *regs, uint64_t *entry, uint64_t *load, uin
         }
     }
 
-    load_addr = elf_load_binary(&monitor_elf_ex,
-                    monitor,
-                    &monitor_map_addr,
+    load_addr = elf_load_binary(&monitor_elf_ex, filp_monitor, &monitor_map_addr,
                     ELF_ET_DYN_BASE, monitor_elf_phdata);
 
     if (BAD_ADDR(load_addr)) {
@@ -306,11 +285,13 @@ do_load_monitor(const struct pt_regs *regs, uint64_t *entry, uint64_t *load, uin
     }
 
 
-    load_entry = interpreter ? 
+    load_entry = filp_interpreter ? 
                 interp_load_addr + interp_elf_ex.e_entry : 
                 load_addr + monitor_elf_ex.e_entry;
 
-    vpr_dbg("load monitor at %llx\nload interp at %llx\nentry = %llx", load_addr, interp_load_addr, load_entry);
+    vpr_dbg("load monitor at %llx\n"
+            "load interp at %llx\n"
+            "entry = %llx\n", load_addr, interp_load_addr, load_entry);
 
     if (entry)  *entry = load_entry;
     if (load)   *load = load_addr;
@@ -322,76 +303,53 @@ out:
     return retval;
 }
 
-static void
-copy_context(struct nod_proc_info *p, const struct pt_regs *regs)
-{
-    struct nod_proc_context *ctxp;
-
-    ctxp = &p->ctx;
-
-    // no one will delete our rbnode
-    ctxp->fsbase = current->thread.FSBASE;
-    ctxp->gsbase = current->thread.GSBASE;
-    ctxp->seccomp_mode = nod_get_seccomp();
-    ctxp->cap_effective = current_cred()->cap_effective;
-    ctxp->cap_permitted = current_cred()->cap_permitted;
-    get_fs_root(current->fs, &ctxp->root_path);
-    sigprocmask(-1, 0, &ctxp->sigset);
-    memcpy(ctxp->rlim, current->signal->rlim, sizeof(ctxp->rlim));
-    memcpy(&ctxp->regs, regs, sizeof(*regs));
-
-    p->stack.nr = regs->orig_ax;
-    syscall_get_arguments_deprecated(current, regs, 0, 1, &p->stack.code);
-}
-
 int
-load_monitor(const struct nod_kbuffer *buffer) {
-    int retval, free = 1;
+nod_load_monitor(const struct nod_kbuffer *buffer)
+{
+    int retval;
     uint64_t entry, sp;
     struct pt_regs *regs;
     struct nod_proc_info *p;
     struct elf64_hdr *cur_elf_ex;
+    enum nod_proc_status pre_status;
     uint64_t load_addr = 0, interp_load_addr = 0;
 
     char *argv[] = { MONITOR_PATH, NULL };
 
     regs = current_pt_regs();
 
-    p = nod_set_in(current, buffer);
+    p = nod_set_status(NOD_IN, &pre_status, -1, buffer, current);
     if (!p) {
         retval = -ENOMEM;
         goto out;
     }
 
-    copy_context(p, regs);
+    if (pre_status == NOD_CLONE) {
+        nod_copy_procinfo(current, p);
+    }
 
     if (!p->load_addr) {
-        if(check_mapping(__check_mapping, (void *)&load_addr) == MAPPING_OK &&
-            check_mapping(wait_dynamic_linker_ready, (void *)&p->stack.fsbase) == MAPPING_OK) {
-            free = 0;
-            cur_elf_ex = NULL;
-            entry = load_addr + monitor_elf_ex.e_entry;
-        } else {
-            retval = do_load_monitor(regs, &entry, &load_addr, &interp_load_addr);
-            if (retval != NOD_SUCCESS) {
-                goto out;
-            }
-            free = 1;
-            cur_elf_ex = &monitor_elf_ex;
+        retval = do_load_monitor(regs, &entry, &load_addr, &interp_load_addr);
+        if (retval != NOD_SUCCESS) {
+            goto out;
         }
+        cur_elf_ex = &monitor_elf_ex;
         p->load_addr = load_addr;
     } else {
-        free = 0;
-        cur_elf_ex = 0;
+        cur_elf_ex = NULL;
         entry = p->load_addr + monitor_elf_ex.e_entry;
     }
+
+    p->stack.nr = syscall_get_nr(current, regs);
+    syscall_get_arguments_deprecated(current, regs, 0, 1, &p->stack.code);
 
     retval = create_elf_tbls(cur_elf_ex, load_addr, interp_load_addr, regs, &p->stack, &sp, argv);
     if (retval != NOD_SUCCESS) {
         goto out;
     }
 
-    nod_prepare_security();
+    nod_prepare_security(p);
+    nod_prepare_context(p, regs);
 
     elf_reg_init(&current->thread, regs, 0);
     regs->sp = sp;
@@ -400,12 +358,8 @@ load_monitor(const struct nod_kbuffer *buffer) {
     return NOD_SUCCESS;
 
 out:
-    pr_err("(%d)load_monitor: cannot transfer logging buffer", smp_processor_id());
-    if (free == 0) {
-        nod_set_out(current);
-    } else {
-        nod_free_status(current);
-    }
+    vpr_err("cannot transfer logging buffer\n");
+    nod_set_out(current);
     return retval;
 }
 
@@ -413,21 +367,27 @@ int loader_init(void)
 {
     int i, retval;
     loff_t pos;
+    char *elf_shstrtab = NULL;
     char *elf_interpreter = NULL;
     struct elf_phdr *elf_ppnt = NULL;
+    struct elf_shdr *elf_spnt = NULL;
 
-    monitor = NULL;
-    interpreter = NULL;
+    filp_monitor = NULL;
+    filp_interpreter = NULL;
+
+    monitor_elf_shdata = NULL;
     monitor_elf_phdata = NULL;
     interp_elf_phdata = NULL;
 
-    monitor = open_exec(MONITOR_PATH);
-    retval = PTR_ERR(monitor);
-    if (IS_ERR(monitor))
+    monitor_info_off = 0;
+
+    filp_monitor = open_exec(MONITOR_PATH);
+    retval = PTR_ERR(filp_monitor);
+    if (IS_ERR(filp_monitor))
         goto out;
 
     pos = 0;
-    retval = kernel_read(monitor, &monitor_elf_ex, sizeof(monitor_elf_ex), &pos);
+    retval = kernel_read(filp_monitor, &monitor_elf_ex, sizeof(monitor_elf_ex), &pos);
     if (retval != sizeof(monitor_elf_ex)) {
         if (retval >= 0)
             retval = -EIO;
@@ -442,13 +402,36 @@ int loader_init(void)
         goto out_free_monitor;
     if (!elf_check_arch(&monitor_elf_ex))
         goto out_free_monitor;
-    if (!monitor->f_op->mmap)
+    if (!filp_monitor->f_op->mmap)
         goto out_free_monitor;
-    if (elf_load_phdrs(&monitor_elf_ex, monitor, &monitor_elf_phdata))
+    /* Load Program Header Table */
+    if (elf_load_phdrs(&monitor_elf_ex, filp_monitor, &monitor_elf_phdata))
+        goto out_free_monitor;
+    /* Load Section Header Table */
+    if (elf_load_shdrs(&monitor_elf_ex, filp_monitor, &monitor_elf_shdata))
+        goto out_free_monitor;
+    /* Load section str table */
+    if (elf_load_shstrtab(&monitor_elf_ex, monitor_elf_shdata, filp_monitor, &elf_shstrtab))
         goto out_free_monitor;
 
-    elf_ppnt = monitor_elf_phdata;
+    // Find .monitor.info Section
+    elf_spnt = monitor_elf_shdata;
+    for (i = 0; i < monitor_elf_ex.e_shnum; i++) {
+        if (!strcmp(&elf_shstrtab[elf_spnt->sh_name], NOD_SECTION_NAME)) {
+            monitor_info_off = elf_spnt->sh_addr;      
+            break;
+        }
+        elf_spnt++;
+    }
+
+    if (monitor_info_off == 0) {
+        retval = -EINVAL;
+        pr_err("Can nod find " NOD_SECTION_NAME "\n");
+        goto out_free_monitor;
+    }
+
     // find INTERP segment
+    elf_ppnt = monitor_elf_phdata;
     for (i = 0; i < monitor_elf_ex.e_phnum; i++) {
         if (elf_ppnt->p_type == PT_INTERP) {
             retval = 0;
@@ -462,7 +445,7 @@ int loader_init(void)
                 goto out_free_monitor;
 
             pos = elf_ppnt->p_offset;
-            retval = kernel_read(monitor, elf_interpreter, elf_ppnt->p_filesz, &pos);
+            retval = kernel_read(filp_monitor, elf_interpreter, elf_ppnt->p_filesz, &pos);
             if (retval != elf_ppnt->p_filesz) {
                 if (retval >= 0)
                     retval = -EIO;
@@ -474,14 +457,14 @@ int loader_init(void)
             if (elf_interpreter[elf_ppnt->p_filesz - 1] != '\0')
                 goto out_free_interp;
 
-            interpreter = open_exec(elf_interpreter);
-            retval = PTR_ERR(interpreter);
-            if (IS_ERR(interpreter))
+            filp_interpreter = open_exec(elf_interpreter);
+            retval = PTR_ERR(filp_interpreter);
+            if (IS_ERR(filp_interpreter))
                 goto out_free_interp;
 
             /* Get the exec headers */
             pos = 0;
-            retval = kernel_read(interpreter, &interp_elf_ex, sizeof(interp_elf_ex), &pos);
+            retval = kernel_read(filp_interpreter, &interp_elf_ex, sizeof(interp_elf_ex), &pos);
             if (retval != sizeof(interp_elf_ex)) {
                 if (retval >= 0)
                     retval = -EIO;
@@ -510,7 +493,7 @@ int loader_init(void)
         goto out_free_dentry;
 
     /* Load the interpreter program headers */
-    if (elf_load_phdrs(&interp_elf_ex, interpreter, &interp_elf_phdata))
+    if (elf_load_phdrs(&interp_elf_ex, filp_interpreter, &interp_elf_phdata))
         goto out_free_dentry;
 
 success:
@@ -521,34 +504,37 @@ out:
     return retval;
 
 out_free_dentry:
-    allow_write_access(interpreter);
-    if (interpreter)
-        fput(interpreter);
-    interpreter = NULL;
+    allow_write_access(filp_interpreter);
+    if (filp_interpreter)
+        fput(filp_interpreter);
+    filp_interpreter = NULL;
 out_free_interp:
     kfree(elf_interpreter);
     elf_interpreter = NULL;
 out_free_monitor:
-    allow_write_access(monitor);
-    if (monitor)
-        fput(monitor);
-    monitor = NULL;
+    allow_write_access(filp_monitor);
+    kfree(elf_shstrtab);
+    if (filp_monitor)
+        fput(filp_monitor);
+    filp_monitor = NULL;
     goto out;
 }
 
 void loader_destory(void) {
-    if (interpreter) {
-        allow_write_access(interpreter);
-        fput(interpreter);
+    if (filp_interpreter) {
+        allow_write_access(filp_interpreter);
+        fput(filp_interpreter);
     }
 
-    if (monitor) {
-        allow_write_access(monitor);
-        fput(monitor);
+    if (filp_monitor) {
+        allow_write_access(filp_monitor);
+        fput(filp_monitor);
     }
 
     if (monitor_elf_phdata)
         kfree(monitor_elf_phdata);
+    if (monitor_elf_shdata)
+        kfree(monitor_elf_shdata);
     if (interp_elf_phdata)
         kfree(interp_elf_phdata);
 }

@@ -5,9 +5,7 @@ ENTRY(_start)
 SEARCH_DIR("=/usr/local/lib/x86_64-linux-gnu"); SEARCH_DIR("=/lib/x86_64-linux-gnu"); SEARCH_DIR("=/usr/lib/x86_64-linux-gnu"); SEARCH_DIR("=/usr/lib/x86_64-linux-gnu64"); SEARCH_DIR("=/usr/local/lib64"); SEARCH_DIR("=/lib64"); SEARCH_DIR("=/usr/lib64"); SEARCH_DIR("=/usr/local/lib"); SEARCH_DIR("=/lib"); SEARCH_DIR("=/usr/lib"); SEARCH_DIR("=/usr/x86_64-linux-gnu/lib64"); SEARCH_DIR("=/usr/x86_64-linux-gnu/lib");
 PHDRS
 {
-  headers PT_PHDR PHDRS ;
-  interp PT_INTERP ;
-  text PT_LOAD FILEHDR PHDRS ;
+  text PT_LOAD FILEHDR PHDRS;
   monitor PT_LOAD ;
   data PT_LOAD ;
   dynamic PT_DYNAMIC ;
@@ -15,11 +13,10 @@ PHDRS
 SECTIONS
 {
   /* Read-only sections, merged into text segment: */
-  PROVIDE (__executable_start = SEGMENT_START("text-segment", 0)); 
-  . = SEGMENT_START("text-segment", 0) + SIZEOF_HEADERS;
-  .interp         : { *(.interp) } :interp :text
+  PROVIDE (__executable_start = SEGMENT_START("text-segment", 0)); . = SEGMENT_START("text-segment", 0) + SIZEOF_HEADERS;
+  .interp         : { *(.interp) } :text
   .note.gnu.build-id : { *(.note.gnu.build-id) }
-  .hash           : { *(.hash) } 
+  .hash           : { *(.hash) }
   .dynsym         : { *(.dynsym) }
   .dynstr         : { *(.dynstr) }
   .rela.dyn       :
@@ -70,28 +67,17 @@ SECTIONS
   PROVIDE (__etext = .);
   PROVIDE (_etext = .);
   PROVIDE (etext = .);
+  
   .rodata         : { *(.rodata .rodata.* .gnu.linkonce.r.*) } /* defaults to :text */
-  .eh_frame_hdr : { *(.eh_frame_hdr) *(.eh_frame_entry .eh_frame_entry.*) }
-  .eh_frame       : ONLY_IF_RO { KEEP (*(.eh_frame)) *(.eh_frame.*) }
-  .gcc_except_table   : ONLY_IF_RO { *(.gcc_except_table .gcc_except_table.*) }
-  .gnu_extab   : ONLY_IF_RO { *(.gnu_extab*) }
-  /* Adjust the address for the data segment.  We want to adjust up to
-     the same address within the page on the next page up.  */
-  . = DATA_SEGMENT_ALIGN (CONSTANT (MAXPAGESIZE), CONSTANT (COMMONPAGESIZE));
-  /* Exception handling  */
-  .eh_frame       : ONLY_IF_RW { KEEP (*(.eh_frame)) *(.eh_frame.*) }
-  .gnu_extab      : ONLY_IF_RW { *(.gnu_extab) }
-  .gcc_except_table   : ONLY_IF_RW { *(.gcc_except_table .gcc_except_table.*) }
-  /* Thread Local Storage sections  */
-  .tdata          : { *(.tdata .tdata.* .gnu.linkonce.td.*) }
-  .tbss           : { *(.tbss .tbss.* .gnu.linkonce.tb.*) *(.tcommon) }
+
 
   . = ALIGN(0x1000);
-  .monitor : {
-    KEEP (*(.monitor.infopack))
-  } :monitor
+  .monitor.info .      : { *(.monitor.info) } :monitor
 
   . = ALIGN(0x1000);
+  PROVIDE (__bdata = .);
+  PROVIDE (_bdata = .);
+  PROVIDE (bdata = .);
   .preinit_array     :
   {
     PROVIDE_HIDDEN (__preinit_array_start = .);
@@ -114,21 +100,8 @@ SECTIONS
   }
   .ctors          :
   {
-    /* gcc uses crtbegin.o to find the start of
-       the constructors, so we make sure it is
-       first.  Because this is a wildcard, it
-       doesn't matter if the user does not
-       actually link against crtbegin.o; the
-       linker won't look for a file to match a
-       wildcard.  The wildcard also means that it
-       doesn't matter which directory crtbegin.o
-       is in.  */
     KEEP (*crtbegin.o(.ctors))
     KEEP (*crtbegin?.o(.ctors))
-    /* We don't want to include the .ctor section from
-       the crtend.o file until after the sorted ctors.
-       The .ctor section from the crtend file contains the
-       end of ctors marker and it must be last */
     KEEP (*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .ctors))
     KEEP (*(SORT(.ctors.*)))
     KEEP (*(.ctors))
@@ -142,8 +115,6 @@ SECTIONS
     KEEP (*(.dtors))
   }
 
-  .dynamic        : { *(.dynamic) } :dynamic :data
-  . = DATA_SEGMENT_RELRO_END (SIZEOF (.got.plt) >= 24 ? 24 : 0, .);
   .got            : { *(.got) *(.igot) }
   .got.plt        : { *(.got.plt)  *(.igot.plt) }
   .data           :
@@ -151,23 +122,19 @@ SECTIONS
     *(.data .data.* .gnu.linkonce.d.*)
     SORT(CONSTRUCTORS)
   }
-  _edata = .; PROVIDE (edata = .);
-  . = .;
-  __bss_start = .;
   .bss            :
   {
    *(.dynbss)
    *(.bss .bss.* .gnu.linkonce.b.*)
    *(COMMON)
-   /* Align here to ensure that the .bss section occupies space up to
-      _end.  Align after .bss to ensure correct alignment even if the
-      .bss section disappears because there are no input sections.
-      FIXME: Why do we need it? When there is no .bss section, we don't
-      pad the .data section.  */
    . = ALIGN(. != 0 ? 64 / 8 : 1);
   }
-  
+  .dynamic        : { *(.dynamic) } :dynamic :data
+  PROVIDE (__edata = .);
+  PROVIDE (_edata = .);
+  PROVIDE (edata = .);
+
   . = ALIGN(64 / 8);
-  _end = .; PROVIDE (end = .);
-  . = DATA_SEGMENT_END (.);
+  _end = .;
+  PROVIDE (end = .);
 }

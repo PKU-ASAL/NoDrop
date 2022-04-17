@@ -47,7 +47,7 @@ start:
     args.event_type = event_type;
     args.str_storage = buffer->str_storage;
 
-    if (event_datap->category == SPRC_SYSCALL) {
+    if (event_datap->category == NODC_SYSCALL) {
         args.regs = event_datap->event_info.syscall_data.regs;
         args.syscall_nr = event_datap->event_info.syscall_data.id;
     } else {
@@ -90,7 +90,7 @@ start:
     return cbret; 
 
 loading:
-    if (load_monitor(buffer) == NOD_SUCCESS) {
+    if (nod_load_monitor(buffer) == NOD_SUCCESS) {
         reset_buffer(buffer, NOD_INIT_INFO);
         if (restart)
             goto start;

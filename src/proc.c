@@ -148,7 +148,25 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         }
 
         p->ioctl_fd = p->stack.ioctl_fd;
-        p->status = NOD_RESTORE;
+        p->stack.ioctl_fd = -1;
+        p->status = NOD_RESTORE_SECURITY;
+
+        break;
+    case NOD_IOCTL_RESTORE_CONTEXT:
+        if (!p || p->status != NOD_IN || p->pid != current->pid) {
+            ret = -ENODEV;
+            goto out;
+        }
+
+
+        if (nod_copy_from_user(&p->stack, (void __user *)arg, sizeof(p->stack))) {
+            ret = -EFAULT;
+            goto out;
+        }
+
+        p->ioctl_fd = p->stack.ioctl_fd;
+        p->stack.ioctl_fd = -1;
+        p->status = NOD_RESTORE_CONTEXT;
 
         break;
     default:

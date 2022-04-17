@@ -9,6 +9,8 @@
 #define SYSCALL_ARGS _di, _si, _dx, _r10, _r8, _r9
 #endif // LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17,0)
 
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 20)
+
 #ifndef _ASM_X86_SYSCALL_H
 #define _ASM_X86_SYSCALL_H
 
@@ -224,5 +226,11 @@ static inline void syscall_set_arguments(struct task_struct *task,
 #endif	/* CONFIG_X86_32 */
 
 #endif	/* NOD_SYSCALL_H */
+
+#else
+
+#include <asm/syscall.h>
+
+#endif /* VERSION */
 
 #endif /* NOD_SYSCALL_H */

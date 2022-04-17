@@ -121,65 +121,107 @@ nod_enable_rlim(struct rlimit *rlim)
 }
 
 static void 
-__restore_security(struct nod_proc_context *ctx)
+__restore_security(struct nod_proc_security *sec)
 {
-    nod_write_gsbase(ctx->gsbase);
-    nod_write_fsbase(ctx->fsbase);
+    if (!sec->available)
+        return;
 
     // Downgrade capability
-    nod_cap_capset(&ctx->cap_permitted, &ctx->cap_effective);
+    nod_cap_capset(&sec->cap_permitted, &sec->cap_effective);
 
     // Restore seccomp
-    nod_enable_seccomp(ctx->seccomp_mode);
+    nod_enable_seccomp(sec->seccomp_mode);
 
     // Restore signals
-    sigprocmask(SIG_SETMASK, &ctx->sigset, 0);
+    sigprocmask(SIG_SETMASK, &sec->sigset, 0);
 
     // Restore root path
-    nod_set_fs_root(current->fs, &ctx->root_path);
+    nod_set_fs_root(current->fs, &sec->root_path);
 
     // Restore resource limit
-    nod_enable_rlim(ctx->rlim);
+    nod_enable_rlim(sec->rlim);
+
+    /* Kernel will wake up futex address pointed to `current->clear_child_tid` at do_exit().
+     * This address may be modified by monitor so it should be saved and restored when exit the monitor */
+    current->clear_child_tid = (int __user *)sec->child_tid;
+
+    sec->available = 0;
 }
 
 void
-nod_prepare_security(void)
+nod_prepare_security(struct nod_proc_info *p)
 {
-    struct path real_path;
     sigset_t sigset;
+    struct path real_path;
+    struct nod_proc_security *sec = &p->sec;
 
     // Raise capability
+    sec->cap_effective = current_cred()->cap_effective;
+    sec->cap_permitted = current_cred()->cap_permitted;
     nod_cap_raise();
 
     // Disable seccomp
+    sec->seccomp_mode = nod_get_seccomp();
     nod_disable_seccomp();
 
     // Change root to "/"
+    get_fs_root(current->fs, &sec->root_path);
     get_fs_root(init_task.fs, &real_path);
     nod_set_fs_root(current->fs, &real_path);
 
     // Block all signals except SIGKILL and SIGSTOP
     sigfillset(&sigset);
-    sigdelset(&sigset, SIGKILL);
-    sigdelset(&sigset, SIGSTOP);
-    sigprocmask(SIG_SETMASK, &sigset, 0);
+    sigdelsetmask(&sigset, sigmask(SIGKILL)|sigmask(SIGSTOP));
+    sigprocmask(SIG_SETMASK, &sigset, &sec->sigset);
 
     // Disable resource limit
+    memcpy(sec->rlim, current->signal->rlim, sizeof(sec->rlim));
     nod_disable_rlim();
+
+    /* TODO:
+     *  - robust_list may be saved too */
+    sec->child_tid = (unsigned long)current->clear_child_tid;
+
+    sec->available = 1;
 }
 
 void
-nod_restore_context(struct nod_proc_info *p, struct pt_regs *regs)
+nod_restore_security(struct nod_proc_info *p)
 {
-    ASSERT(p && p->status == NOD_RESTORE);
-
     if (p->ioctl_fd >= 0) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
         ksys_close(p->ioctl_fd);
 #else
         sys_close(p->ioctl_fd);
 #endif
+        p->ioctl_fd = -1;
     }
-    __restore_security(&p->ctx);
-    memcpy(regs, &p->ctx.regs, sizeof(*regs));
+    __restore_security(&p->sec);
+}
+
+void
+nod_restore_context(struct nod_proc_info *p, struct pt_regs *regs)
+{
+    struct nod_proc_context *ctx = &p->ctx;
+
+    if (!ctx->available)
+        return;
+
+    nod_write_fsbase(ctx->fsbase);
+    nod_write_gsbase(ctx->gsbase);
+    memcpy(regs, &ctx->regs, sizeof(*regs));
+
+    ctx->available = 0;
+}
+
+void
+nod_prepare_context(struct nod_proc_info *p, struct pt_regs *regs)
+{
+    struct nod_proc_context *ctx = &p->ctx;
+
+    ctx->fsbase = current->thread.FSBASE;
+    ctx->gsbase = current->thread.GSBASE;
+    memcpy(&ctx->regs, regs, sizeof(*regs));
+
+    ctx->available = 1;
 }

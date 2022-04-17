@@ -19,13 +19,8 @@
 #include <linux/uaccess.h>
 #include <linux/audit.h>
 
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 20)
-#include "syscall.h"
-#else
-#include <asm/syscall.h>
-#endif
-
 #include "nodrop.h"
+#include "syscall.h"
 #include "fillers.h"
 #include "flags.h"
 
@@ -58,14 +53,6 @@
         if (++len > (int)max_arg_size) \
             len = max_arg_size;	\
     } while(0)
-
-static void memory_dump(char *p, size_t size)
-{
-    unsigned int j;
-
-    for (j = 0; j < size; j += 8)
-        pr_info("%*ph\n", 8, &p[j]);
-}
 
 static struct pid_namespace *pid_ns_for_children(struct task_struct *task)
 {
@@ -1514,7 +1501,7 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
-	if (unlikely(retval < 0 && args->event_type != SPRE_SYSCALL_EXECVE)) {
+	if (unlikely(retval < 0 && args->event_type != NODE_SYSCALL_EXECVE)) {
 
 		/* The call failed, but this syscall has no exe, args
 		 * anyway, so I report empty ones */
@@ -1701,9 +1688,9 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
-	if (args->event_type == SPRE_SYSCALL_CLONE ||
-		args->event_type == SPRE_SYSCALL_FORK ||
-		args->event_type == SPRE_SYSCALL_VFORK) {
+	if (args->event_type == NODE_SYSCALL_CLONE ||
+		args->event_type == NODE_SYSCALL_FORK ||
+		args->event_type == NODE_SYSCALL_VFORK) {
 		/*
 		 * clone-only parameters
 		 */
@@ -1725,7 +1712,7 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 		/*
 		 * flags
 		 */
-		if (args->event_type == SPRE_SYSCALL_CLONE) {
+		if (args->event_type == NODE_SYSCALL_CLONE) {
 			syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
 		} else
 			val = 0;
@@ -1776,7 +1763,7 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 		if (unlikely(res != NOD_SUCCESS))
 			return res;
 
-	} else if (args->event_type == SPRE_SYSCALL_EXECVE) {
+	} else if (args->event_type == NODE_SYSCALL_EXECVE) {
 		/*
 		 * execve-only parameters
 		 */
@@ -2850,6 +2837,14 @@ int f_sys_ioctl(struct event_filler_arguments *args)
     int64_t retval;
     
     /*
+     * retval
+     */
+    retval = (int64_t)(long)syscall_get_return_value(current, args->regs);
+    res = val_to_ring(args, retval, 0, false, 0);
+    if (unlikely(res != NOD_SUCCESS))
+        return res;
+
+    /*
      * FD
      */
     syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
@@ -2870,14 +2865,6 @@ int f_sys_ioctl(struct event_filler_arguments *args)
      */
     syscall_get_arguments_deprecated(current, args->regs, 1, 1, &val);
     res = val_to_ring(args, val, 0, false, 0);
-    if (unlikely(res != NOD_SUCCESS))
-        return res;
-
-    /*
-     * retval
-     */
-    retval = (int64_t)(long)syscall_get_return_value(current, args->regs);
-    res = val_to_ring(args, retval, 0, false, 0);
     if (unlikely(res != NOD_SUCCESS))
         return res;
 

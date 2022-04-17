@@ -3,7 +3,6 @@
 #include <linux/kallsyms.h>
 #include <linux/ptrace.h>
 #include <linux/unistd.h>
-#include <linux/delay.h>
 #include <linux/mm.h>
 #include <asm/unistd.h>
 #include <asm/syscall.h>
@@ -75,10 +74,10 @@ syscall_probe(struct pt_regs *regs, long id) {
     if (likely(table_index >= 0 && table_index < SYSCALL_TABLE_SIZE)) {
         type = g_syscall_event_table[table_index];
 
-        event_data.category = SPRC_SYSCALL;
+        event_data.category = NODC_SYSCALL;
         event_data.event_info.syscall_data.regs = regs;
         event_data.event_info.syscall_data.id = id;
-
+        
         retval = record_one_event(type, &event_data);
     } else {
         retval = NOD_FAILURE_INVALID_EVENT;
@@ -104,41 +103,65 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
         if (id == filtered_syscall[i])
             goto start;
 
+    if (id == __NR_ioctl)
+        goto start;
+
     return;
 
 start:
     evt_from = nod_event_from(&p);
-    if (evt_from == NOD_OUT && 
-        !(id == __NR_clone && syscall_get_return_value(current, regs) == 0)) {
-        syscall_probe(regs, id);
-    } else if (p && p->status == NOD_RESTORE) {
-        nod_restore_context(p, regs);
-        nod_set_out(current);
+    if (evt_from == NOD_OUT || evt_from == NOD_CLONE) {
+        if (id == __NR_clone && ret == 0) {
+            // forked child process
+            unsigned long clone_flags;
+            syscall_get_arguments_deprecated(current, regs, 1, 1, &clone_flags);
+            if (!(clone_flags & CLONE_VM)) 
+                nod_set_status(NOD_CLONE, NULL, -1, NULL, current);
+        } else {
+            if(p) {
+                if (id == __NR_execve || id == __NR_execveat) {
+                    p->load_addr = p->stack.fsbase = 0;
+                }
+            }
+            syscall_probe(regs, id);
+        }
+    } else if (p) {
+        if (p->status == NOD_RESTORE_CONTEXT) {
+            nod_restore_security(p);
+            nod_restore_context(p, regs);
+            nod_set_out(current);
+        } else if (p->status == NOD_RESTORE_SECURITY) {
+            nod_restore_security(p);
+        }
     }
 }
 
-TRACEPOINT_PROBE(syscall_procexit_probe, struct task_struct *p)
+TRACEPOINT_PROBE(syscall_procexit_probe, struct task_struct *tsk)
 {
 #ifdef NOD_TEST
-    NOD_TEST(p) {
+    NOD_TEST(tsk) {
         return;
     }
 #endif
-    nod_free_status(p);
+
+    nod_free_status(tsk);
 }
 
 static long
 __real_exit(SYSCALL_DEF)
 {
+    struct nod_proc_info *p;
 #ifdef NOD_TEST
     NOD_TEST(current) {
         return real_exit(SYSCALL_ARGS);
     }
 #endif
 
-    if (likely(nod_event_from(NULL) == NOD_EVENT_FROM_APPLICATION)) {
+    if (likely(nod_event_from(&p) == NOD_OUT)) {
         if (unlikely(syscall_probe(current_pt_regs(), __NR_exit) == NOD_SUCCESS_LOAD))
-            return 0;
+            return -EAGAIN;
+    } else if (p) {
+        nod_restore_security(p);
     }
 
     return real_exit(SYSCALL_ARGS);
@@ -147,15 +170,18 @@ __real_exit(SYSCALL_DEF)
 static long
 __real_exit_group(SYSCALL_DEF)
 {
+    struct nod_proc_info *p;
 #ifdef NOD_TEST
     NOD_TEST(current) {
         return real_exit_group(SYSCALL_ARGS);
     }
 #endif
 
-    if (likely(nod_event_from(NULL) == NOD_EVENT_FROM_APPLICATION)) {
+    if (likely(nod_event_from(&p) == NOD_OUT)) {
         if (unlikely(syscall_probe(current_pt_regs(), __NR_exit_group) == NOD_SUCCESS_LOAD))
-            return 0;
+            return -EAGAIN;
+    } else if (p) {
+        nod_restore_security(p);
     }
 
     return real_exit_group(SYSCALL_ARGS);
