@@ -12,11 +12,11 @@ $(MODULE)-objs := \
 	events.o \
 	privil.o \
 	elf.o \
-	events_table.o \
-	fillers_table.o \
-	flags_table.o \
 	syscall_table.o \
-	dynamic_params_table.o \
+	fillers_table.o \
+	tables/events_table.o \
+	tables/flags_table.o \
+	tables/dynamic_params_table.o \
 
 ccflags-y += -I$(src) -I$(src)/../include
 

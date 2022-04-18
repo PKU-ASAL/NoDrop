@@ -76,6 +76,9 @@ start:
 
             ++info->nevents;
             ++buffer->event_count;
+
+            restart = 0;
+            goto loading;
         } else {
             pr_err("corrupted filler for event type %d (added %u args, should have added %u args)\n",
                     event_type,

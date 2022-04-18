@@ -59,7 +59,6 @@ __initialize(struct nod_stack_info *p)
     syscall(SYS_arch_prctl, ARCH_GET_FS, (unsigned long)&p->fsbase);
     if (unlikely(__info.fsbase == 0)) {
         __info.fsbase = p->fsbase;
-        // mallopt(M_MMAP_THRESHOLD, 0);
         mprotect(&__info, (sizeof(__info) + 4095) / 4096, PROT_READ);
     }
 }

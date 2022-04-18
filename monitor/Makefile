@@ -7,28 +7,40 @@ STRIP := /usr/bin/strip
 
 INCLUDE_PATH += -I. -I../include
 SPECS := -specs ./musl.specs
-CFLAGS_ALL := $(CFLAGS) -std=gnu11 -fPIE -fno-stack-protector $(SPECS) $(INCLUDE_PATH)
+CFLAGS_ALL := $(INCLUDE_PATH) $(CFLAGS) -std=gnu11 -fPIE -fno-stack-protector
 LDFLAGS_ALL := $(LDFLAGS) --static-pie -Wl,-Tscript_x86-64.ld $(SPECS)
 
-PRIM_C_FILES := main.c\
-				events_table.c\
-				flags_table.c\
-				dynamic_params_table.c\
+TABLES_DIR = ../src/tables
+MALLOC_DIR = malloc
+SRC_DIRS = $(addprefix ./, src $(MALLOC_DIR))
+BASE_GLOBS = $(addsuffix /*.c, $(SRC_DIRS))
+TABLES_GLOBS = $(addsuffix /*.c, $(TABLES_DIR))
+BASE_SRCS = $(sort $(wildcard $(BASE_GLOBS)))
+TABLES_SRCS = $(sort $(wildcard $(TABLES_GLOBS)))
+BASE_OBJS = $(patsubst ./%, %.o, $(basename $(BASE_SRCS)))
+TABLES_OBJS = $(patsubst ../src/%, %.o, $(basename $(TABLES_SRCS)))
+ALL_OBJS = $(addprefix obj/, $(sort $(BASE_OBJS) $(TABLES_OBJS)))
 
-C_FILES := $(PRIM_C_FILES) startup.c
-O_FILES := $(patsubst %.c,%.o,$(notdir $(C_FILES))) 
+OBJ_DIRS = $(sort $(patsubst %/,%,$(dir $(ALL_OBJS))))
 
 all: random $(TARGET)
 	@rm _random.h
 
-$(TARGET): $(O_FILES) 
+$(ALL_OBJS) : | $(OBJ_DIRS)
+
+$(OBJ_DIRS):
+	mkdir -p $@
+
+$(TARGET): $(ALL_OBJS) 
 	sudo rmmod -f $(MODULE) 2> /dev/null || true
 	$(LD) $^ -o $@ $(LDFLAGS_ALL)
 	$(STRIP) -R .symtab $@ -o $@
 
-%.o: %.c
+obj/$(MALLOC_DIR)/%.o: ./$(MALLOC_DIR)/%.c
+	$(CC) -c -I$(MALLOC_DIR)/include $(CFLAGS_ALL) $< -o $@
+obj/%.o: ../src/%.c
 	$(CC) -c $(CFLAGS_ALL) $< -o $@
-%.o: ../src/%.c
+obj/%.o: %.c
 	$(CC) -c $(CFLAGS_ALL) $< -o $@
 
 
@@ -37,4 +49,4 @@ random:
 	@/bin/sh -c ./randgen.sh > _$@.h
 clean:
 	sudo rmmod -f $(MODULE) 2> /dev/null || true
-	rm -f $(TARGET) $(O_FILES)
+	rm -rf $(TARGET) $(OBJ_DIRS)
