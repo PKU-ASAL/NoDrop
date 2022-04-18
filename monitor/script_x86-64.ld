@@ -78,12 +78,18 @@ SECTIONS
   PROVIDE (__bdata = .);
   PROVIDE (_bdata = .);
   PROVIDE (bdata = .);
+  .data           :
+  {
+    *(.random)
+    *(.data .data.* .gnu.linkonce.d.*)
+    SORT(CONSTRUCTORS)
+  } :data
   .preinit_array     :
   {
     PROVIDE_HIDDEN (__preinit_array_start = .);
     KEEP (*(.preinit_array))
     PROVIDE_HIDDEN (__preinit_array_end = .);
-  } :data
+  }
   .init_array     :
   {
     PROVIDE_HIDDEN (__init_array_start = .);
@@ -117,11 +123,7 @@ SECTIONS
 
   .got            : { *(.got) *(.igot) }
   .got.plt        : { *(.got.plt)  *(.igot.plt) }
-  .data           :
-  {
-    *(.data .data.* .gnu.linkonce.d.*)
-    SORT(CONSTRUCTORS)
-  }
+
   .bss            :
   {
    *(.dynbss)

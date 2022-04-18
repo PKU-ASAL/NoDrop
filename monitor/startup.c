@@ -8,6 +8,8 @@
 #include "common.h"
 #include "ioctl.h"
 
+#include "_random.h"
+
 #define NOREACH __builtin_unreachable();
 #define ARCH_SET_FS		0x1002
 #define ARCH_GET_FS		0x1003
