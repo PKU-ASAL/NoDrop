@@ -17,17 +17,6 @@ struct {
     struct rw_semaphore sem;
 } proc_info_rt;
 
-
-#define rb_traverse(root, ptr, type, member, cmd) \
-do { \
-    struct rb_node *node = rb_first(root); \
-    while(node) { \
-        ptr = rb_entry(node, type, member); \
-        node = rb_next(node); \
-        cmd; \
-    } \
-} while(0)
-
 static inline struct nod_proc_info *
 __find_proc_info(struct rb_root *rt, struct task_struct *task)
 {
@@ -103,6 +92,7 @@ nod_set_status(enum nod_proc_status status,
     }
 
     p->pid = task->pid;
+    p->mm = task->mm;
     p->stack.memoff = (unsigned long)get_random_int();
     p->stack.memoff &= NOD_MEM_RND_MASK;
 
@@ -180,6 +170,27 @@ nod_event_from(struct nod_proc_info **p)
 
     if (p)  *p = n;    
     return n ? n->status : NOD_OUT;
+}
+
+/* traverse RBTree to find procs with the same address
+ * and check (addr, length) */
+int
+nod_proc_check_mm(struct nod_proc_info *p, unsigned long addr, unsigned long length)
+{
+    unsigned long end = addr + length;
+    struct nod_proc_info *this;
+    struct rb_node *n = rb_first(&proc_info_rt.root);
+    while(n) {
+        this = rb_entry(n, struct nod_proc_info, node);
+        n = rb_next(n);
+        if (this->stack.mem == 0 || this->stack.memsz == 0)
+            continue;
+        if (this->mm == p->mm) {
+            if ((unsigned long)this->stack.mem <= addr && addr < (unsigned long)this->stack.mem + this->stack.memsz)   return 1;
+            if ((unsigned long)this->stack.mem <= end && end < (unsigned long)this->stack.mem + this->stack.memsz)   return 1;
+        }
+    }
+    return 0;
 }
 
 int

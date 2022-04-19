@@ -10,14 +10,11 @@
 #define PATH_FMT "/tmp/nodrop/%u-%ld.buf"
 #define SECOND_IN_US 1000000000
 
-#define VAR(type, name) type name = *(type *) mem; mem += sizeof(type)
-#define VAR_ARRAY(type, num, name)   type (*name)[num] = (type (*)[num]) mem; mem += num * sizeof(type)
+static char path[100];
+static struct timeval tv;
+static unsigned int tid;
 
-void nod_monitor_init(char *mem, int argc, char *argv[], char *env[]) {
-    VAR_ARRAY(char, 100, path);
-    VAR(struct timeval, tv);
-    VAR(unsigned int, tid);
-
+void nod_monitor_init(int argc, char *argv[], char *env[]) {
     gettimeofday(&tv, NULL);
     tid = (unsigned int)syscall(SYS_gettid);
     sprintf((char *)path, PATH_FMT, tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
@@ -120,8 +117,7 @@ static int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer, void *__da
     return 0;
 }
 
-int nod_monitor_main(char *mem, struct nod_buffer *buffer) {
-    VAR_ARRAY(char, 100, path);
+int nod_monitor_main(struct nod_buffer *buffer) {
     FILE *file;
     char *ptr, *buffer_end;
     struct nod_event_hdr *hdr;

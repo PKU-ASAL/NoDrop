@@ -74,6 +74,7 @@ struct nod_proc_info * nod_set_status(enum nod_proc_status status, enum nod_proc
 enum nod_proc_status nod_free_status(struct task_struct *task);
 int nod_copy_procinfo(struct task_struct *task, struct nod_proc_info *p);
 int nod_event_from(struct nod_proc_info **p);
+int nod_proc_check_mm(struct nod_proc_info *p, unsigned long addr, unsigned long length);
 
 // loader.c
 DECLARE_PER_CPU(struct nod_kbuffer, buffer);
@@ -81,6 +82,7 @@ DECLARE_PER_CPU(struct nod_kbuffer, buffer);
 int loader_init(void);
 void loader_destory(void);
 int nod_load_monitor(const struct nod_kbuffer *buffer);
+int nod_mmap_check(unsigned long addr, unsigned long length);
 
 // event.c
 #define NS_TO_SEC(_ns) ((_ns) / 1000000000)

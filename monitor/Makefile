@@ -5,13 +5,9 @@ CC := /usr/bin/gcc-8
 LD := /usr/bin/gcc-8
 STRIP := /usr/bin/strip
 
-INCLUDE_PATH += -I. -I../include
-SPECS := -specs ./musl.specs
-CFLAGS_ALL := $(INCLUDE_PATH) $(CFLAGS) -std=gnu11 -fPIE -fno-stack-protector
-LDFLAGS_ALL := $(LDFLAGS) --static-pie -Wl,-Tscript_x86-64.ld $(SPECS)
 
 TABLES_DIR = ../src/tables
-MALLOC_DIR = malloc
+MALLOC_DIR = mmheap
 SRC_DIRS = $(addprefix ./, src $(MALLOC_DIR))
 BASE_GLOBS = $(addsuffix /*.c, $(SRC_DIRS))
 TABLES_GLOBS = $(addsuffix /*.c, $(TABLES_DIR))
@@ -22,6 +18,11 @@ TABLES_OBJS = $(patsubst ../src/%, %.o, $(basename $(TABLES_SRCS)))
 ALL_OBJS = $(addprefix obj/, $(sort $(BASE_OBJS) $(TABLES_OBJS)))
 
 OBJ_DIRS = $(sort $(patsubst %/,%,$(dir $(ALL_OBJS))))
+
+INCLUDE_PATH += -I. -I../include -I./$(MALLOC_DIR)
+SPECS := -specs ./musl.specs
+CFLAGS_ALL := $(INCLUDE_PATH) $(CFLAGS) -std=gnu11 -fPIE -fno-stack-protector $(SPECS)
+LDFLAGS_ALL := $(LDFLAGS) --static-pie -Wl,-Tscript_x86-64.ld $(SPECS)
 
 all: random $(TARGET)
 	@rm _random.h
@@ -36,8 +37,6 @@ $(TARGET): $(ALL_OBJS)
 	$(LD) $^ -o $@ $(LDFLAGS_ALL)
 	$(STRIP) -R .symtab $@ -o $@
 
-obj/$(MALLOC_DIR)/%.o: ./$(MALLOC_DIR)/%.c
-	$(CC) -c -I$(MALLOC_DIR)/include $(CFLAGS_ALL) $< -o $@
 obj/%.o: ../src/%.c
 	$(CC) -c $(CFLAGS_ALL) $< -o $@
 obj/%.o: %.c

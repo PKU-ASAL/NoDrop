@@ -40,3 +40,4 @@ attacker
 .cache.mk
 .fuse_*
 musl/
+obj/

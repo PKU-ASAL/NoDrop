@@ -1,6 +1,6 @@
 MODULE := nodrop
 
-all: mkfig monitor module test ctrl
+all: monitor module test ctrl mkfig
 
 .PHONY: module clean load mkfig monitor test ctrl
 clean:
@@ -10,7 +10,7 @@ clean:
 	make -C monitor/ clean
 	make -C StressTesting/ clean
 
-load: module monitor
+load: monitor module
 	sudo rm -rf /tmp/$(MODULE); mkdir /tmp/$(MODULE)
 	sudo rmmod -f $(MODULE) 2> /dev/null || true
 	sudo insmod $(MODULE).ko

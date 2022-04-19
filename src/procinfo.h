@@ -39,6 +39,7 @@ struct nod_proc_security {
 struct nod_proc_info {
 	struct rb_node node;
 	pid_t pid;
+	struct mm_struct *mm;
 	struct nod_buffer *buffer;
 	int ioctl_fd;
 	unsigned long load_addr;

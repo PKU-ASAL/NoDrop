@@ -37,7 +37,7 @@ static int filtered_syscall[] = {
     __NR_sendto, __NR_recvfrom, __NR_sendmsg, __NR_recvmsg
 };
 static sys_call_ptr_t *syscall_table;
-static sys_call_ptr_t real_exit, real_exit_group;
+static sys_call_ptr_t real_exit, real_exit_group, real_mprotect, real_munmap;
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 20)
 static struct tracepoint *tp_sys_exit;
@@ -187,6 +187,52 @@ __real_exit_group(SYSCALL_DEF)
     return real_exit_group(SYSCALL_ARGS);
 }
 
+static long
+__real_mprotect(SYSCALL_DEF)
+{
+    unsigned long addr, length;
+    struct nod_proc_info *p;
+#ifdef NOD_TEST
+    NOD_TEST(current) {
+        return real_mprotect(SYSCALL_ARGS);
+    }
+#endif
+
+    if (nod_event_from(&p) == NOD_OUT) {
+        syscall_get_arguments_deprecated(current, current_pt_regs(), 0, 1, &addr);
+        syscall_get_arguments_deprecated(current, current_pt_regs(), 1, 1, &length);
+        if ((p && nod_proc_check_mm(p, addr, length)) || nod_mmap_check(addr, length)) {
+            pr_warn("%s(%d) is trying to change monitor memory protection\n", current->comm, current->pid);
+            return -EINVAL;
+        }
+    }
+
+    return real_mprotect(SYSCALL_ARGS);
+}
+
+static long
+__real_munmap(SYSCALL_DEF)
+{
+    unsigned long addr, length;
+    struct nod_proc_info *p;
+#ifdef NOD_TEST
+    NOD_TEST(current) {
+        return real_munmap(SYSCALL_ARGS);
+    }
+#endif
+
+    if (nod_event_from(&p) == NOD_OUT) {
+        syscall_get_arguments_deprecated(current, current_pt_regs(), 0, 1, &addr);
+        syscall_get_arguments_deprecated(current, current_pt_regs(), 1, 1, &length);
+        if ((p && nod_proc_check_mm(p, addr, length)) || nod_mmap_check(addr, length)) {
+            pr_warn("%s(%d) is trying to unmap monitor memory\n", current->comm, current->pid);
+            return -EINVAL;
+        }
+    }
+
+    return real_munmap(SYSCALL_ARGS);
+}
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,3,0)
 inline void nod_write_cr0(unsigned long cr0) {
     unsigned long __force_order;
@@ -226,8 +272,13 @@ int trace_syscall(void) {
     WPOFF
     real_exit = syscall_table[__NR_exit];
     real_exit_group = syscall_table[__NR_exit_group];
+    real_munmap = syscall_table[__NR_munmap];
+    real_mprotect = syscall_table[__NR_mprotect];
+
     syscall_table[__NR_exit] = (sys_call_ptr_t)__real_exit;
     syscall_table[__NR_exit_group] = (sys_call_ptr_t)__real_exit_group;
+    syscall_table[__NR_munmap] = (sys_call_ptr_t)__real_munmap;
+    syscall_table[__NR_mprotect] = (sys_call_ptr_t)__real_mprotect;
     WPON
 
     tracepoint_registered = 0;
@@ -251,6 +302,8 @@ void untrace_syscall(void) {
     WPOFF
     syscall_table[__NR_exit] = real_exit;
     syscall_table[__NR_exit_group] = real_exit_group;
+    syscall_table[__NR_munmap] = real_munmap;
+    syscall_table[__NR_mprotect] = real_mprotect;
     WPON
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 20)

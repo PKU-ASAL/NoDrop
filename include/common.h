@@ -29,6 +29,7 @@ struct nod_stack_info {
 	long code;
 	unsigned long fsbase;
 	unsigned long memoff;
+	unsigned long memsz;
 	char *mem;
 };
 

@@ -34,18 +34,13 @@ static unsigned long monitor_info_off;
 static int
 get_monitor_addr(struct vm_area_struct const * const vma, void *arg)
 {
-    struct nod_monitor_info i;
-    unsigned long *load_addr = ((unsigned long **)arg)[0];
-    unsigned long *fsbase = ((unsigned long **)arg)[1];
+    unsigned long addr = ((unsigned long *)arg)[0];
+    unsigned long end = addr + ((unsigned long *)arg)[1];
 
-    if (nod_copy_from_user(&i, (const void *)(vma->vm_start + monitor_info_off), sizeof(i))) {
-        i.fsbase = 0;
-    }
+    if (vma->vm_start <= addr && addr < vma->vm_end)    return MAPPING_OK;
+    if (vma->vm_start <= end && end < vma->vm_end)    return MAPPING_OK;
 
-    *load_addr = vma->vm_start;
-    *fsbase = i.fsbase;
-
-    return MAPPING_OK;
+    return MAPPING_NEXT;
 }
 
 static int
@@ -80,6 +75,13 @@ check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg
 out:
     up_read(&mm->mmap_sem);
     return retval;
+}
+
+int
+nod_mmap_check(unsigned long addr, unsigned long length) 
+{
+    unsigned arg[2] = {addr, length};
+    return check_mapping(get_monitor_addr, (void *)arg) == MAPPING_OK;
 }
 
 static int
