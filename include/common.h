@@ -25,16 +25,25 @@
 
 struct nod_stack_info {
 	int ioctl_fd;
-	long nr;
+	int nr;
 	long code;
 	unsigned long fsbase;
 	unsigned long memoff;
 	unsigned long memsz;
 	char *mem;
+	unsigned long hash;
 };
 
 struct nod_monitor_info {
 	unsigned long fsbase;
 };
+
+__attribute__((unused))
+static unsigned long 
+nod_calc_hash(struct nod_stack_info *stack)
+{
+	return stack->fsbase ^ (stack->ioctl_fd + 42) ^ 
+		(unsigned long)stack->mem ^ stack->memoff ^ stack->memsz;
+}
 
 #endif //_COMMON_H_

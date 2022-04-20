@@ -83,25 +83,26 @@ main(int argc, char **argv, char **env)
                     MAP_PRIVATE | MAP_ANON, -1, 0);
         ASSERT_OUT(likely(p->mem != MAP_FAILED), "Cannot allocate memory", p->mem = 0);
         p->memsz = NOD_MONITOR_MEM_SIZE;
-        nod_mmheap_init(p->mem, NOD_MONITOR_MEM_SIZE);
+        nod_mmheap_init(p->mem, p->memsz - p->memoff);
         nod_monitor_init(argc, argv, env);
     } else {
         ASSERT_OUT(likely(mprotect(p->mem, p->memsz, PROT_READ | PROT_WRITE) != -1),
                 "Cannot make memory writable",);
     }
 
-    printf("mem: %lx\n", p->mem);
-
     ASSERT_OUT(likely((p->ioctl_fd = open(NOD_IOCTL_PATH, O_RDONLY)) >= 0),
         "Open " NOD_IOCTL_PATH " failed",);
+
+    p->hash = nod_calc_hash(p);
 
     buffer = (struct nod_buffer *)mmap(NULL, sizeof(struct nod_buffer), 
                                         PROT_READ, MAP_PRIVATE, p->ioctl_fd, 0);
     ASSERT_OUT(likely(buffer != MAP_FAILED), "Cannot allocate buffer", buffer = 0);
 
     nod_monitor_main(buffer);
-out:
     if(likely(buffer))  munmap(buffer, sizeof(struct nod_buffer));
+
+out:
     __restore_context(p);
 
     /* NOT REACHABLE */

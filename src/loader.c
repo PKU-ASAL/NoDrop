@@ -110,6 +110,23 @@ create_elf_tbls(struct elfhdr *exec,
 
     p = original_rsp = regs->sp;
 
+    if (exec) {
+        /*
+        * Generate 16 random bytes for userspace PRNG seeding.
+        */
+        i = sizeof(k_rand_bytes);
+    } else {
+        /*
+         * Put randomly-sized (8~15) bytes for stack randomization
+         */
+        i = (get_random_int() % 8) + 8;
+    }
+
+    get_random_bytes(k_rand_bytes, i);
+    u_rand_bytes = (elf_addr_t __user *)STACK_ALLOC(p, i);
+    if (copy_to_user(u_rand_bytes, k_rand_bytes, i))
+        goto err;
+
     // get the number of arg vector and env vector
     for (argc = 0; argv[argc]; argc++);
 
@@ -124,14 +141,8 @@ create_elf_tbls(struct elfhdr *exec,
         copy_to_user((char __user *)p, argv[i], len);
     }
     arg_start = p;
-    /*
-     * Generate 16 random bytes for userspace PRNG seeding.
-     */
-    get_random_bytes(k_rand_bytes, sizeof(k_rand_bytes));
-    u_rand_bytes = (elf_addr_t __user *)
-               STACK_ALLOC(p, sizeof(k_rand_bytes));
-    if (copy_to_user(u_rand_bytes, k_rand_bytes, sizeof(k_rand_bytes)))
-        goto err;
+
+
 
 #define INSERT_AUX_ENT(id, val) \
     do { \

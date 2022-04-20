@@ -41,3 +41,4 @@ attacker
 .fuse_*
 musl/
 obj/
+_random.h

@@ -62,6 +62,7 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
     struct nod_kbuffer *bufp;
     struct buffer_count_info cinfo;
     struct fetch_buffer_struct fetch;
+    struct nod_stack_info stack;
     struct nod_proc_info *p = filp->private_data;
 
     switch(cmd) {
@@ -136,22 +137,8 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
         pr_info("proc: Start recording");
         break;
+
     case NOD_IOCTL_RESTORE_SECURITY:
-        if (!p || p->status != NOD_IN || p->pid != current->pid) {
-            ret = -ENODEV;
-            goto out;
-        }
-
-        if (nod_copy_from_user(&p->stack, (void __user *)arg, sizeof(p->stack))) {
-            ret = -EFAULT;
-            goto out;
-        }
-
-        p->ioctl_fd = p->stack.ioctl_fd;
-        p->stack.ioctl_fd = -1;
-        p->status = NOD_RESTORE_SECURITY;
-
-        break;
     case NOD_IOCTL_RESTORE_CONTEXT:
         if (!p || p->status != NOD_IN || p->pid != current->pid) {
             ret = -ENODEV;
@@ -159,14 +146,23 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         }
 
 
-        if (nod_copy_from_user(&p->stack, (void __user *)arg, sizeof(p->stack))) {
+        if (nod_copy_from_user(&stack, (void __user *)arg, sizeof(stack))) {
             ret = -EFAULT;
             goto out;
         }
 
+        if (stack.hash != nod_calc_hash(&stack)) {
+            vpr_err("inconsistent stack info hash %lx (dumped)\n", stack.hash);
+            memory_dump((char *)&stack, sizeof(stack));
+            ret = -EINVAL;
+            goto out;
+        }
+
+        memcpy(&p->stack, &stack, sizeof(stack));
+
         p->ioctl_fd = p->stack.ioctl_fd;
         p->stack.ioctl_fd = -1;
-        p->status = NOD_RESTORE_CONTEXT;
+        p->status = cmd == NOD_IOCTL_RESTORE_CONTEXT ? NOD_RESTORE_CONTEXT : NOD_RESTORE_SECURITY;
 
         break;
     default:
