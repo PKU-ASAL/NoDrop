@@ -39,6 +39,7 @@ http-test-files/
 attacker
 .cache.mk
 .fuse_*
-musl/
+*musl*
+!getmusl.sh
 obj/
 _random.h

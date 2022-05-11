@@ -8,13 +8,12 @@
 #include "events.h"
 #include "procinfo.h"
 
-#define vpr_dbg(fmt, ...)
-// #define vpr_dbg(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
-
+#define vpr_log(xxx, fmt, ...) pr_##xxx("(%d)%s[%d][%s:%d]: " fmt, smp_processor_id(), current->comm, current->pid, __func__, __LINE__, ##__VA_ARGS__)
 #define vpr_err(fmt, ...) vpr_log(err, fmt, ##__VA_ARGS__)
 #define vpr_info(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
-
-#define vpr_log(xxx, fmt, ...) pr_##xxx("(%d)%s[%d][%s:%d]: " fmt, smp_processor_id(), current->comm, current->pid, __func__, __LINE__, ##__VA_ARGS__)
+#define vpr_warn(fmt, ...) vpr_log(warn, fmt, ##__VA_ARGS__)
+#define vpr_dbg(fmt, ...)
+// #define vpr_dbg(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
 
 #define NOD_TEST(task) if (!(STR_EQU((task)->comm, "a.out")))
 // #define NOD_TEST(task) if (!(STR_EQU((task)->comm, "nginx") || STR_EQU((task)->comm, "httpd") || STR_EQU((task)->comm, "redis-server") || STR_EQU((task)->comm, "postmark") || STR_EQU((task)->comm, "openssl") || STR_EQU((task)->comm, "7z")))
@@ -42,6 +41,9 @@
 #define FSBASE fs
 #define GSBASE gs
 #endif
+
+#define MIN(a, b)   ((a) < (b) ? (a) : (b))
+#define MAX(a, b)   ((a) < (b) ? (b) : (a))
 
 typedef unsigned long syscall_arg_t;
 

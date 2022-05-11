@@ -37,9 +37,10 @@ get_monitor_addr(struct vm_area_struct const * const vma, void *arg)
     unsigned long addr = ((unsigned long *)arg)[0];
     unsigned long end = addr + ((unsigned long *)arg)[1];
 
-    if (vma->vm_start <= addr && addr < vma->vm_end)    return MAPPING_OK;
-    if (vma->vm_start <= end && end < vma->vm_end)    return MAPPING_OK;
-
+    if (end < vma->vm_start)
+        return MAPPING_FINISH;
+    else if (MAX(vma->vm_start, addr) <= MIN(vma->vm_end, end))    
+        return MAPPING_OK;
     return MAPPING_NEXT;
 }
 
@@ -80,8 +81,8 @@ out:
 int
 nod_mmap_check(unsigned long addr, unsigned long length) 
 {
-    unsigned arg[2] = {addr, length};
-    return check_mapping(get_monitor_addr, (void *)arg) == MAPPING_OK;
+    unsigned long arg[2] = {addr, length};
+    return check_mapping(get_monitor_addr, (void *)arg) == MAPPING_OK ? 1 : 0;
 }
 
 static int

@@ -177,8 +177,8 @@ nod_event_from(struct nod_proc_info **p)
 int
 nod_proc_check_mm(struct nod_proc_info *p, unsigned long addr, unsigned long length)
 {
-    unsigned long end = addr + length;
     struct nod_proc_info *this;
+    unsigned long end = addr + length;
     struct rb_node *n = rb_first(&proc_info_rt.root);
     while(n) {
         this = rb_entry(n, struct nod_proc_info, node);
@@ -186,8 +186,7 @@ nod_proc_check_mm(struct nod_proc_info *p, unsigned long addr, unsigned long len
         if (this->stack.mem == 0 || this->stack.memsz == 0)
             continue;
         if (this->mm == p->mm) {
-            if ((unsigned long)this->stack.mem <= addr && addr < (unsigned long)this->stack.mem + this->stack.memsz)   return 1;
-            if ((unsigned long)this->stack.mem <= end && end < (unsigned long)this->stack.mem + this->stack.memsz)   return 1;
+            return MAX(this->stack.mem, addr) <= MIN(this->stack.mem + this->stack.memsz, end) ? 1 : 0;
         }
     }
     return 0;

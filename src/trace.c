@@ -202,7 +202,7 @@ __real_mprotect(SYSCALL_DEF)
         syscall_get_arguments_deprecated(current, current_pt_regs(), 0, 1, &addr);
         syscall_get_arguments_deprecated(current, current_pt_regs(), 1, 1, &length);
         if ((p && nod_proc_check_mm(p, addr, length)) || nod_mmap_check(addr, length)) {
-            pr_warn("%s(%d) is trying to change monitor memory protection\n", current->comm, current->pid);
+            vpr_warn("is trying to change monitor memory protection %lx len %d\n", addr, length);
             return -EINVAL;
         }
     }
@@ -225,7 +225,7 @@ __real_munmap(SYSCALL_DEF)
         syscall_get_arguments_deprecated(current, current_pt_regs(), 0, 1, &addr);
         syscall_get_arguments_deprecated(current, current_pt_regs(), 1, 1, &length);
         if ((p && nod_proc_check_mm(p, addr, length)) || nod_mmap_check(addr, length)) {
-            pr_warn("%s(%d) is trying to unmap monitor memory\n", current->comm, current->pid);
+            vpr_warn("is trying to unmap monitor memory %lx len %d\n", addr, length);
             return -EINVAL;
         }
     }

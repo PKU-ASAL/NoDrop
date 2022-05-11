@@ -27,15 +27,15 @@ LDFLAGS_ALL := $(LDFLAGS) --static-pie -Wl,-Tscript_x86-64.ld $(SPECS)
 all: random $(TARGET)
 	@rm _random.h
 
-$(ALL_OBJS) : | $(OBJ_DIRS)
-
-$(OBJ_DIRS):
-	mkdir -p $@
-
 $(TARGET): $(ALL_OBJS) 
 	sudo rmmod -f $(MODULE) 2> /dev/null || true
 	$(LD) $^ -o $@ $(LDFLAGS_ALL)
 	$(STRIP) -R .symtab $@ -o $@
+
+$(ALL_OBJS) : | $(OBJ_DIRS)
+
+$(OBJ_DIRS):
+	mkdir -p $@
 
 obj/%.o: ../src/%.c
 	$(CC) -c $(CFLAGS_ALL) $< -o $@
@@ -45,7 +45,7 @@ obj/%.o: %.c
 
 .PHONY: clean all random
 random:
-	@/bin/sh -c ./randgen.sh > _$@.h
+	@/bin/sh -c ../scripts/randgen.sh > _$@.h
 clean:
 	sudo rmmod -f $(MODULE) 2> /dev/null || true
 	rm -rf $(TARGET) $(OBJ_DIRS)
