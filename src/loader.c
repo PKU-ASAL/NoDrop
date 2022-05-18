@@ -16,9 +16,6 @@
 #include "common.h"
 #include "events.h"
 
-DEFINE_PER_CPU(struct nod_kbuffer, buffer);
-EXPORT_PER_CPU_SYMBOL(buffer);
-
 static struct elf_phdr *monitor_elf_phdata, *interp_elf_phdata;
 static struct elf_shdr *monitor_elf_shdata;
 static struct elfhdr   monitor_elf_ex, interp_elf_ex;
@@ -332,7 +329,7 @@ nod_load_monitor(const struct nod_kbuffer *buffer)
 
     regs = current_pt_regs();
 
-    p = nod_set_status(NOD_IN, &pre_status, -1, buffer, current);
+    p = nod_set_status(NOD_IN, &pre_status, -1, current);
     if (!p) {
         retval = -ENOMEM;
         goto out;
@@ -364,6 +361,8 @@ nod_load_monitor(const struct nod_kbuffer *buffer)
 
     nod_prepare_security(p);
     nod_prepare_context(p, regs);
+
+    copy_to_user_buffer(&p->buffer, p->ubuffer);
 
     elf_reg_init(&current->thread, regs, 0);
     regs->sp = sp;

@@ -64,7 +64,7 @@ static void compat_unregister_trace(void *func, const char *probename, struct tr
 }
 
 static int
-syscall_probe(struct pt_regs *regs, long id) {
+syscall_probe(struct nod_proc_info *p, struct pt_regs *regs, long id) {
     int retval;
     long table_index;
     enum nod_event_type type;
@@ -78,7 +78,7 @@ syscall_probe(struct pt_regs *regs, long id) {
         event_data.event_info.syscall_data.regs = regs;
         event_data.event_info.syscall_data.id = id;
         
-        retval = record_one_event(type, &event_data);
+        retval = record_one_event(p, type, &event_data);
     } else {
         retval = NOD_FAILURE_INVALID_EVENT;
     }
@@ -97,6 +97,10 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
     }
 #endif
 
+    /* 
+     * Since some syscalls are not supported yet, those syscalls will be filtered here.
+     * These codes will be removed in the release version.
+     */ 
     id = syscall_get_nr(current, regs);
 
     for (i = 0; i < sizeof(filtered_syscall) / sizeof(filtered_syscall[0]); ++i)
@@ -110,29 +114,52 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
 
 start:
     evt_from = nod_event_from(&p);
-    if (evt_from == NOD_OUT || evt_from == NOD_CLONE) {
+    switch(evt_from) {
+    case NOD_RESTORE_CONTEXT:
+        nod_restore_security(p);
+        nod_restore_context(p, regs);
+        nod_set_out(current);
+
+        break;
+
+    case NOD_RESTORE_SECURITY:
+        nod_restore_security(p);
+
+        break;
+
+    case NOD_OUT:
+    case NOD_CLONE:
         if (id == __NR_clone && ret == 0) {
             // forked child process
             unsigned long clone_flags;
             syscall_get_arguments_deprecated(current, regs, 1, 1, &clone_flags);
-            if (!(clone_flags & CLONE_VM)) 
-                nod_set_status(NOD_CLONE, NULL, -1, NULL, current);
-        } else {
-            if(p) {
-                if (id == __NR_execve || id == __NR_execveat) {
-                    p->load_addr = p->stack.fsbase = 0;
-                }
+            if (!(clone_flags & CLONE_VM))  {
+                /* 
+                 * If the child process has its own address space,
+                 * he should inherit parent's procinfo.
+                 * We mark it here and do it lazily.
+                 */
+                nod_set_status(NOD_CLONE, NULL, -1, current);
             }
-            syscall_probe(regs, id);
+        } else {
+            if (!p) {
+                p = nod_set_status(evt_from, NULL, -1, current);
+            }
+
+            if (id == __NR_execve || id == __NR_execveat) {
+                /*
+                 * In execve(), the address space will be replaced with the new one.
+                 * The original instrumented monitor will no longer exist.
+                 */
+                p->load_addr = p->stack.fsbase = 0;
+            }
+            syscall_probe(p, regs, id);
         }
-    } else if (p) {
-        if (p->status == NOD_RESTORE_CONTEXT) {
-            nod_restore_security(p);
-            nod_restore_context(p, regs);
-            nod_set_out(current);
-        } else if (p->status == NOD_RESTORE_SECURITY) {
-            nod_restore_security(p);
-        }
+
+        break;
+
+    default:
+        break;
     }
 }
 
@@ -150,6 +177,7 @@ TRACEPOINT_PROBE(syscall_procexit_probe, struct task_struct *tsk)
 static long
 __real_exit(SYSCALL_DEF)
 {
+    int status;
     struct nod_proc_info *p;
 #ifdef NOD_TEST
     NOD_TEST(current) {
@@ -157,11 +185,25 @@ __real_exit(SYSCALL_DEF)
     }
 #endif
 
-    if (likely(nod_event_from(&p) == NOD_OUT)) {
-        if (unlikely(syscall_probe(current_pt_regs(), __NR_exit) == NOD_SUCCESS_LOAD))
+    status = nod_event_from(&p);
+    switch(status) {
+    case NOD_OUT:
+    case NOD_CLONE:
+        if (!p) {
+            nod_set_status(status, NULL, -1, current);
+        }
+        if (unlikely(syscall_probe(p, current_pt_regs(), __NR_exit) == NOD_SUCCESS_LOAD))
             return -EAGAIN;
-    } else if (p) {
+        
+        break;
+    
+    case NOD_IN:
         nod_restore_security(p);
+
+        break;
+
+    default:
+        BUG();
     }
 
     return real_exit(SYSCALL_ARGS);
@@ -170,6 +212,7 @@ __real_exit(SYSCALL_DEF)
 static long
 __real_exit_group(SYSCALL_DEF)
 {
+    int status;
     struct nod_proc_info *p;
 #ifdef NOD_TEST
     NOD_TEST(current) {
@@ -177,11 +220,25 @@ __real_exit_group(SYSCALL_DEF)
     }
 #endif
 
-    if (likely(nod_event_from(&p) == NOD_OUT)) {
-        if (unlikely(syscall_probe(current_pt_regs(), __NR_exit_group) == NOD_SUCCESS_LOAD))
+    status = nod_event_from(&p);
+    switch(status) {
+    case NOD_OUT:
+    case NOD_CLONE:
+        if (!p) {
+            nod_set_status(status, NULL, -1, current);
+        }
+        if (unlikely(syscall_probe(p, current_pt_regs(), __NR_exit_group) == NOD_SUCCESS_LOAD))
             return -EAGAIN;
-    } else if (p) {
+        
+        break;
+    
+    case NOD_IN:
         nod_restore_security(p);
+
+        break;
+
+    default:
+        BUG();
     }
 
     return real_exit_group(SYSCALL_ARGS);
@@ -198,11 +255,11 @@ __real_mprotect(SYSCALL_DEF)
     }
 #endif
 
-    if (nod_event_from(&p) == NOD_OUT) {
+    if (likely(nod_event_from(&p) == NOD_OUT)) {
         syscall_get_arguments_deprecated(current, current_pt_regs(), 0, 1, &addr);
         syscall_get_arguments_deprecated(current, current_pt_regs(), 1, 1, &length);
         if ((p && nod_proc_check_mm(p, addr, length)) || nod_mmap_check(addr, length)) {
-            vpr_warn("is trying to change monitor memory protection %lx len %d\n", addr, length);
+            vpr_warn("is trying to change monitor memory protection %lx len %ld\n", addr, length);
             return -EINVAL;
         }
     }
@@ -221,11 +278,11 @@ __real_munmap(SYSCALL_DEF)
     }
 #endif
 
-    if (nod_event_from(&p) == NOD_OUT) {
+    if (likely(nod_event_from(&p) == NOD_OUT)) {
         syscall_get_arguments_deprecated(current, current_pt_regs(), 0, 1, &addr);
         syscall_get_arguments_deprecated(current, current_pt_regs(), 1, 1, &length);
         if ((p && nod_proc_check_mm(p, addr, length)) || nod_mmap_check(addr, length)) {
-            vpr_warn("is trying to unmap monitor memory %lx len %d\n", addr, length);
+            vpr_warn("is trying to unmap monitor memory %lx len %ld\n", addr, length);
             return -EINVAL;
         }
     }

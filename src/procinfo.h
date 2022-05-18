@@ -40,7 +40,8 @@ struct nod_proc_info {
 	struct rb_node node;
 	pid_t pid;
 	struct mm_struct *mm;
-	struct nod_buffer *buffer;
+	struct nod_buffer *ubuffer;
+	struct nod_kbuffer buffer;
 	int ioctl_fd;
 	unsigned long load_addr;
 	enum nod_proc_status status;
@@ -49,8 +50,11 @@ struct nod_proc_info {
 	struct nod_stack_info stack;
 };
 
-#define nod_set_in(task, buffer)    nod_set_status(NOD_IN, NULL, -1, buffer, task)
-#define nod_set_out(task)           nod_set_status(NOD_OUT, NULL, -1, NULL, task)
-#define nod_set_restore(task, fd)   nod_set_status(NOD_RESTORE, NULL, fd, NULL, task)
+#define nod_set_in(task)    nod_set_status(NOD_IN, NULL, -1, task)
+#define nod_set_out(task)           nod_set_status(NOD_OUT, NULL, -1, task)
+#define nod_set_restore(task, fd)   nod_set_status(NOD_RESTORE, NULL, fd, task)
+
+#define NOD_PROC_TRAVERSE_CONTINUE  0
+#define NOD_PROC_TRAVERSE_BREAK 	1
 
 #endif //PROCINFO_H_

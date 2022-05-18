@@ -14,11 +14,6 @@ static int nodrop_init(void)
         goto out_loader;
     }
 
-    if ((err = event_buffer_init())) {
-        pr_err("buffer initialization failed (%d)\n", err);
-        goto out_buffer;
-    }
-
     if ((err = procinfo_init())) {
         pr_err("procinfo initialization failed (%d)\n", err);
         goto out_procinfo;
@@ -44,8 +39,6 @@ out_trace:
     tracepoint_destory();
 out_procinfo:
     procinfo_destroy();
-out_buffer:
-    event_buffer_destory();
 out_loader:
     loader_destory();
     goto out;
@@ -54,7 +47,6 @@ out_loader:
 static void nodrop_exit(void)
 {
     loader_destory();
-    event_buffer_destory();
     procinfo_destroy();
     tracepoint_destory();
     proc_destroy();

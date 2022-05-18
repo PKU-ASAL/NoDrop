@@ -24,27 +24,43 @@ static int nod_dev_open(struct inode *inode, struct file *filp)
     nod_event_from(&p);
     filp->private_data = (void *)p;
     return 0;
+}
 
+static int
+__proc_buf_reset(struct nod_proc_info *this, unsigned long *ret, va_list args)
+{
+    down_read(&this->buffer.sem);
+    reset_buffer(&this->buffer, NOD_INIT_INFO | NOD_INIT_COUNT);
+    up_read(&this->buffer.sem);
+    return NOD_PROC_TRAVERSE_CONTINUE;
+}
+
+static int
+__proc_bufcount_read(struct nod_proc_info *this, unsigned long *ret, va_list args)
+{
+    struct nod_kbuffer *buf = &this->buffer;
+    struct buffer_count_info *info = va_arg(args, struct buffer_count_info *);
+    down_read(&buf->sem);
+    info->event_count += buf->event_count;
+    info->unflushed_count += buf->info->nevents;
+    info->unflushed_len += buf->info->tail; 
+    up_read(&buf->sem);
+    return NOD_PROC_TRAVERSE_CONTINUE;
 }
 
 static ssize_t
 nod_dev_read(struct file *filp, char __user *buf, size_t count, loff_t *off) {
     int len = 0;
-    unsigned int event_id, cpu;
+    struct buffer_count_info buf_info;
     char kbuf[BUFSIZE];
 
     if (*off > 0 || count < BUFSIZE)
         return 0;
 
-    event_id = 0;
-    for_each_present_cpu(cpu) {
-        struct nod_kbuffer *bufp = &per_cpu(buffer, cpu);
-        down_read(&bufp->sem);
-        event_id += bufp->event_count;
-        up_read(&bufp->sem);
-    }
+    memset(&buf_info, 0, sizeof(buf_info));
+    nod_proc_traverse(__proc_bufcount_read, &buf_info);
 
-    len += sprintf(kbuf, "%u", event_id);
+    len += sprintf(kbuf, "%llu", buf_info.event_count);
     if (copy_to_user(buf, kbuf, len))
         return -EFAULT;
     
@@ -52,14 +68,39 @@ nod_dev_read(struct file *filp, char __user *buf, size_t count, loff_t *off) {
     return len;
 }
 
+static int
+__proc_buf_copy(struct nod_proc_info *this, unsigned long *ret, va_list args)
+{
+    struct nod_kbuffer *buf = &this->buffer;
+    char **ptr = va_arg(args, char **);
+    uint64_t *count = va_arg(args, uint64_t *);
+    uint64_t len = va_arg(args, uint64_t);
+
+    down_read(&buf->sem);
+    if (*count + buf->info->tail <= len) {
+        if (copy_to_user((void *)*ptr, (void *)buf->buffer, buf->info->tail)) {
+            up_read(&buf->sem);
+            *ret = -EFAULT;
+            return NOD_PROC_TRAVERSE_BREAK;
+        }
+        *ptr += buf->info->tail;
+        *count += buf->info->tail;
+        up_read(&buf->sem);
+        *ret = 0;
+        return NOD_PROC_TRAVERSE_CONTINUE;
+    } else {
+        up_read(&buf->sem);
+        *ret = 0;
+        return NOD_PROC_TRAVERSE_BREAK;
+    }
+}
+
 static long 
 nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
     int ret;
     uint64_t count;
-    unsigned int cpu;
     char *ptr;
-    struct nod_kbuffer *bufp;
     struct buffer_count_info cinfo;
     struct fetch_buffer_struct fetch;
     struct nod_stack_info stack;
@@ -67,12 +108,7 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
     switch(cmd) {
     case NOD_IOCTL_CLEAR_BUFFER:
-        for_each_present_cpu(cpu) {
-            bufp = &per_cpu(buffer, cpu);
-            down_write(&bufp->sem);
-            reset_buffer(bufp, NOD_INIT_INFO | NOD_INIT_COUNT);
-            up_write(&bufp->sem);
-        }
+        nod_proc_traverse(__proc_buf_reset);
 
         pr_info("proc: clean buffer");
         break;
@@ -82,24 +118,12 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
             ret = -EFAULT;
             goto out;
         }
+
         count = 0;
         ptr = fetch.buf;
-        for_each_present_cpu(cpu) {
-            bufp = &per_cpu(buffer, cpu);
-            down_read(&bufp->sem);
-            if (count + bufp->info->tail <= fetch.len) {
-                if (copy_to_user((void *)ptr, (void *)bufp->buffer, bufp->info->tail)) {
-                    up_read(&bufp->sem);
-                    ret = -EFAULT;
-                    goto out;
-                }
-                ptr += bufp->info->tail;
-                count += bufp->info->tail;
-                up_read(&bufp->sem);
-            } else {
-                up_read(&bufp->sem);
-                break;
-            }
+        ret = nod_proc_traverse(__proc_buf_copy, &ptr, &count, fetch.len);
+        if (ret) {
+            goto out;
         }
 
         fetch.len = count;
@@ -113,14 +137,7 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
     
     case NOD_IOCTL_READ_BUFFER_COUNT_INFO:
         memset(&cinfo, 0, sizeof(cinfo));
-        for_each_present_cpu(cpu) {
-            bufp = &per_cpu(buffer, cpu);
-            down_read(&bufp->sem);
-            cinfo.event_count += bufp->event_count;
-            cinfo.unflushed_count += bufp->info->nevents;
-            cinfo.unflushed_len += bufp->info->tail;
-            up_read(&bufp->sem);
-        }
+        nod_proc_traverse(__proc_bufcount_read, &cinfo);
 
         if (copy_to_user((void *)arg, (void *)&cinfo, sizeof(cinfo))) {
             ret = -EFAULT;
@@ -144,7 +161,6 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
             ret = -ENODEV;
             goto out;
         }
-
 
         if (nod_copy_from_user(&stack, (void __user *)arg, sizeof(stack))) {
             ret = -EFAULT;
@@ -196,7 +212,7 @@ static int nod_dev_mmap(struct file *filp, struct vm_area_struct *vma)
         return -EINVAL;
     }
 
-    ret = remap_vmalloc_range(vma, p->buffer, 0);
+    ret = remap_vmalloc_range(vma, p->ubuffer, 0);
     if (ret < 0) {
         pr_err("remap_vmalloc_range failed (%d)\n", ret);
         return ret;

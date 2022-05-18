@@ -59,10 +59,44 @@ __insert_proc_info(struct rb_root *rt, struct nod_proc_info *p)
 }
 
 struct nod_proc_info *
+nod_alloc_procinfo(void)
+{
+    struct nod_proc_info *p;
+
+    p = kmem_cache_alloc(proc_info_cachep, GFP_KERNEL);
+    if (!p) {
+        goto out;
+    }
+
+    memset(p, 0, sizeof(struct nod_proc_info));
+
+    p->ubuffer = vmalloc_user(sizeof(struct nod_buffer));
+    if (!p->ubuffer) {
+        goto out_free_cache;
+    }
+
+    init_buffer(&p->buffer);
+
+    return p;
+
+out_free_cache:
+    kmem_cache_free(proc_info_cachep, p);
+out:
+    return NULL;
+}
+
+void
+nod_free_procinfo(struct nod_proc_info *p)
+{
+    free_buffer(&p->buffer);
+    vfree(p->ubuffer);
+    kmem_cache_free(proc_info_cachep, p);
+}
+
+struct nod_proc_info *
 nod_set_status(enum nod_proc_status status, 
             enum nod_proc_status *pre,
             int ioctl_fd, 
-            const struct nod_kbuffer *buffer,
             struct task_struct *task)
 {
     struct nod_proc_info *p;
@@ -74,20 +108,9 @@ nod_set_status(enum nod_proc_status status,
         goto success;
     }
 
-    p = kmem_cache_alloc(proc_info_cachep, GFP_KERNEL);
+    p = nod_alloc_procinfo();
     if (!p) {
-        if (pre)    *pre = NOD_UNKNOWN;
-        goto out;
-    }
-    memset(p, 0, sizeof(struct nod_proc_info));
-
-    /* TODO: lazy allocation
-     *  - Only allocate buffer when it is needed */
-    p->buffer = vmalloc_user(sizeof(struct nod_buffer));
-    if (!p->buffer) {
-        kmem_cache_free(proc_info_cachep, p);
-        p = NULL;
-        if (pre)    *pre = NOD_UNKNOWN;
+        if (pre) *pre = NOD_UNKNOWN;
         goto out;
     }
 
@@ -101,13 +124,9 @@ nod_set_status(enum nod_proc_status status,
     up_write(&proc_info_rt.sem);
 
 success:
-    p->ioctl_fd = ioctl_fd;
     if (pre)    *pre = p->status;
+    p->ioctl_fd = ioctl_fd;
     p->status = status;
-    if (buffer && p->buffer) {
-        copy_to_user_buffer(buffer, p->buffer);
-    }
-
 out:
     return p;
 }
@@ -131,10 +150,7 @@ nod_free_status(struct task_struct *task)
     up_write(&proc_info_rt.sem);
 
     retval = p->status;
-    p->ctx.available = p->sec.available = 0;
-
-    if(p->buffer) vfree(p->buffer);
-    kmem_cache_free(proc_info_cachep, p);
+    nod_free_procinfo(p);
 
     return retval;
 }
@@ -172,24 +188,55 @@ nod_event_from(struct nod_proc_info **p)
     return n ? n->status : NOD_OUT;
 }
 
+static int
+__proc_check_mm(struct nod_proc_info *this, unsigned long *ret, va_list args)
+{
+    struct nod_proc_info *p = va_arg(args, struct nod_proc_info *);
+    unsigned long addr = va_arg(args, unsigned long);
+    unsigned long end = va_arg(args, unsigned long);
+
+    if (this->stack.mem && this->stack.memsz && this->mm == p->mm) {
+        *ret = MAX((unsigned long)this->stack.mem, addr) <= 
+            MIN((unsigned long)this->stack.mem + this->stack.memsz, end) ? 1L : 0L;
+        return NOD_PROC_TRAVERSE_BREAK;
+    }
+
+    *ret = 0;
+    return NOD_PROC_TRAVERSE_CONTINUE;
+}
+
 /* traverse RBTree to find procs with the same address
  * and check (addr, length) */
 int
 nod_proc_check_mm(struct nod_proc_info *p, unsigned long addr, unsigned long length)
 {
-    struct nod_proc_info *this;
     unsigned long end = addr + length;
+    return (int)nod_proc_traverse(__proc_check_mm, p, addr, end);
+}
+
+unsigned long
+nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned long *, va_list), ...)
+{
+    unsigned long ret;
+    va_list args;
+    struct nod_proc_info *this;
     struct rb_node *n = rb_first(&proc_info_rt.root);
-    while(n) {
+
+    va_start(args, func);
+    while (n) {
         this = rb_entry(n, struct nod_proc_info, node);
         n = rb_next(n);
-        if (this->stack.mem == 0 || this->stack.memsz == 0)
-            continue;
-        if (this->mm == p->mm) {
-            return MAX(this->stack.mem, addr) <= MIN(this->stack.mem + this->stack.memsz, end) ? 1 : 0;
+        switch(func(this, &ret, args)) {
+        case NOD_PROC_TRAVERSE_BREAK:
+            goto out;
+            break;
+        default:
+            break;
         }
     }
-    return 0;
+out:
+    va_end(args);
+    return ret;
 }
 
 int

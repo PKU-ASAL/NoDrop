@@ -71,29 +71,27 @@ void tracepoint_destory(void);
 // procinfo.c
 int procinfo_init(void);
 void procinfo_destroy(void);
-struct nod_proc_info * nod_set_status(enum nod_proc_status status, enum nod_proc_status *pre, 
-							int ioctl_fd, const struct nod_kbuffer *buffer, struct task_struct *task);
+struct nod_proc_info * 
+nod_set_status(enum nod_proc_status status, enum nod_proc_status *pre, 
+				int ioctl_fd, struct task_struct *task);
 enum nod_proc_status nod_free_status(struct task_struct *task);
 int nod_copy_procinfo(struct task_struct *task, struct nod_proc_info *p);
 int nod_event_from(struct nod_proc_info **p);
 int nod_proc_check_mm(struct nod_proc_info *p, unsigned long addr, unsigned long length);
+unsigned long nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned long *, va_list), ...);
 
 // loader.c
-DECLARE_PER_CPU(struct nod_kbuffer, buffer);
-
 int loader_init(void);
 void loader_destory(void);
 int nod_load_monitor(const struct nod_kbuffer *buffer);
 int nod_mmap_check(unsigned long addr, unsigned long length);
 
 // event.c
-#define NS_TO_SEC(_ns) ((_ns) / 1000000000)
 #define SECOND_IN_NS 1000000000 // 1s = 1e9ns
+#define NS_TO_SEC(_ns) ((_ns) / SECOND_IN_NS)
 
 nanoseconds nod_nsecs(void);
-int event_buffer_init(void);
-void event_buffer_destory(void);
-int record_one_event(enum nod_event_type type, struct nod_event_data *event_datap);
+int record_one_event(struct nod_proc_info *p, enum nod_event_type type, struct nod_event_data *event_datap);
 int init_buffer(struct nod_kbuffer *buffer);
 void free_buffer(struct nod_kbuffer *buffer);
 void reset_buffer(struct nod_kbuffer *buffer, int flags);
@@ -203,7 +201,7 @@ static void __attribute__((unused))
 memory_dump(char *p, size_t size)
 {
     unsigned int j;
-
+	pr_info("memory dump at 0x%lx (%ld)\n", (unsigned long)p, size);
     for (j = 0; j < size; j += 8)
         pr_info("%*ph\n", 8, &p[j]);
 }

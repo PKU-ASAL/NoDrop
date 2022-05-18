@@ -111,7 +111,9 @@ inline nanoseconds nod_nsecs(void) {
 #endif
 }
 
-int init_buffer(struct nod_kbuffer *buffer) {
+int
+init_buffer(struct nod_kbuffer *buffer)
+{
     int ret;
     unsigned int j;
 
@@ -148,7 +150,6 @@ int init_buffer(struct nod_kbuffer *buffer) {
 
     reset_buffer(buffer, NOD_INIT_INFO | NOD_INIT_COUNT | NOD_INIT_LOCK);
 
-    pr_info("CPU buffer initialized, size = %d\n", BUFFER_SIZE);
     return 0;
 
 init_buffer_err:
@@ -156,7 +157,9 @@ init_buffer_err:
     return ret;
 }
 
-void free_buffer(struct nod_kbuffer *buffer) {
+void
+free_buffer(struct nod_kbuffer *buffer)
+{
     if (buffer->info) {
         vfree(buffer->info);
         buffer->info = NULL;
@@ -173,7 +176,9 @@ void free_buffer(struct nod_kbuffer *buffer) {
     }
 }
 
-void reset_buffer(struct nod_kbuffer *buffer, int flags) {
+void
+reset_buffer(struct nod_kbuffer *buffer, int flags) 
+{
     if (flags & NOD_INIT_INFO) {
         buffer->info->nevents = 0;
         buffer->info->tail = 0;
@@ -186,33 +191,14 @@ void reset_buffer(struct nod_kbuffer *buffer, int flags) {
         init_rwsem(&buffer->sem);
 }
 
-int event_buffer_init(void) {
-    int cpu;
-    int ret;
-    for_each_present_cpu(cpu) {
-        struct nod_kbuffer *bufp = &per_cpu(buffer, cpu);
-        ret = init_buffer(bufp);
-        if (ret != 0)
-            return ret;
-    }
-    return 0;
-}
-
-void event_buffer_destory(void) {
-    int cpu;
-    for_each_present_cpu(cpu) {
-        struct nod_kbuffer *bufp = &per_cpu(buffer, cpu);
-        free_buffer(bufp);
-    }
-}
-
-int record_one_event(enum nod_event_type type, struct nod_event_data *event_datap) {
-    int cpu, retval;
+int 
+record_one_event(struct nod_proc_info *p, enum nod_event_type type, struct nod_event_data *event_datap) 
+{
+    int retval;
     struct nod_kbuffer *bufp;
     nanoseconds ts = nod_nsecs();
 
-    cpu = get_cpu();
-    bufp = &per_cpu(buffer, cpu);
+    bufp = &p->buffer;
     down_write(&bufp->sem);
 
     retval = do_record_one_event(bufp, type, ts, event_datap);
@@ -223,6 +209,5 @@ int record_one_event(enum nod_event_type type, struct nod_event_data *event_data
     }
 
     up_write(&bufp->sem);
-    put_cpu();
     return retval;
 }
