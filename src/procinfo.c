@@ -194,8 +194,10 @@ __proc_check_mm(struct nod_proc_info *this, unsigned long *ret, va_list args)
     struct nod_proc_info *p = va_arg(args, struct nod_proc_info *);
     unsigned long addr = va_arg(args, unsigned long);
     unsigned long end = va_arg(args, unsigned long);
-
-    if (this->stack.mem && this->stack.memsz && this->mm == p->mm) {
+    if (this != p && 
+        this->stack.mem && 
+        this->stack.memsz && 
+        this->mm == p->mm) {
         *ret = MAX((unsigned long)this->stack.mem, addr) <= 
             MIN((unsigned long)this->stack.mem + this->stack.memsz, end) ? 1L : 0L;
         return NOD_PROC_TRAVERSE_BREAK;
@@ -206,7 +208,7 @@ __proc_check_mm(struct nod_proc_info *this, unsigned long *ret, va_list args)
 }
 
 /* traverse RBTree to find procs with the same address
- * and check (addr, length) */
+ * and check (addr, addr+length) */
 int
 nod_proc_check_mm(struct nod_proc_info *p, unsigned long addr, unsigned long length)
 {
@@ -217,25 +219,27 @@ nod_proc_check_mm(struct nod_proc_info *p, unsigned long addr, unsigned long len
 unsigned long
 nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned long *, va_list), ...)
 {
+    int fb;
     unsigned long ret;
     va_list args;
     struct nod_proc_info *this;
     struct rb_node *n = rb_first(&proc_info_rt.root);
 
-    va_start(args, func);
     while (n) {
         this = rb_entry(n, struct nod_proc_info, node);
-        n = rb_next(n);
-        switch(func(this, &ret, args)) {
+        va_start(args, func);
+        fb = func(this, &ret, args);
+        va_end(args);
+        switch(fb) {
         case NOD_PROC_TRAVERSE_BREAK:
             goto out;
             break;
         default:
             break;
         }
+        n = rb_next(n);
     }
 out:
-    va_end(args);
     return ret;
 }
 
