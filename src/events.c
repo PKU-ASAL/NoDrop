@@ -10,7 +10,7 @@
 #include "common.h"
 
 static int 
-do_record_one_event(struct nod_kbuffer *buffer,
+do_record_one_event(struct nod_proc_info *p,
         enum nod_event_type event_type,
         nanoseconds ts,
         struct nod_event_data *event_datap)
@@ -21,8 +21,13 @@ do_record_one_event(struct nod_kbuffer *buffer,
     struct event_filler_arguments args;
     struct nod_buffer_info *info;
     struct nod_event_hdr *hdr;
+    struct nod_kbuffer *buffer;
 
+    buffer = &p->buffer;
     info = buffer->info;
+
+    down_write(&buffer->sem);
+
 start:
     freespace = BUFFER_SIZE - info->tail;
 
@@ -64,7 +69,8 @@ start:
         cbret = g_nod_events[event_type].filler_callback(&args);
     } else {
         pr_err("corrupted filler for event type %d: NULL callback\n", event_type);
-        ASSERT(0);
+        cbret = NOD_FAILURE_BUG;
+        goto out;
     }
 
     if (cbret == NOD_SUCCESS) {
@@ -87,17 +93,23 @@ start:
         goto loading;
     }
 
+out:
+    up_write(&buffer->sem);
     return cbret; 
 
 loading:
-    if (nod_load_monitor(buffer) == NOD_SUCCESS) {
+    if (nod_load_monitor(p) == NOD_SUCCESS) {
         reset_buffer(buffer, NOD_INIT_INFO);
         if (restart)
             goto start;
-        return NOD_SUCCESS_LOAD;
-    } else {
-        return NOD_FAILURE_BUG;
+        else {
+            cbret = NOD_SUCCESS_LOAD;
+            goto out;
+        }
     }
+
+    cbret = NOD_FAILURE_BUG;
+    goto out;
 }
 
 inline nanoseconds nod_nsecs(void) {
@@ -195,19 +207,14 @@ int
 record_one_event(struct nod_proc_info *p, enum nod_event_type type, struct nod_event_data *event_datap) 
 {
     int retval;
-    struct nod_kbuffer *bufp;
     nanoseconds ts = nod_nsecs();
 
-    bufp = &p->buffer;
-    down_write(&bufp->sem);
-
-    retval = do_record_one_event(bufp, type, ts, event_datap);
+    retval = do_record_one_event(p, type, ts, event_datap);
     if (retval < 0) {
         pr_warn("record_one_event: one event log dropped, reason=%d\nnevents=%lld tail=0x%x\n",
                 retval,
-                bufp->info->nevents, bufp->info->tail);
+                p->buffer.info->nevents, p->buffer.info->tail);
     }
 
-    up_write(&bufp->sem);
     return retval;
 }

@@ -72,9 +72,9 @@ void tracepoint_destory(void);
 int procinfo_init(void);
 void procinfo_destroy(void);
 struct nod_proc_info * 
-nod_set_status(enum nod_proc_status status, enum nod_proc_status *pre, 
+nod_proc_acquire(enum nod_proc_status status, enum nod_proc_status *pre, 
 				int ioctl_fd, struct task_struct *task);
-enum nod_proc_status nod_free_status(struct task_struct *task);
+enum nod_proc_status nod_proc_release(struct task_struct *task);
 int nod_copy_procinfo(struct task_struct *task, struct nod_proc_info *p);
 int nod_event_from(struct nod_proc_info **p);
 int nod_proc_check_mm(struct nod_proc_info *p, unsigned long addr, unsigned long length);
@@ -83,7 +83,7 @@ unsigned long nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned lon
 // loader.c
 int loader_init(void);
 void loader_destory(void);
-int nod_load_monitor(const struct nod_kbuffer *buffer);
+int nod_load_monitor(struct nod_proc_info *p);
 int nod_mmap_check(unsigned long addr, unsigned long length);
 
 // event.c

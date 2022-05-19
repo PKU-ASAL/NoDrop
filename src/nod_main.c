@@ -46,10 +46,10 @@ out_loader:
 
 static void nodrop_exit(void)
 {
-    loader_destory();
-    procinfo_destroy();
-    tracepoint_destory();
     proc_destroy();
+    tracepoint_destory();
+    procinfo_destroy();
+    loader_destory();
     pr_info("NoDrop: Uninstalled\n");
 }
 

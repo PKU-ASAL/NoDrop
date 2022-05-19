@@ -118,7 +118,7 @@ start:
     case NOD_RESTORE_CONTEXT:
         nod_restore_security(p);
         nod_restore_context(p, regs);
-        nod_set_out(current);
+        nod_proc_set_out(p);
 
         break;
 
@@ -139,11 +139,13 @@ start:
                  * he should inherit parent's procinfo.
                  * We mark it here and do it lazily.
                  */
-                nod_set_status(NOD_CLONE, NULL, -1, current);
+                if (!nod_proc_acquire(NOD_CLONE, NULL, -1, current))
+                    vpr_err("acquire NOD_CLONE for childed process failed\n");
             }
         } else {
             if (!p) {
-                p = nod_set_status(evt_from, NULL, -1, current);
+                p = nod_proc_acquire(evt_from, NULL, -1, current);
+                if (!p) break;
             }
 
             if (id == __NR_execve || id == __NR_execveat) {
@@ -171,7 +173,7 @@ TRACEPOINT_PROBE(syscall_procexit_probe, struct task_struct *tsk)
     }
 #endif
 
-    nod_free_status(tsk);
+    nod_proc_release(tsk);
 }
 
 static long
@@ -190,7 +192,8 @@ __real_exit(SYSCALL_DEF)
     case NOD_OUT:
     case NOD_CLONE:
         if (!p) {
-            nod_set_status(status, NULL, -1, current);
+            p = nod_proc_acquire(status, NULL, -1, current);
+            if (!p) break;
         }
         if (unlikely(syscall_probe(p, current_pt_regs(), __NR_exit) == NOD_SUCCESS_LOAD))
             return -EAGAIN;
@@ -225,7 +228,8 @@ __real_exit_group(SYSCALL_DEF)
     case NOD_OUT:
     case NOD_CLONE:
         if (!p) {
-            nod_set_status(status, NULL, -1, current);
+            p = nod_proc_acquire(status, NULL, -1, current);
+            if (!p) break;
         }
         if (unlikely(syscall_probe(p, current_pt_regs(), __NR_exit_group) == NOD_SUCCESS_LOAD))
             return -EAGAIN;

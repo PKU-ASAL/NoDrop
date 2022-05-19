@@ -315,27 +315,19 @@ out:
 }
 
 int
-nod_load_monitor(const struct nod_kbuffer *buffer)
+nod_load_monitor(struct nod_proc_info *p)
 {
     int retval;
     uint64_t entry, sp;
     struct pt_regs *regs;
-    struct nod_proc_info *p;
     struct elf64_hdr *cur_elf_ex;
-    enum nod_proc_status pre_status;
     uint64_t load_addr = 0, interp_load_addr = 0;
 
     char *argv[] = { MONITOR_PATH, NULL };
 
     regs = current_pt_regs();
 
-    p = nod_set_status(NOD_IN, &pre_status, -1, current);
-    if (!p) {
-        retval = -ENOMEM;
-        goto out;
-    }
-
-    if (pre_status == NOD_CLONE) {
+    if (p->status == NOD_CLONE) {
         nod_copy_procinfo(current, p);
     }
 
@@ -359,6 +351,8 @@ nod_load_monitor(const struct nod_kbuffer *buffer)
         goto out;
     }
 
+    nod_proc_set_in(p);
+
     nod_prepare_security(p);
     nod_prepare_context(p, regs);
 
@@ -372,7 +366,6 @@ nod_load_monitor(const struct nod_kbuffer *buffer)
 
 out:
     vpr_err("cannot transfer logging buffer\n");
-    nod_set_out(current);
     return retval;
 }
 

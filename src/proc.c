@@ -176,9 +176,12 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
         memcpy(&p->stack, &stack, sizeof(stack));
 
-        p->ioctl_fd = p->stack.ioctl_fd;
+        if(cmd == NOD_IOCTL_RESTORE_CONTEXT) 
+            nod_proc_set_context(p, p->stack.ioctl_fd);
+        else
+            nod_proc_set_security(p, p->stack.ioctl_fd);
+            
         p->stack.ioctl_fd = -1;
-        p->status = cmd == NOD_IOCTL_RESTORE_CONTEXT ? NOD_RESTORE_CONTEXT : NOD_RESTORE_SECURITY;
 
         break;
     default:
@@ -203,18 +206,18 @@ static int nod_dev_mmap(struct file *filp, struct vm_area_struct *vma)
     }
 
     if (vma->vm_pgoff != 0) {
-        pr_err("invalid pgoff %lu, must be 0\n", vma->vm_pgoff);
+        vpr_err("invalid pgoff %lu, must be 0\n", vma->vm_pgoff);
         return -EINVAL;
     }
 
     if (vma->vm_flags & VM_WRITE) {
-        pr_err("invalid mmap flags 0x%lx\n", vma->vm_flags);
+        vpr_err("invalid mmap flags 0x%lx\n", vma->vm_flags);
         return -EINVAL;
     }
 
     ret = remap_vmalloc_range(vma, p->ubuffer, 0);
     if (ret < 0) {
-        pr_err("remap_vmalloc_range failed (%d)\n", ret);
+        vpr_err("remap_vmalloc_range failed (%d)\nvm_start %lx vm_end %lx ubuffer %lx flags %lx\n", ret, vma->vm_start, vma->vm_end, p->ubuffer, vma->vm_flags);
         return ret;
     }
 

@@ -5,6 +5,8 @@
 #include <linux/vmalloc.h>
 #include <linux/signal.h>
 #include <linux/random.h>
+#include <linux/delay.h>
+
 
 #include "nodrop.h"
 #include "procinfo.h"
@@ -14,6 +16,7 @@ static struct kmem_cache *proc_info_cachep = NULL;
 
 struct {
     struct rb_root root;
+    struct list_head list;
     struct rw_semaphore sem;
 } proc_info_rt;
 
@@ -37,10 +40,13 @@ __find_proc_info(struct rb_root *rt, struct task_struct *task)
 }
 
 static inline int
-__insert_proc_info(struct rb_root *rt, struct nod_proc_info *p)
+__insert_proc_info(struct nod_proc_info *p)
 {
     struct nod_proc_info *n;
-    struct rb_node **new = &rt->rb_node, *parent = NULL;
+    struct rb_node **new, *parent = NULL;
+    down_write(&proc_info_rt.sem);
+
+    new = &proc_info_rt.root.rb_node;
     while (*new) {
         parent = *new;
         n = rb_entry(parent, struct nod_proc_info, node);
@@ -48,14 +54,32 @@ __insert_proc_info(struct rb_root *rt, struct nod_proc_info *p)
             new = &(*new)->rb_left;
         else if (p->pid > n->pid)
             new = &(*new)->rb_right;
-        else
+        else {
+            up_write(&proc_info_rt.sem);
             return false;
+        }
     }
 
+    list_add(&p->list, &proc_info_rt.list);
+
     rb_link_node(&p->node, parent, new);
-    rb_insert_color(&p->node, rt);
+    rb_insert_color(&p->node, &proc_info_rt.root);
     smp_mb();
+
+    up_write(&proc_info_rt.sem);
     return true;
+}
+
+static void
+__remove_proc_info(struct nod_proc_info *p)
+{
+    down_write(&proc_info_rt.sem);
+
+    list_del(&p->list);
+    rb_erase(&p->node, &proc_info_rt.root);
+    smp_mb();
+
+    up_write(&proc_info_rt.sem);
 }
 
 struct nod_proc_info *
@@ -65,6 +89,7 @@ nod_alloc_procinfo(void)
 
     p = kmem_cache_alloc(proc_info_cachep, GFP_KERNEL);
     if (!p) {
+        vpr_err("allocate nod_proc_info failed\n");
         goto out;
     }
 
@@ -72,13 +97,19 @@ nod_alloc_procinfo(void)
 
     p->ubuffer = vmalloc_user(sizeof(struct nod_buffer));
     if (!p->ubuffer) {
+        vpr_err("allocate user buffer for nod_proc_info failed\n");
         goto out_free_cache;
     }
 
-    init_buffer(&p->buffer);
+    if(init_buffer(&p->buffer)) {
+        vpr_err("allocate kernel buffer for nod_proc_info failed\n");
+        goto out_free_buffer;
+    }
 
     return p;
 
+out_free_buffer:
+    vfree(p->ubuffer);
 out_free_cache:
     kmem_cache_free(proc_info_cachep, p);
 out:
@@ -94,7 +125,7 @@ nod_free_procinfo(struct nod_proc_info *p)
 }
 
 struct nod_proc_info *
-nod_set_status(enum nod_proc_status status, 
+nod_proc_acquire(enum nod_proc_status status, 
             enum nod_proc_status *pre,
             int ioctl_fd, 
             struct task_struct *task)
@@ -119,20 +150,17 @@ nod_set_status(enum nod_proc_status status,
     p->stack.memoff = (unsigned long)get_random_int();
     p->stack.memoff &= NOD_MEM_RND_MASK;
 
-    down_write(&proc_info_rt.sem);
-    ASSERT(__insert_proc_info(&proc_info_rt.root, p) == true);
-    up_write(&proc_info_rt.sem);
+    ASSERT(__insert_proc_info(p) == true);
 
 success:
     if (pre)    *pre = p->status;
-    p->ioctl_fd = ioctl_fd;
-    p->status = status;
+    nod_proc_set_status(p, status, ioctl_fd);
 out:
     return p;
 }
 
 enum nod_proc_status
-nod_free_status(struct task_struct *task)
+nod_proc_release(struct task_struct *task)
 {
     int retval;
     struct nod_proc_info *p;
@@ -144,12 +172,9 @@ nod_free_status(struct task_struct *task)
         return NOD_UNKNOWN;
     }
 
-    down_write(&proc_info_rt.sem);
-    rb_erase(&p->node, &proc_info_rt.root);
-    smp_mb();
-    up_write(&proc_info_rt.sem);
-
     retval = p->status;
+
+    __remove_proc_info(p);
     nod_free_procinfo(p);
 
     return retval;
@@ -222,13 +247,12 @@ nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned long *, va_list),
     int fb;
     unsigned long ret;
     va_list args;
-    struct nod_proc_info *this;
-    struct rb_node *n = rb_first(&proc_info_rt.root);
+    struct rb_node *n;
 
-    while (n) {
-        this = rb_entry(n, struct nod_proc_info, node);
+    down_write(&proc_info_rt.sem);
+    for (n = rb_first(&proc_info_rt.root); n; n = rb_next(n)) {
         va_start(args, func);
-        fb = func(this, &ret, args);
+        fb = func(rb_entry(n, struct nod_proc_info, node), &ret, args);
         va_end(args);
         switch(fb) {
         case NOD_PROC_TRAVERSE_BREAK:
@@ -237,9 +261,9 @@ nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned long *, va_list),
         default:
             break;
         }
-        n = rb_next(n);
     }
 out:
+    up_write(&proc_info_rt.sem);
     return ret;
 }
 
@@ -254,6 +278,7 @@ procinfo_init(void)
         goto out;
     }
 
+    INIT_LIST_HEAD(&proc_info_rt.list);
     proc_info_rt.root = RB_ROOT;
     init_rwsem(&proc_info_rt.sem);
 
@@ -265,7 +290,21 @@ out:
 void
 procinfo_destroy(void)
 {
+    struct list_head *pos, *npos;
+    struct nod_proc_info *this;
     if(proc_info_cachep) {
+        down_write(&proc_info_rt.sem);
+        list_for_each_safe(pos, npos, &proc_info_rt.list) {
+            this = list_entry(pos, struct nod_proc_info, list);
+            while(this->status == NOD_IN || 
+                this->status == NOD_RESTORE_CONTEXT || 
+                this->status == NOD_RESTORE_SECURITY) {
+                vpr_info("wait for exiting monitor (pid %d status %d)\n", this->pid, this->status);
+                msleep(5);
+            }
+            nod_free_procinfo(this);
+        }
+        up_write(&proc_info_rt.sem);
         kmem_cache_destroy(proc_info_cachep);
     }
 }

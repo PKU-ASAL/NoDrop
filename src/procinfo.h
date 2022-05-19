@@ -4,6 +4,7 @@
 #include <linux/ptrace.h>
 #include <linux/limits.h>
 #include <linux/signal.h>
+#include <linux/list.h>
 
 #include "events.h"
 #include "common.h"
@@ -38,6 +39,7 @@ struct nod_proc_security {
 
 struct nod_proc_info {
 	struct rb_node node;
+	struct list_head list;
 	pid_t pid;
 	struct mm_struct *mm;
 	struct nod_buffer *ubuffer;
@@ -50,9 +52,12 @@ struct nod_proc_info {
 	struct nod_stack_info stack;
 };
 
-#define nod_set_in(task)    nod_set_status(NOD_IN, NULL, -1, task)
-#define nod_set_out(task)           nod_set_status(NOD_OUT, NULL, -1, task)
-#define nod_set_restore(task, fd)   nod_set_status(NOD_RESTORE, NULL, fd, task)
+#define nod_proc_set_in(proc)			nod_proc_set_status(proc, NOD_IN, -1)
+#define nod_proc_set_out(proc)			nod_proc_set_status(proc, NOD_OUT, -1)
+#define nod_proc_set_security(proc, fd)	nod_proc_set_status(proc, NOD_RESTORE_SECURITY, fd)
+#define nod_proc_set_context(proc, fd)	nod_proc_set_status(proc, NOD_RESTORE_CONTEXT, fd)
+#define nod_proc_set_status(proc, _status, _fd) \
+	do{(proc)->status = (_status); (proc)->ioctl_fd = (_fd);}while(0)
 
 #define NOD_PROC_TRAVERSE_CONTINUE  0
 #define NOD_PROC_TRAVERSE_BREAK 	1
