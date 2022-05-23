@@ -28,6 +28,7 @@ struct event_filler_arguments;
     FN(sys_sendmsg)     \
     FN(sys_recvmsg)     \
     FN(sys_ioctl)       \
+    FN(sys_getuid)      \
 
 #define FILLER_ENUM_FN(x) NOD_FILLER_##x,
 enum nod_filler_id {

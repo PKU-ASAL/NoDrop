@@ -31,4 +31,5 @@ const struct nod_event_info g_event_info[NODE_EVENT_MAX] = {
 	[NODE_SYSCALL_SENDMMSG] = {"sendmmsg", EC_IO_WRITE, EF_DROP_SIMPLE_CONS, 0},
 	[NODE_SYSCALL_RECVMSG] = {"recvmsg", EC_IO_READ, EF_USES_FD | EF_READS_FROM_FD | EF_MODIFIES_STATE, 5, {{"fd", PT_FD, PF_DEC}, {"res", PT_ERRNO, PF_DEC}, {"size", PT_UINT32, PF_DEC}, {"data", PT_BYTEBUF, PF_NA}, {"tuple", PT_SOCKTUPLE, PF_NA} } },
 	[NODE_SYSCALL_RECVMMSG] = {"recvmmsg", EC_IO_READ, EF_DROP_SIMPLE_CONS, 0},
+	[NODE_SYSCALL_GETUID] = {"getuid", EC_USER, EF_DROP_SIMPLE_CONS, 1, {{"uid", PT_UID, PF_DEC}} },
 };

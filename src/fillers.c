@@ -2870,3 +2870,18 @@ int f_sys_ioctl(struct event_filler_arguments *args)
 
     return NOD_SUCCESS;
 }
+
+int f_sys_getuid(struct event_filler_arguments *args)
+{
+    int res;
+    int64_t retval;
+    /*
+     * uid - retval
+     */
+    retval = (int64_t)(long)syscall_get_return_value(current, args->regs);
+    res = val_to_ring(args, retval, 0, false, 0);
+    if (unlikely(res != NOD_SUCCESS))
+        return res; 
+    
+    return NOD_SUCCESS;
+}

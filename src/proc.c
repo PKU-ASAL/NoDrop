@@ -217,7 +217,7 @@ static int nod_dev_mmap(struct file *filp, struct vm_area_struct *vma)
 
     ret = remap_vmalloc_range(vma, p->ubuffer, 0);
     if (ret < 0) {
-        vpr_err("remap_vmalloc_range failed (%d)\nvm_start %lx vm_end %lx ubuffer %lx flags %lx\n", ret, vma->vm_start, vma->vm_end, p->ubuffer, vma->vm_flags);
+        vpr_err("remap_vmalloc_range failed (%d)\n", ret);
         return ret;
     }
 

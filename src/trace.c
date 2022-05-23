@@ -34,7 +34,8 @@ static int filtered_syscall[] = {
     __NR_execve, 
     __NR_clone, __NR_fork, __NR_vfork, 
     __NR_socket, __NR_bind, __NR_connect, __NR_listen, __NR_accept, __NR_accept4,
-    __NR_sendto, __NR_recvfrom, __NR_sendmsg, __NR_recvmsg
+    __NR_sendto, __NR_recvfrom, __NR_sendmsg, __NR_recvmsg,
+    __NR_getuid
 };
 static sys_call_ptr_t *syscall_table;
 static sys_call_ptr_t real_exit, real_exit_group, real_mprotect, real_munmap;
@@ -102,7 +103,6 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
      * These codes will be removed in the release version.
      */ 
     id = syscall_get_nr(current, regs);
-
     for (i = 0; i < sizeof(filtered_syscall) / sizeof(filtered_syscall[0]); ++i)
         if (id == filtered_syscall[i])
             goto start;
