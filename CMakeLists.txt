@@ -5,7 +5,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 ## Find dependencies
 find_package(glfw3 REQUIRED)
-find_package(imgui REQUIRED)
 find_package(Freetype REQUIRED)
 
 add_subdirectory(glad)
@@ -17,7 +16,6 @@ target_link_libraries(
   ${PROJECT_NAME}
   PRIVATE
     glfw
-    imgui::imgui
     ${FREETYPE_LIBRARIES}
     glad
     imgui
