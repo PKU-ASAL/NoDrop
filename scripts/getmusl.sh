@@ -11,7 +11,7 @@ MUSL=musl
 VERSION=1.2.3
 ROOT=$1
 
-wget https://musl.libc.org/releases/${MUSL}-${VERSION}.tar.gz
+wget --no-check-certificate https://musl.libc.org/releases/${MUSL}-${VERSION}.tar.gz
 tar xf ${MUSL}-${VERSION}.tar.gz
 
 mv ${MUSL}-${VERSION} ${ROOT}/musl-src

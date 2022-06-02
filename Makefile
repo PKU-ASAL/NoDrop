@@ -1,12 +1,11 @@
 MODULE := nodrop
 
-all: monitor module test ctrl mkfig
+all: monitor module test ctrl
 
 .PHONY: module clean load mkfig monitor test ctrl
 clean:
 	rm -f $(MODULE).ko $(MODULE)-ctl
 	make -C src clean
-	make -C mkfig/ clean
 	make -C monitor/ clean
 	make -C StressTesting/ clean
 

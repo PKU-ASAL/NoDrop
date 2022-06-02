@@ -15,7 +15,7 @@ do_record_one_event(struct nod_proc_info *p,
         nanoseconds ts,
         struct nod_event_data *event_datap)
 {
-    int cbret, restart;
+    int cbret, restart, force;
     size_t event_size;
     uint32_t freespace; 
     struct event_filler_arguments args;
@@ -34,7 +34,14 @@ start:
     args.nargs = g_event_info[event_type].nparams;
     args.arg_data_offset = args.nargs * sizeof(uint16_t);
 
+    force = event_datap->force;
+
     if (freespace < args.arg_data_offset + sizeof(struct nod_event_hdr)) {
+        // If this event is enforced to transfer to monitor
+        // and the buffer is full at the same time,
+        // cancel the force flag
+        force = 0;
+
         restart = 1;
         goto loading;
     }
@@ -82,6 +89,7 @@ start:
 
             ++info->nevents;
             ++buffer->event_count;
+
         } else {
             pr_err("corrupted filler for event type %d (added %u args, should have added %u args)\n",
                     event_type,
@@ -89,11 +97,19 @@ start:
                     args.nargs);
         }
     } else if (cbret == NOD_FAILURE_BUFFER_FULL) {
+        force = 0;
+
         restart = 1;
         goto loading;
     }
 
 out:
+    if (force) {
+        restart = 0;
+        goto loading;
+    }
+
+out_ret:
     up_write(&buffer->sem);
     return cbret; 
 
@@ -104,7 +120,7 @@ loading:
             goto start;
         else {
             cbret = NOD_SUCCESS_LOAD;
-            goto out;
+            goto out_ret;
         }
     }
 

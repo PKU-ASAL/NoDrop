@@ -65,7 +65,7 @@ static void compat_unregister_trace(void *func, const char *probename, struct tr
 }
 
 static int
-syscall_probe(struct nod_proc_info *p, struct pt_regs *regs, long id) {
+syscall_probe(struct nod_proc_info *p, struct pt_regs *regs, long id, int force) {
     int retval;
     long table_index;
     enum nod_event_type type;
@@ -78,6 +78,8 @@ syscall_probe(struct nod_proc_info *p, struct pt_regs *regs, long id) {
         event_data.category = NODC_SYSCALL;
         event_data.event_info.syscall_data.regs = regs;
         event_data.event_info.syscall_data.id = id;
+
+        event_data.force = force;
         
         retval = record_one_event(p, type, &event_data);
     } else {
@@ -155,7 +157,7 @@ start:
                  */
                 p->load_addr = p->stack.fsbase = 0;
             }
-            syscall_probe(p, regs, id);
+            syscall_probe(p, regs, id, 0);
         }
 
         break;
@@ -195,7 +197,7 @@ __real_exit(SYSCALL_DEF)
             p = nod_proc_acquire(status, NULL, -1, current);
             if (!p) break;
         }
-        if (unlikely(syscall_probe(p, current_pt_regs(), __NR_exit) == NOD_SUCCESS_LOAD))
+        if (likely(syscall_probe(p, current_pt_regs(), __NR_exit, 1) == NOD_SUCCESS_LOAD))
             return -EAGAIN;
         
         break;
@@ -231,7 +233,7 @@ __real_exit_group(SYSCALL_DEF)
             p = nod_proc_acquire(status, NULL, -1, current);
             if (!p) break;
         }
-        if (unlikely(syscall_probe(p, current_pt_regs(), __NR_exit_group) == NOD_SUCCESS_LOAD))
+        if (likely(syscall_probe(p, current_pt_regs(), __NR_exit_group, 1) == NOD_SUCCESS_LOAD))
             return -EAGAIN;
         
         break;
