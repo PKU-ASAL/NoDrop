@@ -27,9 +27,18 @@
     #define TRACEPOINT_PROBE(probe, args...) static void probe(void *__data, args)
 #endif
 
-static int tracepoint_registered;
+struct nod_syscall_filter {
+    int enable;
+    int hooked;
+    int (*filter)(struct nod_proc_info *, struct pt_regs *);
+    sys_call_ptr_t oldsyscall;
+};
 
-static int filtered_syscall[] = { 
+static int tracepoint_registered;
+static sys_call_ptr_t *syscall_table;
+static struct nod_syscall_filter syscall_filters[SYSCALL_TABLE_SIZE];
+
+static int filtered_syscall_ids[] = { 
     __NR_write, __NR_read, __NR_open, __NR_close, __NR_ioctl,
     __NR_execve, 
     __NR_clone, __NR_fork, __NR_vfork, 
@@ -37,8 +46,6 @@ static int filtered_syscall[] = {
     __NR_sendto, __NR_recvfrom, __NR_sendmsg, __NR_recvmsg,
     __NR_getuid
 };
-static sys_call_ptr_t *syscall_table;
-static sys_call_ptr_t real_exit, real_exit_group, real_mprotect, real_munmap;
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 20)
 static struct tracepoint *tp_sys_exit;
@@ -91,7 +98,7 @@ syscall_probe(struct nod_proc_info *p, struct pt_regs *regs, long id, int force)
 
 TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
 {
-    int i, evt_from, id;
+    int evt_from, id;
     struct nod_proc_info *p;
 
 #ifdef NOD_TEST
@@ -105,11 +112,11 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
      * These codes will be removed in the release version.
      */ 
     id = syscall_get_nr(current, regs);
-    for (i = 0; i < sizeof(filtered_syscall) / sizeof(filtered_syscall[0]); ++i)
-        if (id == filtered_syscall[i])
-            goto start;
 
     if (id == __NR_ioctl)
+        goto start;
+    
+    if (id >= 0 && id < SYSCALL_TABLE_SIZE && syscall_filters[id].enable == 1)
         goto start;
 
     return;
@@ -178,26 +185,18 @@ TRACEPOINT_PROBE(syscall_procexit_probe, struct task_struct *tsk)
     nod_proc_release(tsk);
 }
 
-static long
-__real_exit(SYSCALL_DEF)
+static int
+exit_filter(struct nod_proc_info *p, struct pt_regs *regs)
 {
-    int status;
-    struct nod_proc_info *p;
-#ifdef NOD_TEST
-    NOD_TEST(current) {
-        return real_exit(SYSCALL_ARGS);
+    if (!p) {
+        p = nod_proc_acquire(NOD_OUT, NULL, -1, current);
+        if (!p) return 0;
     }
-#endif
 
-    status = nod_event_from(&p);
-    switch(status) {
+    switch(p->status) {
     case NOD_OUT:
     case NOD_CLONE:
-        if (!p) {
-            p = nod_proc_acquire(status, NULL, -1, current);
-            if (!p) break;
-        }
-        if (likely(syscall_probe(p, current_pt_regs(), __NR_exit, 1) == NOD_SUCCESS_LOAD))
+        if (likely(syscall_probe(p, regs, syscall_get_nr(current, regs), 1) == NOD_SUCCESS_LOAD))
             return -EAGAIN;
         
         break;
@@ -211,89 +210,55 @@ __real_exit(SYSCALL_DEF)
         BUG();
     }
 
-    return real_exit(SYSCALL_ARGS);
+    return 0;
 }
 
-static long
-__real_exit_group(SYSCALL_DEF)
+static int
+mm_range_filter(struct nod_proc_info *p, struct pt_regs *regs)
 {
-    int status;
-    struct nod_proc_info *p;
-#ifdef NOD_TEST
-    NOD_TEST(current) {
-        return real_exit_group(SYSCALL_ARGS);
+    unsigned long addr, length;
+
+    if (!p) {
+        return 0;
     }
-#endif
 
-    status = nod_event_from(&p);
-    switch(status) {
-    case NOD_OUT:
-    case NOD_CLONE:
-        if (!p) {
-            p = nod_proc_acquire(status, NULL, -1, current);
-            if (!p) break;
-        }
-        if (likely(syscall_probe(p, current_pt_regs(), __NR_exit_group, 1) == NOD_SUCCESS_LOAD))
-            return -EAGAIN;
-        
-        break;
-    
+    switch(p->status) {
     case NOD_IN:
-        nod_restore_security(p);
-
-        break;
+    case NOD_RESTORE_CONTEXT:
+    case NOD_RESTORE_SECURITY:
+        return 0;
 
     default:
-        BUG();
-    }
+        syscall_get_arguments_deprecated(current, regs, 0, 1, &addr);
+        syscall_get_arguments_deprecated(current, regs, 1, 1, &length);
+        if (nod_proc_check_mm(p, addr, length) || nod_mmap_check(addr, length)) {
+            vpr_warn("is trying to manipulate monitor memory %lx len %ld\n", addr, length);
+            return -EINVAL;
+        }
 
-    return real_exit_group(SYSCALL_ARGS);
+        return 0;
+    }
 }
 
 static long
-__real_mprotect(SYSCALL_DEF)
-{
-    unsigned long addr, length;
+hook_general(SYSCALL_DEF) {
+    int ret, id;
     struct nod_proc_info *p;
+    
+    id = syscall_get_nr(current, current_pt_regs());
+
 #ifdef NOD_TEST
     NOD_TEST(current) {
-        return real_mprotect(SYSCALL_ARGS);
+        return syscall_filters[id].oldsyscall(SYSCALL_ARGS);
     }
 #endif
 
-    if (likely(nod_event_from(&p) == NOD_OUT)) {
-        syscall_get_arguments_deprecated(current, current_pt_regs(), 0, 1, &addr);
-        syscall_get_arguments_deprecated(current, current_pt_regs(), 1, 1, &length);
-        if ((p && nod_proc_check_mm(p, addr, length)) || nod_mmap_check(addr, length)) {
-            vpr_warn("is trying to change monitor memory protection %lx len %ld\n", addr, length);
-            return -EINVAL;
-        }
-    }
+    ASSERT(1 == syscall_filters[id].hooked);
+    
+    nod_event_from(&p);
 
-    return real_mprotect(SYSCALL_ARGS);
-}
-
-static long
-__real_munmap(SYSCALL_DEF)
-{
-    unsigned long addr, length;
-    struct nod_proc_info *p;
-#ifdef NOD_TEST
-    NOD_TEST(current) {
-        return real_munmap(SYSCALL_ARGS);
-    }
-#endif
-
-    if (likely(nod_event_from(&p) == NOD_OUT)) {
-        syscall_get_arguments_deprecated(current, current_pt_regs(), 0, 1, &addr);
-        syscall_get_arguments_deprecated(current, current_pt_regs(), 1, 1, &length);
-        if ((p && nod_proc_check_mm(p, addr, length)) || nod_mmap_check(addr, length)) {
-            vpr_warn("is trying to unmap monitor memory %lx len %ld\n", addr, length);
-            return -EINVAL;
-        }
-    }
-
-    return real_munmap(SYSCALL_ARGS);
+    ret = syscall_filters[id].filter(p, current_pt_regs());
+    return ret ? ret : syscall_filters[id].oldsyscall(SYSCALL_ARGS);
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,3,0)
@@ -308,10 +273,44 @@ inline void nod_write_cr0(unsigned long cr0) {
 #define WPOFF do { nod_write_cr0(read_cr0() & (~0x10000)); } while (0);
 #define WPON  do { nod_write_cr0(read_cr0() | 0x10000);    } while (0);
 
+static void
+hook_syscall(int id, int (*filter)(struct nod_proc_info *, struct pt_regs *))
+{
+    if (id < 0 || id >= SYSCALL_TABLE_SIZE)
+        return;
+
+    if (!syscall_filters[id].hooked) {
+        syscall_filters[id].hooked = 1;
+        WPOFF
+        syscall_filters[id].oldsyscall = syscall_table[id];
+        syscall_table[id] = (sys_call_ptr_t)hook_general;
+        WPON
+    }
+
+    syscall_filters[id].filter = filter;
+}
+
+static void
+unhook_syscall(int id)
+{
+    if (id < 0 || id >= SYSCALL_TABLE_SIZE)
+        return;
+
+    if (!syscall_filters[id].hooked)
+        return;
+    
+    WPOFF
+    syscall_table[id] = syscall_filters[id].oldsyscall;
+    WPON
+
+    syscall_filters[id].hooked = 0;
+    syscall_filters[id].oldsyscall = 0;
+}
+
 int trace_syscall(void) {
     int ret;
 
-    if (tracepoint_registered == 0) {
+    if (tracepoint_registered == 1) {
         ret = 0;
         goto out;
     }
@@ -332,19 +331,13 @@ int trace_syscall(void) {
         goto err_sched_procexit;
     }
 
-    WPOFF
-    real_exit = syscall_table[__NR_exit];
-    real_exit_group = syscall_table[__NR_exit_group];
-    real_munmap = syscall_table[__NR_munmap];
-    real_mprotect = syscall_table[__NR_mprotect];
+    hook_syscall(__NR_exit, exit_filter);
+    hook_syscall(__NR_exit_group, exit_filter);
+    hook_syscall(__NR_munmap, mm_range_filter);
+    hook_syscall(__NR_mprotect, mm_range_filter);
+    hook_syscall(__NR_mremap, mm_range_filter);
 
-    syscall_table[__NR_exit] = (sys_call_ptr_t)__real_exit;
-    syscall_table[__NR_exit_group] = (sys_call_ptr_t)__real_exit_group;
-    syscall_table[__NR_munmap] = (sys_call_ptr_t)__real_munmap;
-    syscall_table[__NR_mprotect] = (sys_call_ptr_t)__real_mprotect;
-    WPON
-
-    tracepoint_registered = 0;
+    tracepoint_registered = 1;
     return 0;
 
 err_sched_procexit:
@@ -359,15 +352,14 @@ out:
 }
 
 void untrace_syscall(void) {
-    if (tracepoint_registered == 1)
+    if (tracepoint_registered == 0)
         return;
 
-    WPOFF
-    syscall_table[__NR_exit] = real_exit;
-    syscall_table[__NR_exit_group] = real_exit_group;
-    syscall_table[__NR_munmap] = real_munmap;
-    syscall_table[__NR_mprotect] = real_mprotect;
-    WPON
+    unhook_syscall(__NR_exit);
+    unhook_syscall(__NR_exit_group);
+    unhook_syscall(__NR_munmap);
+    unhook_syscall(__NR_mprotect);
+    unhook_syscall(__NR_mremap);
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 20)
     compat_unregister_trace(syscall_exit_probe, "sys_exit", tp_sys_exit);
@@ -377,7 +369,7 @@ void untrace_syscall(void) {
 
     compat_unregister_trace(syscall_procexit_probe, "sched_process_exit", tp_sched_process_exit);
 
-    tracepoint_registered = 1;
+    tracepoint_registered = 0;
 }
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0))
@@ -406,9 +398,7 @@ static int get_tracepoint_handles(void)
 #endif
 
 int tracepoint_init(void) {
-    int ret;
-
-    tracepoint_registered = 1;
+    int i, id, ret;
 
     syscall_table = (sys_call_ptr_t *)kallsyms_lookup_name("sys_call_table");
     if (syscall_table == 0) {
@@ -420,6 +410,12 @@ int tracepoint_init(void) {
     if (ret)
         goto out;
 
+    for (i = 0; i < sizeof(filtered_syscall_ids) / sizeof(filtered_syscall_ids[0]); ++i) {
+        id = filtered_syscall_ids[i];
+        syscall_filters[id].enable = 1;
+    }
+
+    tracepoint_registered = 0;
     ret = trace_syscall();
     if (ret) {
         goto out;
