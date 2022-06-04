@@ -26,6 +26,7 @@
 struct nod_stack_info {
 	int ioctl_fd;
 	int nr;
+	int pkey;
 	long code;
 	unsigned long fsbase;
 	unsigned long memoff;
