@@ -3,6 +3,8 @@
 .gdb_history/
 .gdbinit
 .log/
+gui/gui
+gui/imgui.ini
 monitor/*.o
 monitor/monitor
 *.o
