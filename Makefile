@@ -1,12 +1,12 @@
 MODULE := nodrop
 
-all: monitor module test ctrl mkfig
+all: monitor module test ctrl gui
 
-.PHONY: module clean load mkfig monitor test ctrl
+.PHONY: module clean load gui monitor test ctrl
 clean:
 	rm -f $(MODULE).ko $(MODULE)-ctl
 	make -C src clean
-	make -C mkfig/ clean
+	make -C gui/ clean
 	make -C monitor/ clean
 	make -C StressTesting/ clean
 
@@ -15,8 +15,8 @@ load: monitor module
 	sudo rmmod -f $(MODULE) 2> /dev/null || true
 	sudo insmod $(MODULE).ko
 
-mkfig:
-	make -C mkfig/
+gui:
+	make -C gui/
 
 module:
 	make -C src MODULE=$(MODULE)

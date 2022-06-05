@@ -132,7 +132,7 @@ int nod_monitor_main(struct nod_buffer *buffer) {
     while (ptr < buffer_end) {
         hdr = (struct nod_event_hdr *)ptr; 
         _parse(file, hdr, (char *)(hdr + 1), 0);
-        // fwrite(ptr, hdr->len, 1, file);
+        //fwrite(ptr, hdr->len, 1, file);
         ptr += hdr->len;
     }
 
