@@ -91,9 +91,9 @@ create_elf_tbls(struct elfhdr *exec,
                 uint64_t *target_sp,
                 char *argv[]) {
 
-#define STACK_ROUND(sp, items) 	((elf_addr_t __user *)(((uint64_t) (sp - (items))) &~ 15UL))
+#define STACK_ROUND(sp, items) 	((elf_addr_t __user *)(((uint64_t) ((sp) - (items))) &~ 15UL))
 #define STACK_ADD(sp, items) ((elf_addr_t __user *)(sp) - (items))
-#define STACK_ALLOC(sp, len) ({sp -= (len); sp;})
+#define STACK_ALLOC(sp, len) ({(sp) -= (len); sp;})
 
     int i, argc, envc;
     int elf_info_idx;
@@ -177,7 +177,7 @@ create_elf_tbls(struct elfhdr *exec,
         size_t len; \
         if (put_user((elf_addr_t)start, (elf_addr_t *)sp++)) \
             goto err; \
-        len = strnlen_user((void __user *)start, MAX_ARG_STRLEN); \
+        len = strnlen_user((void __user *)(start), MAX_ARG_STRLEN); \
         if (!len || len > MAX_ARG_STRLEN) \
             goto err; \
         len; \

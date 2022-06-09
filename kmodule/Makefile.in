@@ -1,0 +1,33 @@
+
+@PROBE_NAME@-y := \
+	nod_main.o \
+	loader.o \
+	trace.o \
+	proc.o \
+	procinfo.o \
+	fillers.o \
+	events.o \
+	privil.o \
+	elf.o \
+	syscall_table.o \
+	fillers_table.o \
+	events_table.o \
+	flags_table.o \
+	dynamic_params_table.o \
+
+obj-m += @PROBE_NAME@.o
+ccflags-y += @KBUID_FLAGS@
+
+KDIR ?= /lib/modules/@KERNEL_RELEASE@/build
+
+TOP  := $(shell pwd)
+all:
+	$(MAKE) -C $(KDIR) M=$(TOP) modules
+
+.PHONY: clean
+clean:
+	$(MAKE) -C $(KDIR) M=$(TOP) clean
+
+.PHONY: install
+install: all
+	$(MAKE)	-C $(KDIR) M=$(TOP) modules_install

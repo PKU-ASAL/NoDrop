@@ -147,8 +147,6 @@ nod_proc_acquire(enum nod_proc_status status,
 
     p->pid = task->pid;
     p->mm = task->mm;
-    p->stack.memoff = (unsigned long)get_random_int();
-    p->stack.memoff &= NOD_MEM_RND_MASK;
 
     ASSERT(__insert_proc_info(p) == true);
 
@@ -211,34 +209,6 @@ nod_event_from(struct nod_proc_info **p)
 
     if (p)  *p = n;    
     return n ? n->status : NOD_OUT;
-}
-
-static int
-__proc_check_mm(struct nod_proc_info *this, unsigned long *ret, va_list args)
-{
-    struct nod_proc_info *p = va_arg(args, struct nod_proc_info *);
-    unsigned long addr = va_arg(args, unsigned long);
-    unsigned long end = va_arg(args, unsigned long);
-    if (this != p && 
-        this->stack.mem && 
-        this->stack.memsz && 
-        this->mm == p->mm) {
-        *ret = MAX((unsigned long)this->stack.mem, addr) <= 
-            MIN((unsigned long)this->stack.mem + this->stack.memsz, end) ? 1L : 0L;
-        return NOD_PROC_TRAVERSE_BREAK;
-    }
-
-    *ret = 0;
-    return NOD_PROC_TRAVERSE_CONTINUE;
-}
-
-/* traverse RBTree to find procs with the same address
- * and check (addr, addr+length) */
-int
-nod_proc_check_mm(struct nod_proc_info *p, unsigned long addr, unsigned long length)
-{
-    unsigned long end = addr + length;
-    return (int)nod_proc_traverse(__proc_check_mm, p, addr, end);
 }
 
 unsigned long

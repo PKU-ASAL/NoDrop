@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-#include "include/ioctl.h"
+#include "ioctl.h"
 
 int main(int argc, char *argv[]) {
     int fd;

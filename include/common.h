@@ -13,6 +13,11 @@
 #else
 #include <sys/resource.h>
 #include <stdint.h>
+
+#define weak __attribute__((__weak__))
+#define hidden __attribute__((__visibility__("hidden")))
+#define weak_alias(old, new) \
+	extern __typeof(old) new __attribute__((__weak__, __alias__(#old)))
 #endif
  
 #define SYSCALL_EXIT_FAMILY(nr)     	((nr) == __NR_exit || (nr) == __NR_exit_group)
@@ -22,6 +27,7 @@
 
 #define NOD_MEM_RND_MASK 0x7ff
 #define NOD_SECTION_NAME ".monitor.info"
+#define NOD_MONITOR_MEM_SIZE (4 * 1024)
 
 struct nod_stack_info {
 	int ioctl_fd;
@@ -29,9 +35,6 @@ struct nod_stack_info {
 	int pkey;
 	long code;
 	unsigned long fsbase;
-	unsigned long memoff;
-	unsigned long memsz;
-	char *mem;
 	unsigned long hash;
 };
 
@@ -43,8 +46,7 @@ __attribute__((unused))
 static unsigned long 
 nod_calc_hash(struct nod_stack_info *stack)
 {
-	return stack->fsbase ^ (stack->ioctl_fd + 42) ^ 
-		(unsigned long)stack->mem ^ stack->memoff ^ stack->memsz;
+	return stack->fsbase ^ (stack->ioctl_fd + 42) ^ (stack->pkey - 42);
 }
 
 #endif //_COMMON_H_
