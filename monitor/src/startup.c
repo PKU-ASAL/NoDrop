@@ -68,7 +68,6 @@ static void
 nod_restore_context(struct nod_stack_info *p) {
     if (unlikely(SYSCALL_EXIT_FAMILY(p->nr))) {
         nod_monitor_exit(p->nr);
-        if (likely(p->pkey != -1)) pkey_free(p->pkey);
         syscall(p->nr, p->code);
     } else {
         if (likely(p->pkey != -1)) pkey_set(p->pkey, PKEY_DISABLE_WRITE);
@@ -80,18 +79,18 @@ nod_restore_context(struct nod_stack_info *p) {
 static void
 nod_initialize(struct nod_stack_info *p) {
     syscall(SYS_arch_prctl, ARCH_GET_FS, (unsigned long) &p->fsbase);
-    p->pkey = pkey_alloc();
-    if (p->pkey != -1) {
-        ASSERT_EXIT(likely(pkey_mprotect(&__bdata, (unsigned long) &__edata - (unsigned long) &__bdata,
-                                         PROT_READ | PROT_WRITE, p->pkey) != -1),
-                                        "pkey_mprotect for data segenemtn failed",);
-    }
 
     if (unlikely(__info.fsbase == 0)) {
         __info.fsbase = p->fsbase;
         mprotect(&__info, (sizeof(__info) + getpagesize() - 1) / getpagesize(), PROT_READ);
-    }
 
+        if (p->pkey != -1) {
+            pkey_set(p->pkey, 0);
+            ASSERT_EXIT(likely(pkey_mprotect(&__bdata, (unsigned long) &__edata - (unsigned long) &__bdata,
+                                             PROT_READ | PROT_WRITE, p->pkey) != -1),
+                        "pkey_mprotect for data segenemtn failed",);
+        }
+    }
     nod_mmheap_init(mmheap_pool, sizeof(mmheap_pool));
 }
 

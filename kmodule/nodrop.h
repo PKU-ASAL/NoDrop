@@ -75,7 +75,9 @@ struct nod_proc_info *
 nod_proc_acquire(enum nod_proc_status status, enum nod_proc_status *pre, 
 				int ioctl_fd, struct task_struct *task);
 enum nod_proc_status nod_proc_release(struct task_struct *task);
+void nod_init_procinfo(struct task_struct *task, struct nod_proc_info *p);
 int nod_copy_procinfo(struct task_struct *task, struct nod_proc_info *p);
+int nod_share_procinfo(struct task_struct *task, struct nod_proc_info *p);
 int nod_event_from(struct nod_proc_info **p);
 int nod_proc_check_mm(struct nod_proc_info *p, unsigned long addr, unsigned long length);
 unsigned long nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned long *, va_list), ...);

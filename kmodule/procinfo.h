@@ -14,8 +14,9 @@ enum nod_proc_status {
 	NOD_IN = 1,
 	NOD_OUT = 2,
 	NOD_CLONE = 3,
-	NOD_RESTORE_CONTEXT = 4,
-	NOD_RESTORE_SECURITY = 5,
+	NOD_SHARE = 4,
+	NOD_RESTORE_CONTEXT = 5,
+	NOD_RESTORE_SECURITY = 6,
 };
 
 struct nod_proc_context {

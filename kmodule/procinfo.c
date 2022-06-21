@@ -6,6 +6,7 @@
 #include <linux/signal.h>
 #include <linux/random.h>
 #include <linux/delay.h>
+#include <asm/pkeys.h>
 
 
 #include "nodrop.h"
@@ -82,6 +83,24 @@ __remove_proc_info(struct nod_proc_info *p)
     up_write(&proc_info_rt.sem);
 }
 
+void
+nod_init_procinfo(struct task_struct *task, struct nod_proc_info *p)
+{
+    p->pid = task->pid;
+    p->mm = task->mm;
+
+    p->ioctl_fd = -1;
+    p->load_addr = 0;
+
+    if (p->stack.pkey > 0) mm_pkey_free(p->mm, p->stack.pkey);
+
+    memset(&p->ctx, 0, sizeof(p->ctx));
+    memset(&p->sec, 0, sizeof(p->sec));
+    memset(&p->stack, 0, sizeof(p->stack));
+
+    p->stack.pkey = mm_pkey_alloc(p->mm);
+}
+
 struct nod_proc_info *
 nod_alloc_procinfo(void)
 {
@@ -145,8 +164,7 @@ nod_proc_acquire(enum nod_proc_status status,
         goto out;
     }
 
-    p->pid = task->pid;
-    p->mm = task->mm;
+    nod_init_procinfo(task, p);
 
     ASSERT(__insert_proc_info(p) == true);
 
@@ -187,12 +205,38 @@ nod_copy_procinfo(struct task_struct *task, struct nod_proc_info *p)
         return NOD_SUCCESS;
 
     down_read(&proc_info_rt.sem);
-    parent = __find_proc_info(&proc_info_rt.root, task->real_parent);
+    parent = __find_proc_info(&proc_info_rt.root, task->group_leader);
     up_read(&proc_info_rt.sem);
 
     if (parent) {
         p->load_addr = parent->load_addr;
         memcpy(&p->stack, &parent->stack, sizeof(struct nod_stack_info));
+    }
+    
+    return NOD_SUCCESS;    
+}
+
+int
+nod_share_procinfo(struct task_struct *task, struct nod_proc_info *p)
+{
+    struct nod_proc_info *parent;
+
+    if (!task->real_parent) 
+        return NOD_SUCCESS;
+
+    down_read(&proc_info_rt.sem);
+    parent = __find_proc_info(&proc_info_rt.root, task->group_leader);
+    up_read(&proc_info_rt.sem);
+    if (parent) {
+        /*
+         * Pkey is previously allocated when acquiring nod_proc_info
+         * Now the process is inherited from parent, including pkey
+         * Free the original pkey here.
+         */ 
+        if (p->stack.pkey != parent->stack.pkey) {
+            if (p->stack.pkey > 0) mm_pkey_free(p->mm, p->stack.pkey);
+            p->stack.pkey = parent->stack.pkey;
+        }
     }
     
     return NOD_SUCCESS;    

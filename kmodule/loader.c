@@ -36,7 +36,7 @@ get_monitor_addr(struct vm_area_struct const * const vma, void *arg)
 
     if (end < vma->vm_start)
         return MAPPING_FINISH;
-    else if (MAX(vma->vm_start, addr) <= MIN(vma->vm_end, end))    
+    else if (MAX(vma->vm_start, addr) < MIN(vma->vm_end, end))
         return MAPPING_OK;
     return MAPPING_NEXT;
 }
@@ -327,8 +327,15 @@ nod_load_monitor(struct nod_proc_info *p)
 
     regs = current_pt_regs();
 
-    if (p->status == NOD_CLONE) {
+    switch(p->status) {
+    case NOD_CLONE:
         nod_copy_procinfo(current, p);
+        break;
+    case NOD_SHARE:
+        nod_share_procinfo(current, p);
+        break;
+    default:
+        break;
     }
 
     if (!p->load_addr) {

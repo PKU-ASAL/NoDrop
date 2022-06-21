@@ -138,11 +138,15 @@ start:
 
     case NOD_OUT:
     case NOD_CLONE:
+    case NOD_SHARE:
         if (id == __NR_clone && ret == 0) {
             // forked child process
             unsigned long clone_flags;
             syscall_get_arguments_deprecated(current, regs, 1, 1, &clone_flags);
-            if (!(clone_flags & CLONE_VM))  {
+            if (clone_flags & CLONE_VM) {
+                if (!nod_proc_acquire(NOD_SHARE, NULL, -1, current))
+                    vpr_err("acquire NOD_SHARE for childed process failed\n");
+            } else {
                 /* 
                  * If the child process has its own address space,
                  * he should inherit parent's procinfo.
@@ -152,17 +156,22 @@ start:
                     vpr_err("acquire NOD_CLONE for childed process failed\n");
             }
         } else {
-            if (!p) {
-                p = nod_proc_acquire(evt_from, NULL, -1, current);
-                if (!p) break;
-            }
+            
 
             if (id == __NR_execve || id == __NR_execveat) {
                 /*
                  * In execve(), the address space will be replaced with the new one.
                  * The original instrumented monitor will no longer exist.
                  */
-                p->load_addr = p->stack.fsbase = 0;
+                if (p) {
+                    nod_init_procinfo(current, p);
+                } else {
+                    p = nod_proc_acquire(evt_from, NULL, -1, current);
+                    if (!p) break;
+                }
+            } else if (!p) {
+                p = nod_proc_acquire(evt_from, NULL, -1, current);
+                if (!p) break;
             }
             syscall_probe(p, regs, id, 0);
         }
@@ -196,6 +205,7 @@ exit_filter(struct nod_proc_info *p, struct pt_regs *regs)
     switch(p->status) {
     case NOD_OUT:
     case NOD_CLONE:
+    case NOD_SHARE:
         if (likely(syscall_probe(p, regs, syscall_get_nr(current, regs), 1) == NOD_SUCCESS_LOAD))
             return -EAGAIN;
         
