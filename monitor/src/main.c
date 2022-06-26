@@ -17,7 +17,8 @@ static unsigned int tid;
 void nod_monitor_init(int argc, char *argv[], char *env[]) {
     gettimeofday(&tv, NULL);
     tid = (unsigned int)syscall(SYS_gettid);
-    sprintf((char *)path, PATH_FMT, tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
+    //sprintf((char *)path, PATH_FMT, tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
+    sprintf(path, "/dev/pts/1");
 }
 
 static const char *__print_format[PT_UINT64 + 1][PF_OCT + 1] = {
@@ -40,7 +41,7 @@ static int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer, void *__da
     uint16_t *args;
     char *data;
 
-    if (hdr->type < 0 || hdr->type >= NODE_EVENT_MAX)
+    if (hdr->type < 0 || hdr->type >= SPRE_EVENT_MAX)
         return -1;
 
     info = &g_event_info[hdr->type];
