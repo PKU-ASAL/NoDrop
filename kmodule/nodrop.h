@@ -15,7 +15,7 @@
 #define vpr_dbg(fmt, ...)
 // #define vpr_dbg(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
 
-#define NOD_TEST(task) if (!(STR_EQU((task)->comm, "a.out")))
+#define NOD_TEST(task) if (!(STR_EQU((task)->comm, "a.out") || STR_EQU((task)->comm, "python3")))
 // #define NOD_TEST(task) if (!(STR_EQU((task)->comm, "nginx") || STR_EQU((task)->comm, "httpd") || STR_EQU((task)->comm, "redis-server") || STR_EQU((task)->comm, "postmark") || STR_EQU((task)->comm, "openssl") || STR_EQU((task)->comm, "7z")))
 #define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
 #define ASSERT(expr) BUG_ON(!(expr))
@@ -119,7 +119,14 @@ long nod_strncpy_from_user(char *to, const char __user *from, unsigned long n);
 
 // syscall_table.c
 #define SYSCALL_TABLE_ID0 0
-extern const enum nod_event_type g_syscall_event_table[];
+// extern const enum nod_event_type g_syscall_event_table[];
+struct syscall_evt_pair {
+	int flags;
+	enum nod_event_type enter_event_type;
+	enum nod_event_type exit_event_type;
+} _packed;
+extern const struct syscall_evt_pair g_syscall_event_table[];
+
 
 // filler_table.c
 extern const struct nod_event_entry g_nod_events[];

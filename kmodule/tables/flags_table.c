@@ -525,3 +525,25 @@ const struct nod_name_value renameat2_flags[] = {
 	{"RENAME_WHITEOUT", NOD_RENAME_WHITEOUT},
 	{0, 0},
 };
+
+const struct nod_name_value openat2_flags[] = {
+	{"RESOLVE_BENEATH", NOD_RESOLVE_BENEATH},
+	{"RESOLVE_IN_ROOT", NOD_RESOLVE_IN_ROOT},
+	{"RESOLVE_NO_MAGICLINKS", NOD_RESOLVE_NO_MAGICLINKS},
+	{"RESOLVE_NO_SYMLINKS", NOD_RESOLVE_NO_SYMLINKS},
+	{"RESOLVE_NO_XDEV", NOD_RESOLVE_NO_XDEV},
+	{"RESOLVE_CACHED", NOD_RESOLVE_CACHED},
+	{0, 0},
+};
+
+const struct nod_name_value execve_flags[] = {
+	{"EXE_WRITABLE", NOD_EXE_WRITABLE},
+	{0, 0},
+};
+
+const struct nod_name_value execveat_flags[] = {
+	{"AT_EMPTY_PATH", NOD_EXVAT_AT_EMPTY_PATH},
+	{"AT_SYMLINK_NOFOLLOW", NOD_EXVAT_AT_SYMLINK_NOFOLLOW},
+	{0, 0},
+};
+
