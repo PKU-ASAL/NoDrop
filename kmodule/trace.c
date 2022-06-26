@@ -78,9 +78,12 @@ syscall_probe(struct nod_proc_info *p, struct pt_regs *regs, long id, int force)
     enum nod_event_type type;
     struct nod_event_data event_data;
 
+    const struct syscall_evt_pair *cur_g_syscall_table = g_syscall_event_table;
+
     table_index = id - SYSCALL_TABLE_ID0;
     if (likely(table_index >= 0 && table_index < SYSCALL_TABLE_SIZE)) {
-        type = g_syscall_event_table[table_index];
+        //type = g_syscall_event_table[table_index];
+        type = cur_g_syscall_table[table_index].exit_event_type;
 
         event_data.category = NODC_SYSCALL;
         event_data.event_info.syscall_data.regs = regs;
@@ -113,11 +116,13 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
      */ 
     id = syscall_get_nr(current, regs);
 
-    if (id == __NR_ioctl)
-        goto start;
+    // if (id == __NR_ioctl)
+    //     goto start;
     
-    if (id >= 0 && id < SYSCALL_TABLE_SIZE && syscall_filters[id].enable == 1)
-        goto start;
+    // if (id >= 0 && id < SYSCALL_TABLE_SIZE && syscall_filters[id].enable == 1)
+    //     goto start;
+
+    goto start;
 
     return;
 
@@ -183,16 +188,16 @@ start:
     }
 }
 
-TRACEPOINT_PROBE(syscall_procexit_probe, struct task_struct *tsk)
-{
-#ifdef NOD_TEST
-    NOD_TEST(tsk) {
-        return;
-    }
-#endif
+// TRACEPOINT_PROBE(syscall_procexit_probe, struct task_struct *tsk)
+// {
+// #ifdef NOD_TEST
+//     NOD_TEST(tsk) {
+//         return;
+//     }
+// #endif
 
-    nod_proc_release(tsk);
-}
+//     nod_proc_release(tsk);
+// }
 
 static int
 exit_filter(struct nod_proc_info *p, struct pt_regs *regs)
@@ -335,11 +340,11 @@ int trace_syscall(void) {
         goto err_syscall_exit;
     }
 
-    ret = compat_register_trace(syscall_procexit_probe, "sched_process_exit", tp_sched_process_exit);
-    if (ret) {
-        pr_err("can't create the sched_process_exit tracepoint\n");
-        goto err_sched_procexit;
-    }
+    // ret = compat_register_trace(syscall_procexit_probe, "sched_process_exit", tp_sched_process_exit);
+    // if (ret) {
+    //     pr_err("can't create the sched_process_exit tracepoint\n");
+    //     goto err_sched_procexit;
+    // }
 
     hook_syscall(__NR_exit, exit_filter);
     hook_syscall(__NR_exit_group, exit_filter);
@@ -377,7 +382,7 @@ void untrace_syscall(void) {
     unregister_trace_syscall_exit(syscall_exit_probe);
 #endif
 
-    compat_unregister_trace(syscall_procexit_probe, "sched_process_exit", tp_sched_process_exit);
+    //compat_unregister_trace(syscall_procexit_probe, "sched_process_exit", tp_sched_process_exit);
 
     tracepoint_registered = 0;
 }
