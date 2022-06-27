@@ -1,178 +1,74 @@
-// #ifndef NOD_FILLER_H_
-// #define NOD_FILLER_H_
-
-// struct event_filler_arguments;
-
-// #define FILLER_LIST_MAPPER(FN) \
-//     FN(sys_empty)       \
-//     FN(sys_read)        \
-//     FN(sys_write)       \
-//     FN(sys_open)        \
-//     FN(sys_close)       \
-//     FN(sys_exit)        \
-//     FN(sys_exit_group)  \
-//     FN(proc_startupdate)\
-//     FN(sys_execve)      \
-//     FN(sys_socket)      \
-//     FN(sys_socket_bind) \
-//     FN(sys_connect)     \
-//     FN(sys_listen)      \
-//     FN(sys_accept)      \
-//     FN(sys_accept4)     \
-//     FN(sys_sendto)      \
-//     FN(sys_recvfrom)    \
-//     FN(sys_shutdown)    \
-//     FN(sys_socketpair)  \
-//     FN(sys_setsockopt)  \
-//     FN(sys_getsockopt)  \
-//     FN(sys_sendmsg)     \
-//     FN(sys_recvmsg)     \
-//     FN(sys_ioctl)       \
-//     FN(sys_getuid)      \
-
-// #define FILLER_ENUM_FN(x) NOD_FILLER_##x,
-// enum nod_filler_id {
-//     FILLER_LIST_MAPPER(FILLER_ENUM_FN)
-//     NOD_FILLER_MAX
-// };
-// #undef FILLER_ENUM_FN
-
-// #define FILLER_PROTOTYPE_FN(x) \
-//     int f_##x(struct event_filler_arguments *args) __attribute__((weak));
-// FILLER_LIST_MAPPER(FILLER_PROTOTYPE_FN)
-// #undef FILLER_PROTOTYPE_FN
-
-
-// #endif //NOD_FILLER_H_
-
 #ifndef NOD_FILLER_H_
 #define NOD_FILLER_H_
 
 struct event_filler_arguments;
 
-// #define FILLER_LIST_MAPPER(FN) 
-//     FN(sys_autofill)    \
-//     FN(sys_empty)       \
-//     FN(sys_read)        \
-//     FN(sys_write)       \
-//     FN(sys_open)        \
-//     FN(sys_close)       \
-//     FN(sys_exit)        \
-//     FN(sys_exit_group)  \
-//     FN(proc_startupdate)\
-//     FN(sys_execve)      \
-//     FN(sys_socket)      \
-//     FN(sys_socket_bind) \
-//     FN(sys_connect)     \
-//     FN(sys_listen)      \
-//     FN(sys_accept)      \
-//     FN(sys_accept4)     \
-//     FN(sys_sendto)      \
-//     FN(sys_recvfrom)    \
-//     FN(sys_shutdown)    \
-//     FN(sys_socketpair)  \
-//     FN(sys_setsockopt)  \
-//     FN(sys_getsockopt)  \
-//     FN(sys_sendmsg)     \
-//     FN(sys_recvmsg)     \
-//     FN(sys_ioctl)       \
-//     FN(sys_ptrace)      \
-
 #define FILLER_LIST_MAPPER(FN)			\
-	FN(sys_autofill)			\
-	FN(sys_generic)				\
-	FN(sys_empty)				\
-	FN(sys_single)				\
-	FN(sys_single_x)			\
-	FN(sys_open_x)				\
-	FN(sys_read_x)				\
-	FN(sys_write_x)				\
-	FN(sys_execve_e)			\
-	FN(proc_startupdate)			\
-	FN(proc_startupdate_2)			\
-	FN(proc_startupdate_3)			\
-	FN(sys_socketpair_x)			\
-	FN(sys_setsockopt_x)			\
-	FN(sys_getsockopt_x)			\
-	FN(sys_connect_x)			\
-	FN(sys_accept4_e)			\
-	FN(sys_accept_x)			\
-	FN(sys_send_e)				\
-	FN(sys_send_x)				\
-	FN(sys_sendto_e)			\
-	FN(sys_sendmsg_e)			\
-	FN(sys_sendmsg_x)			\
-	FN(sys_recv_x)				\
-	FN(sys_recvfrom_x)			\
-	FN(sys_recvmsg_x)			\
-	FN(sys_recvmsg_x_2)			\
-	FN(sys_shutdown_e)			\
-	FN(sys_creat_x)				\
-	FN(sys_pipe_x)				\
-	FN(sys_eventfd_e)			\
-	FN(sys_futex_e)				\
-	FN(sys_lseek_e)				\
-	FN(sys_llseek_e)			\
-	FN(sys_socket_bind_x)			\
-	FN(sys_poll_e)				\
-	FN(sys_poll_x)				\
-	FN(sys_pread64_e)			\
-	FN(sys_preadv64_e)			\
-	FN(sys_writev_e)			\
-	FN(sys_pwrite64_e)			\
-	FN(sys_readv_preadv_x)			\
-	FN(sys_writev_pwritev_x)		\
-	FN(sys_pwritev_e)			\
-	FN(sys_nanosleep_e)			\
-	FN(sys_getrlimit_setrlimit_e)		\
-	FN(sys_getrlimit_setrlrimit_x)		\
-	FN(sys_prlimit_e)			\
-	FN(sys_prlimit_x)			\
-	FN(sched_switch_e)			\
-	FN(sched_drop)				\
-	FN(sys_fcntl_e)				\
-	FN(sys_ptrace_e)			\
-	FN(sys_ptrace_x)			\
-	FN(sys_mmap_e)				\
-	FN(sys_brk_munmap_mmap_x)		\
-	FN(sys_renameat_x)			\
-	FN(sys_renameat2_x)			\
-	FN(sys_symlinkat_x)			\
-	FN(sys_procexit_e)			\
-	FN(sys_sendfile_e)			\
-	FN(sys_sendfile_x)			\
-	FN(sys_quotactl_e)			\
-	FN(sys_quotactl_x)			\
-	FN(sys_sysdigevent_e)			\
-	FN(sys_getresuid_and_gid_x)		\
-	FN(sys_signaldeliver_e)			\
-	FN(sys_pagefault_e)			\
-	FN(sys_setns_e)				\
-	FN(sys_unshare_e)			\
-	FN(sys_flock_e)				\
-	FN(cpu_hotplug_e)			\
-	FN(sys_semop_x)				\
-	FN(sys_semget_e)			\
-	FN(sys_semctl_e)			\
-	FN(sys_ppoll_e)				\
-	FN(sys_mount_e)				\
-	FN(sys_access_e)			\
-	FN(sys_socket_x)			\
-	FN(sys_bpf_x)				\
-	FN(sys_unlinkat_x)			\
-	FN(sys_fchmodat_x)			\
-	FN(sys_chmod_x)				\
-	FN(sys_fchmod_x)			\
-	FN(sys_mkdirat_x)			\
-	FN(sys_openat_x)			\
-	FN(sys_openat2_x)			\
-	FN(sys_linkat_x)			\
-	FN(sys_mprotect_e)			\
-	FN(sys_mprotect_x)			\
-	FN(sys_execveat_e)			\
-	FN(execve_family_flags)		\
-	FN(sys_copy_file_range_e)	\
-	FN(sys_copy_file_range_x)	\
+        FN(sys_generic)			\
+    FN(sys_open)			\
+    FN(sys_empty)			\
+    FN(sys_read)			\
+    FN(sys_write)			\
+    FN(sys_execve)			\
+    FN(sys_procstart)			\
+    FN(sys_socket_bind)			\
+    FN(sys_connect)			\
+    FN(sys_send)			\
+    FN(sys_recv)			\
+    FN(sys_recvfrom)			\
+    FN(sys_shutdown)			\
+    FN(sys_socketpair)			\
+    FN(sys_setsockopt)			\
+    FN(sys_getsockopt)			\
+    FN(sys_sendmsg)			\
+    FN(sys_recvmsg)			\
+    FN(sys_creat)			\
+    FN(sys_pipe)			\
+    FN(sys_eventfd)			\
+    FN(sys_futex)			\
+    FN(sys_poll)			\
+    FN(sys_pread)			\
+    FN(sys_pwrite)			\
+    FN(sys_readv_preadv)			\
+    FN(sys_writev)			\
+    FN(sys_preadv)			\
+    FN(sys_pwritev)			\
+    FN(sys_nanosleep)			\
+    FN(sys_getrlimit_setrlrimit)			\
+    FN(sys_prlimit)			\
+    FN(sys_fcntl)			\
+    FN(sys_brk_munmap_mmap)			\
+    FN(sys_ptrace)			\
+    FN(sys_renameat)			\
+    FN(sys_symlinkat)			\
+    FN(sys_sendfile)			\
+    FN(sys_quotactl)			\
+    FN(sys_getresuid_and_gid)			\
+    FN(proc_startupdate)			\
+    FN(sys_setns)			\
+    FN(sys_flock)			\
+    FN(sys_accept)			\
+    FN(sys_accept4)			\
+    FN(sys_semop)			\
+    FN(sys_semctl)			\
+    FN(sys_ppoll)			\
+    FN(sys_mount)			\
+    FN(sys_semget)			\
+    FN(sys_access)			\
+    FN(sys_unshare)			\
+    FN(sys_bpf)			\
+    FN(sys_unlinkat)			\
+    FN(sys_mkdirat)			\
+    FN(sys_openat)			\
+    FN(sys_linkat)			\
+    FN(sys_fchmodat)			\
+    FN(sys_chmod)			\
+    FN(sys_fchmod)			\
+    FN(sys_renameat2)			\
+    FN(sys_openat2)			\
+    FN(sys_mprotect)			\
+    FN(sys_execveat)			\
+    FN(sys_copy_file_range)			\
 	FN(terminate_filler)
  
 #define FILLER_ENUM_FN(x) NOD_FILLER_##x,
@@ -186,6 +82,5 @@ enum nod_filler_id {
     int f_##x(struct event_filler_arguments *args) __attribute__((weak));
 FILLER_LIST_MAPPER(FILLER_PROTOTYPE_FN)
 #undef FILLER_PROTOTYPE_FN
-
 
 #endif //NOD_FILLER_H_

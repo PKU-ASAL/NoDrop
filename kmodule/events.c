@@ -72,13 +72,7 @@ start:
     args.nevents = info->nevents;
     args.snaplen = 80; // temporary MAGIC number
 
-    if (g_nod_events[event_type].filler_callback) {
-        cbret = g_nod_events[event_type].filler_callback(&args);
-    } else {
-        pr_err("corrupted filler for event type %d: NULL callback\n", event_type);
-        cbret = NOD_FAILURE_BUG;
-        goto out;
-    }
+    cbret = nod_filler_callback(&args);
 
     if (cbret == NOD_SUCCESS) {
         if (likely(args.curarg == args.nargs)) {
@@ -89,9 +83,6 @@ start:
 
             ++info->nevents;
             ++buffer->event_count;
-
-            restart = 0;
-            goto loading;
         } else {
             pr_err("corrupted filler for event type %d (added %u args, should have added %u args)\n",
                     event_type,
@@ -103,6 +94,8 @@ start:
 
         restart = 1;
         goto loading;
+    } else {
+        goto out;
     }
 
 out:
