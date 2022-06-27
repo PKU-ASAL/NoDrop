@@ -74,7 +74,6 @@ execute_process(COMMAND ${PYTHON_CONFIG} "--libs"
         OUTPUT_STRIP_TRAILING_WHITESPACE
         )
 
-
 # get the library link line
 execute_process(COMMAND ${PYTHON_CONFIG} "--cflags"
         OUTPUT_VARIABLE PYTHON_CFLAGS
