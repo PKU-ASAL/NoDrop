@@ -57,4 +57,4 @@ crtendS.o%s ${ROOT}/musl/lib/crtn.o
 EOF
 
 rm -rf ${ROOT}/musl-src
-rm ${MUSL}-${VERSION}.tar.gz
+rm ${ROOT}/${MUSL}-${VERSION}.tar.gz
