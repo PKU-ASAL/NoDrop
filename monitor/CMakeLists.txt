@@ -25,7 +25,7 @@ endforeach ()
 configure_file(musl.specs musl.specs COPYONLY)
 configure_file(script_x86-64.ld script_x86-64.ld COPYONLY)
 
-set(NODROP_COMMON_FLAGS "-Wall -ggdb -fPIE -fno-stack-protector --static-pie -specs=musl.specs")
+set(NODROP_COMMON_FLAGS "-mno-sse -Wall -ggdb -fPIE -fno-stack-protector --static-pie -specs=musl.specs")
 set(NODROP_DEBUG_FLAGS "-Og -DDEBUG")
 set(NODROP_RELEASE_FLAGS "-Os -DNODEBUG -fno-strict-aliasing")
 
