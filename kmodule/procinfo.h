@@ -24,7 +24,6 @@ struct nod_proc_context {
 	unsigned long fsbase;
 	unsigned long gsbase;
 	struct pt_regs regs;
-	struct fpu fpu;
 };
 
 struct nod_proc_security {

@@ -71,6 +71,7 @@ start:
     args.arg_data_size = args.buffer_size - args.arg_data_offset;
     args.nevents = info->nevents;
     args.snaplen = 80; // temporary MAGIC number
+    args.is_socketcall = false;
 
     cbret = nod_filler_callback(&args);
 
@@ -222,9 +223,8 @@ record_one_event(struct nod_proc_info *p, enum nod_event_type type, struct nod_e
 
     retval = do_record_one_event(p, type, ts, event_datap);
     if (retval < 0) {
-        pr_warn("record_one_event: one event log dropped, reason=%d\nnevents=%lld tail=0x%x\n",
-                retval,
-                p->buffer.info->nevents, p->buffer.info->tail);
+        pr_warn("(%u)record_one_event: event #%llu droopped, type=%u, reason=%d\n",
+            smp_processor_id(), p->buffer.info->nevents, type, retval);
     }
 
     return retval;

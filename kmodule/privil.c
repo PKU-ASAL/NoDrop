@@ -209,12 +209,6 @@ nod_restore_context(struct nod_proc_info *p, struct pt_regs *regs)
     if (!ctx->available)
         return;
 
-    // Restore FPU & XSTATE
-    fpregs_lock();
-    memcpy(&dst_fpu->state, &ctx->fpu.state, fpu_kernel_xstate_size);
-    fpregs_unlock();
-    set_thread_flag(TIF_NEED_FPU_LOAD);
-
     memcpy(regs, &ctx->regs, sizeof(*regs));
 
     nod_write_gsbase(ctx->gsbase);
@@ -232,12 +226,6 @@ nod_prepare_context(struct nod_proc_info *p, struct pt_regs *regs)
     ctx->gsbase = current->thread.GSBASE;
 
     memcpy(&ctx->regs, regs, sizeof(*regs));
-
-    fpregs_lock();
-    if (!copy_fpregs_to_fpstate(&ctx->fpu)) {
-        copy_kernel_to_fpregs(&ctx->fpu.state);
-    }
-    fpregs_unlock();
 
     ctx->available = 1;
 }
