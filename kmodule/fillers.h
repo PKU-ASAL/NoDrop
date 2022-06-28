@@ -27,6 +27,8 @@ struct event_filler_arguments;
     FN(sys_eventfd)			\
     FN(sys_futex)			\
     FN(sys_poll)			\
+    FN(sys_lseek)           \
+    FN(sys_llseek)          \
     FN(sys_pread)			\
     FN(sys_pwrite)			\
     FN(sys_readv_preadv)			\

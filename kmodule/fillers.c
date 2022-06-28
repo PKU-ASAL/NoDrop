@@ -1457,6 +1457,144 @@ static int timespec_parse(struct event_filler_arguments *args, unsigned long val
 	return val_to_ring(args, longtime, 0, false, 0);
 }
 
+#ifdef CONFIG_CGROUPS
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 34)
+static int nod_cgroup_path(const struct cgroup *cgrp, char *buf, int buflen)
+{
+	char *start;
+	struct dentry *dentry = rcu_dereference(cgrp->dentry);
+
+	if (!dentry) {
+		/*
+		 * Inactive subsystems have no dentry for their root
+		 * cgroup
+		 */
+		strcpy(buf, "/");
+		return 0;
+	}
+
+	start = buf + buflen;
+
+	*--start = '\0';
+	for (;;) {
+		int len = dentry->d_name.len;
+
+		start -= len;
+		if (start < buf)
+			return -ENAMETOOLONG;
+		memcpy(start, cgrp->dentry->d_name.name, len);
+		cgrp = cgrp->parent;
+		if (!cgrp)
+			break;
+		dentry = rcu_dereference(cgrp->dentry);
+		if (!cgrp->parent)
+			continue;
+		if (--start < buf)
+			return -ENAMETOOLONG;
+		*start = '/';
+	}
+	memmove(buf, start, buf + buflen - start);
+	return 0;
+}
+#endif
+
+static int append_cgroup(const char *subsys_name, int subsys_id, char *buf, int *available)
+{
+	int pathlen;
+	int subsys_len;
+	char *path;
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 15, 0) || LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
+	int res;
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 12, 0)
+	struct cgroup_subsys_state *css = task_css(current, subsys_id);
+#else
+	struct cgroup_subsys_state *css = task_subsys_state(current, subsys_id);
+#endif
+
+	if (!css) {
+		ASSERT(false);
+		return 1;
+	}
+
+	if (!css->cgroup) {
+		ASSERT(false);
+		return 1;
+	}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
+	// According to https://github.com/torvalds/linux/commit/4c737b41de7f4eef2a593803bad1b918dd718b10
+	// cgroup_path now returns an int again
+	res = cgroup_path(css->cgroup, buf, *available);
+	if (res < 0) {
+		ASSERT(false);
+		path = "NA";
+	} else {
+		path = buf;
+	}
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0)
+	path = cgroup_path(css->cgroup, buf, *available);
+	if (!path) {
+		ASSERT(false);
+		path = "NA";
+	}
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 34)
+	res = cgroup_path(css->cgroup, buf, *available);
+	if (res < 0) {
+		ASSERT(false);
+		path = "NA";
+	} else {
+		path = buf;
+	}
+#else
+	res = nod_cgroup_path(css->cgroup, buf, *available);
+	if (res < 0) {
+		ASSERT(false);
+		path = "NA";
+	} else {
+		path = buf;
+	}
+#endif
+
+	pathlen = strlen(path);
+	subsys_len = strlen(subsys_name);
+	if (subsys_len + 1 + pathlen + 1 > *available)
+		return 1;
+
+	memmove(buf + subsys_len + 1, path, pathlen);
+	memcpy(buf, subsys_name, subsys_len);
+	buf += subsys_len;
+	*buf++ = '=';
+	buf += pathlen;
+	*buf++ = 0;
+	*available -= (subsys_len + 1 + pathlen + 1);
+	return 0;
+}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0)
+#define SUBSYS(_x)																						\
+if (append_cgroup(#_x, _x ## _cgrp_id, args->str_storage + STR_STORAGE_SIZE - available, &available))	\
+	goto cgroups_error;
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0)
+#define IS_SUBSYS_ENABLED(option) IS_BUILTIN(option)
+#define SUBSYS(_x)																						\
+if (append_cgroup(#_x, _x ## _subsys_id, args->str_storage + STR_STORAGE_SIZE - available, &available)) \
+	goto cgroups_error;
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3, 7, 0)
+#define IS_SUBSYS_ENABLED(option) IS_ENABLED(option)
+#define SUBSYS(_x)																						\
+if (append_cgroup(#_x, _x ## _subsys_id, args->str_storage + STR_STORAGE_SIZE - available, &available)) \
+	goto cgroups_error;
+#else
+#define SUBSYS(_x)																						\
+if (append_cgroup(#_x, _x ## _subsys_id, args->str_storage + STR_STORAGE_SIZE - available, &available)) \
+	goto cgroups_error;
+#endif
+
+#endif
+
 static int nod_autofill(struct event_filler_arguments *args, int start_index, int end_index)
 {
 	int res;
@@ -1572,6 +1710,10 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 	long swap = 0;
 	int available = STR_STORAGE_SIZE;
 
+#ifdef __NR_clone3
+	struct clone_args cl_args;
+#endif
+
 	/*
 	 * Make sure the operation was successful
 	 */
@@ -1580,7 +1722,9 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
-	if (unlikely(retval < 0 && args->event_type != NODE_SYSCALL_EXECVEAT)) {
+	if (unlikely(retval < 0 &&
+		     args->event_type != NODE_SYSCALL_EXECVE_19 &&
+			 args->event_type != NODE_SYSCALL_EXECVEAT)) {
 
 		/* The call failed, but this syscall has no exe, args
 		 * anyway, so I report empty ones */
@@ -1600,6 +1744,7 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 		if (unlikely(res != NOD_SUCCESS))
 			return res;
 	} else {
+
 		if (likely(retval >= 0)) {
 			/*
 			 * The call succeeded. Get exe, args from the current
@@ -1633,14 +1778,29 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 		} else {
 
 			/*
-			 * The execve call failed. I get exe, args from the
+			 * The execve or execveat call failed. I get exe, args from the
 			 * input args; put one \0-separated exe-args string into
 			 * str_storage
 			 */
 			args->str_storage[0] = 0;
 
-			syscall_get_arguments_deprecated(current, args->regs, 1, 1, &val);
-            args_len = accumulate_argv_or_env((const char __user * __user *)val, args->str_storage, available);
+			switch (args->event_type)
+			{
+			case NODE_SYSCALL_EXECVE_19:
+				syscall_get_arguments_deprecated(current, args->regs, 1, 1, &val);
+				break;
+			
+			case NODE_SYSCALL_EXECVEAT:
+				syscall_get_arguments_deprecated(current, args->regs, 2, 1, &val);
+				break;
+
+			default:
+				val = 0;
+				break;
+			}
+
+				args_len = accumulate_argv_or_env((const char __user * __user *)val,
+							   args->str_storage, available);
 
 			if (unlikely(args_len < 0))
 				args_len = 0;
@@ -1767,9 +1927,26 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
-	if (args->event_type == NODE_SYSCALL_CLONE3 ||
-		args->event_type == NODE_SYSCALL_FORK ||
-		args->event_type == NODE_SYSCALL_VFORK) {
+	/*
+	 * cgroups
+	 */
+	args->str_storage[0] = 0;
+#ifdef CONFIG_CGROUPS
+	rcu_read_lock();
+#include <linux/cgroup_subsys.h>
+cgroups_error:
+	rcu_read_unlock();
+#endif
+
+	res = val_to_ring(args, (int64_t)(long)args->str_storage, STR_STORAGE_SIZE - available, false, 0);
+	if (unlikely(res != NOD_SUCCESS))
+		return res;
+
+	if (args->event_type == NODE_SYSCALL_CLONE_20 ||
+		args->event_type == NODE_SYSCALL_FORK_20 ||
+		args->event_type == NODE_SYSCALL_VFORK_20 ||
+		args->event_type == NODE_SYSCALL_CLONE3) 
+		{
 		/*
 		 * clone-only parameters
 		 */
@@ -1791,10 +1968,34 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 		/*
 		 * flags
 		 */
-		if (args->event_type == NODE_SYSCALL_CLONE3) {
+		switch (args->event_type)
+		{
+		case NODE_SYSCALL_CLONE_20:
+#ifdef CONFIG_S390
+			syscall_get_arguments_deprecated(current, args->regs, 1, 1, &val);
+#else
 			syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
-		} else
+#endif
+			break;
+
+		case NODE_SYSCALL_CLONE3:
+#ifdef __NR_clone3
+			syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
+			res = nod_copy_from_user(&cl_args, (void *)val, sizeof(struct clone_args));
+			if (unlikely(res != 0))
+			{
+				return NOD_FAILURE_INVALID_USER_MEMORY;
+			}
+			val = cl_args.flags;
+#else
 			val = 0;
+#endif
+			break;
+		
+		default:
+			val = 0;
+			break;
+		}
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 20)
 		if(pidns != &init_pid_ns || pid_ns_for_children(current) != pidns)
@@ -1842,12 +2043,16 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 		if (unlikely(res != NOD_SUCCESS))
 			return res;
 
-	} else if (args->event_type == NODE_SYSCALL_EXECVEAT) {
+	} else if (args->event_type == NODE_SYSCALL_EXECVE_19 || 
+			   args->event_type == NODE_SYSCALL_EXECVEAT) {
 		/*
-		 * execve-only parameters
+		 * execve family parameters.
 		 */
 		long env_len = 0;
 		int tty_nr = 0;
+		bool exe_writable = false;
+		struct file *exe_file = NULL;
+		uint32_t flags = 0; // execve additional flags
 
 		if (likely(retval >= 0)) {
 			/*
@@ -1868,9 +2073,23 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 			/*
 			 * The call failed, so get the env from the arguments
 			 */
-			syscall_get_arguments_deprecated(current, args->regs, 2, 1, &val);
-            env_len = accumulate_argv_or_env((const char __user * __user *)val,
-                            args->str_storage, available);
+			switch (args->event_type)
+			{
+			case NODE_SYSCALL_EXECVE_19:
+				syscall_get_arguments_deprecated(current, args->regs, 2, 1, &val);
+				break;
+			
+			case NODE_SYSCALL_EXECVEAT:
+				syscall_get_arguments_deprecated(current, args->regs, 3, 1, &val);
+				break;
+
+			default:
+				val = 0;
+				break;
+			} 
+			
+			env_len = accumulate_argv_or_env((const char __user * __user *)val,
+							  args->str_storage, available);
 
 			if (unlikely(env_len < 0))
 				env_len = 0;
@@ -1918,6 +2137,39 @@ int f_proc_startupdate(struct event_filler_arguments *args)
 		res = val_to_ring(args, val, 0, false, 0);
 		if (unlikely(res != NOD_SUCCESS))
 			return res;
+
+		/*
+		 * exe_writable flag
+		 */
+
+		exe_file = nod_get_mm_exe_file(mm);
+
+		if (exe_file != NULL) {
+			if (file_inode(exe_file) != NULL) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+				exe_writable |= (inode_permission(current_user_ns(), file_inode(exe_file), MAY_WRITE) == 0);
+				exe_writable |= inode_owner_or_capable(current_user_ns(), file_inode(exe_file));
+#else
+				exe_writable |= (inode_permission(file_inode(exe_file), MAY_WRITE) == 0);
+				exe_writable |= inode_owner_or_capable(file_inode(exe_file));
+#endif
+			}
+			fput(exe_file);
+		}
+
+		if (exe_writable) {
+			flags |= NOD_EXE_WRITABLE;
+		}
+
+		// write all the additional flags for execve family here...
+
+		/*
+		 * flags
+		 */
+
+		res = val_to_ring(args, flags, 0, false, 0);
+		if (unlikely(res != NOD_SUCCESS))
+			return res;
 	}
 
 	return NOD_SUCCESS;
@@ -1935,15 +2187,15 @@ int f_sys_generic(struct event_filler_arguments *args)
 
     if (table_index >= 0 &&
         table_index < SYSCALL_TABLE_SIZE) {
-            res = val_to_ring(args, table_index, 0, false, 0);
-            if (unlikely(res != NOD_SUCCESS))
+		res = val_to_ring(args, table_index, 0, false, 0);
+		if (unlikely(res != NOD_SUCCESS))
                 return res;
-        } else {
-            ASSERT(false);
-            res = val_to_ring(args, (u64)"<out of bound>", 0, false, 0);
-            if (unlikely(res != NOD_SUCCESS))
-                return res;
-        }
+	} else {
+		ASSERT(false);
+		res = val_to_ring(args, (u64)"<out of bound>", 0, false, 0);
+		if (unlikely(res != NOD_SUCCESS))
+			return res;
+	}
     return NOD_SUCCESS;
 }
 
@@ -3281,8 +3533,77 @@ int f_sys_poll(struct event_filler_arguments *args)
 }
 
 /* NODE_SYSCALL_SELECT: auto fill only */
-/* NODE_SYSCALL_LSEEK: auto fill only */
-/* NODE_SYSCALL_LLSEEK: auto fill only */
+
+int f_sys_lseek(struct event_filler_arguments *args)
+{
+	unsigned long val;
+	int res;
+
+	/*
+	 * fd
+	 */
+	syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
+	res = val_to_ring(args, val, 0, false, 0);
+	if (unlikely(res != NOD_SUCCESS))
+		return res;
+
+	/*
+	 * offset
+	 */
+	syscall_get_arguments_deprecated(current, args->regs, 1, 1, &val);
+	res = val_to_ring(args, val, 0, false, 0);
+	if (unlikely(res != NOD_SUCCESS))
+		return res;
+
+	/*
+	 * whence
+	 */
+	syscall_get_arguments_deprecated(current, args->regs, 2, 1, &val);
+	res = val_to_ring(args, lseek_whence_to_scap(val), 0, false, 0);
+	if (unlikely(res != NOD_SUCCESS))
+		return res;
+
+	return NOD_SUCCESS;
+}
+
+int f_sys_llseek(struct event_filler_arguments *args)
+{
+	unsigned long val;
+	int res;
+	unsigned long oh;
+	unsigned long ol;
+	uint64_t offset;
+
+	/*
+	 * fd
+	 */
+	syscall_get_arguments_deprecated(current, args->regs, 0, 1, &val);
+	res = val_to_ring(args, val, 0, false, 0);
+	if (unlikely(res != NOD_SUCCESS))
+		return res;
+
+	/*
+	 * offset
+	 * We build it by combining the offset_high and offset_low system call arguments
+	 */
+	syscall_get_arguments_deprecated(current, args->regs, 1, 1, &oh);
+	syscall_get_arguments_deprecated(current, args->regs, 2, 1, &ol);
+	offset = (((uint64_t)oh) << 32) + ((uint64_t)ol);
+	res = val_to_ring(args, offset, 0, false, 0);
+	if (unlikely(res != NOD_SUCCESS))
+		return res;
+
+	/*
+	 * whence
+	 */
+	syscall_get_arguments_deprecated(current, args->regs, 4, 1, &val);
+	res = val_to_ring(args, lseek_whence_to_scap(val), 0, false, 0);
+	if (unlikely(res != NOD_SUCCESS))
+		return res;
+
+	return NOD_SUCCESS;
+}
+
 /* NODE_SYSCALL_GETCWD: auto fill only */
 /* NODE_SYSCALL_CHDIR: auto fill only */
 /* NODE_SYSCALL_FCHDIR: auto fill only */
