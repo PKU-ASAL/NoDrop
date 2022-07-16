@@ -9,7 +9,7 @@
 
 #include <sys/types.h>
 #define N 10
-#define M 50
+#define M 500
 
 // total events: N * (2 + M * 11) + N * 2 + 9
 void *f1(void *arg) {

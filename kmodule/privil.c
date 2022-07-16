@@ -204,7 +204,6 @@ void
 nod_restore_context(struct nod_proc_info *p, struct pt_regs *regs)
 {
     struct nod_proc_context *ctx = &p->ctx;
-    struct fpu *dst_fpu = &current->thread.fpu;
 
     if (!ctx->available)
         return;
