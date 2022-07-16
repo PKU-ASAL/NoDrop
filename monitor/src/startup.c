@@ -6,9 +6,11 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 
+#include "config.h"
 #include "events.h"
 #include "common.h"
 #include "ioctl.h"
+
 #include "mmheap.h"
 #include "pkeys.h"
 #include "dynlink.h"
@@ -120,7 +122,7 @@ nod_start_main(int argc, char **argv, char **env) {
                 "Cannot allocate buffer", p->buffer = NULL);
 #ifdef NOD_PKEY_SUPPORT
         if (p->pkey != -1) {
-            ASSERT_OUT(likely(pkey_mprotect(p->buffer, sizeof(struct nod_buffer), PROT_READ, p->pkey) != -1),
+            ASSERT_OUT(likely(pkey_mprotect(p->buffer, BUFFER_SIZE, PROT_READ, p->pkey) != -1),
                     "pkey_mprotect for buffer failed",);
         }
 #endif

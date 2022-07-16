@@ -1,6 +1,6 @@
 # NoDrop
 
-### How to build
+## How to build
 
 NoDrop contains 2 major components: the kernel module and the monitor. All codes under `src/` is the kernel module and all codes under `monitor` is the monitor.
 
@@ -16,12 +16,24 @@ make load
 
 Then the kernel module is loaded. You can find the kernel module file called `nodrop.ko` in project root directory.
 
-### Configuration
+## Configuration
 
-##### Size of logging buffer
+In NoDrop, there are 3 variables can be configured with cmake.
 
-In NoDrop, each core has one independent logging buffer with 8MB by default. The buffer size is configured by macro `BUFFER_SIZE` in `include/events.h`
+- `BUFFER_SIZE`: the size of each per-thread buffer (default value: 8MB)
+- `MONITOR_PATH`: the path to find monitor executable (default value: `${PROJECT_BINARY_PATH}/monitor/monitor`)
+- `STORE_PATH`: the pare that store the event data (default value: `/tmp/nodrop`)
 
-##### Path of storing event logs
+When you generate cmake files, you can specify these variables. For example, if you want to set that buffer size is 4MB, monitor path is `/my/path/to/monitor` and store path is `/my/path/to/store`, you can run the following commands
 
-All event logs are located in `/tmp/nodrop` by default. You can adjust this path by modifying `PATH_FMT` in `monitor/main.c`.
+```
+cmake .. -DBUFFER_SIZE=4*Mib -DMONITOR_PATH=/my/path/to/monitor -DSTORE_PATH=/my/path/to/store
+```
+
+For buffer size, you can specify it with integer or using unit including Kib and Mib. For the above exmaple, you can also sepcify the buffer size using `-DBUFFER_SIZE=4096`
+
+### Pkey Support
+
+NoDrop utilizes Intel Protection Key (PKEY) to protect its memory. If your machine does not support pkey, you must disable it otherwise a SIGILL will triggered due to the illegel instruction used by pkey.
+
+This option is enabled on default. To disable the pkey, you can instruct CMake with `-DPKEY_SUPPORT=off`.

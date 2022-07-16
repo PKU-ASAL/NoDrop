@@ -21,6 +21,8 @@ cmake_minimum_required(VERSION 3.0.0 FATAL_ERROR)
 
 project("NoDrop")
 
+option(PKEY_SUPPORT "Using Intel Memory Protection Key to protect consumer's memory" ON)
+
 if (NOT DEFINED PROBE_NAME)
         set(PROBE_NAME "nodrop")
 endif()
@@ -31,6 +33,33 @@ else()
         set(MAKE_COMMAND "make")
 endif()
 
-add_subdirectory(monitor ${PROJECT_BINARY_DIR}/monitor)
+if(PKEY_SUPPORT)
+        add_definitions(-DNOD_PKEY_SUPPORT)
+        message(STATUS "Enable Protection Key")
+else()
+        message(STATUS "Disable Protection Key")
+endif()
+
+if(NOT BUFFER_SIZE)
+        set(BUFFER_SIZE 8*Mib)
+endif()
+
+if(NOT MONITOR)
+        set(MONITOR monitor)
+endif()
+
+if(NOT MONITOR_PATH)
+        set(MONITOR_PATH ${PROJECT_BINARY_DIR}/monitor/${MONITOR})
+endif()
+
+if(NOT STORE_PATH)
+        set(STORE_PATH /tmp/nodrop)
+endif()
+
+message(STATUS "Buffer size: ${BUFFER_SIZE}")
+message(STATUS "Monitor path: ${MONITOR_PATH}")
+message(STATUS "Store path: ${STORE_PATH}")
+
 add_subdirectory(kmodule ${PROJECT_BINARY_DIR}/kmodule)
+add_subdirectory(monitor ${PROJECT_BINARY_DIR}/monitor)
 add_subdirectory(scripts ${PROJECT_BINARY_DIR}/scripts)

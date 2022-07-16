@@ -15,6 +15,7 @@
 
 #include "common.h"
 #include "events.h"
+#include "config.h"
 
 static struct elf_phdr *monitor_elf_phdata, *interp_elf_phdata;
 static struct elf_shdr *monitor_elf_shdata;

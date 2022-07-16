@@ -9,6 +9,8 @@
 #include "events.h"
 #include "common.h"
 
+#include "config.h"
+
 static int 
 do_record_one_event(struct nod_proc_info *p,
         enum nod_event_type event_type,

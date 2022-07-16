@@ -20,7 +20,10 @@ message(STATUS "Kernel release: ${KERNEL_RELEASE}")
 message(STATUS "Kernel headers: ${KERNELHEADERS_DIR}")
 message(STATUS "Kernel generic: ${KERNELHEADERS_ASM}")
 
-configure_file(Makefile.in src/Makefile)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Makefile.in 
+                src/Makefile)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/../include/config.h.in 
+                ${CMAKE_CURRENT_SOURCE_DIR}/config.h)
 
 set(KMODULE_SOURCES
         nod_main.c
@@ -42,6 +45,7 @@ set(KMODULE_SOURCES
         tables/dynamic_params_table.c
         flags.h
         syscall.h
+        config.h
         ../include/common.h
         ../include/events.h
         ../include/ioctl.h

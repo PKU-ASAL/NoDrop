@@ -22,8 +22,11 @@ foreach (FILENAME ${MONITOR_SOURCES})
     get_filename_component(TMP_NAME ${FILENAME} NAME)
     configure_file(${FILENAME} src/${TMP_NAME} COPYONLY)
 endforeach ()
+
 configure_file(musl.specs musl.specs COPYONLY)
 configure_file(script_x86-64.ld script_x86-64.ld COPYONLY)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/../include/config.h.in 
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/config.h)
 
 set(NODROP_COMMON_FLAGS "-mno-sse -Wall -ggdb -fPIE -fno-stack-protector --static-pie -specs=musl.specs")
 set(NODROP_DEBUG_FLAGS "-Og -DDEBUG")
@@ -37,12 +40,10 @@ set(LINKER_SCRIPT "script_x86-64.ld")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -T ${LINKER_SCRIPT}")
 
 include_directories(
-        mmheap/
         src/
         ../include
+        mmheap/
 )
-
-set(MONITOR monitor)
 
 add_executable(${MONITOR} ${MONITOR_SOURCES})
 add_custom_command(TARGET ${MONITOR} POST_BUILD

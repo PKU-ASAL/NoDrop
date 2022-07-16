@@ -16,7 +16,6 @@
 typedef uint64_t nanoseconds;
 #define _packed __attribute__((packed))
 
-#define BUFFER_SIZE   (8 * 1024 * 1024)
 #define MAX_EVENT_NUM 8192
 #define SYSCALL_TABLE_SIZE 512
 #define STR_STORAGE_SIZE PAGE_SIZE

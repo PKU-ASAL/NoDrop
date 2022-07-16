@@ -1,6 +1,7 @@
 .gdbinit
 .DS_Store
 musl.specs
+config.h
 
 .vscode/
 .idea/

@@ -4,10 +4,12 @@
 #include <sys/time.h>
 #include <sys/syscall.h>
 
+#include "config.h"
 #include "events.h"
 #include "common.h"
 
-#define PATH_FMT "/tmp/nodrop/%u-%ld.buf"
+
+#define PATH_FMT STORE_PATH "/%u-%ld.buf"
 #define SECOND_IN_US 1000000000
 
 static char path[100];

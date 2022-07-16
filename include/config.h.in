@@ -1,0 +1,11 @@
+#ifndef CONFIG_H_
+#define CONFIG_H_
+
+#define Kib 1024
+#define Mib 1024 * Kib
+
+#define BUFFER_SIZE ${BUFFER_SIZE}
+#define MONITOR_PATH "${MONITOR_PATH}"
+#define STORE_PATH "${STORE_PATH}"
+
+#endif //CONFIG_H_

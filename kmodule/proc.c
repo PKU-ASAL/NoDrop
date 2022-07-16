@@ -7,11 +7,12 @@
 #include <linux/mman.h>
 
 #include "nodrop.h"
+#include "procinfo.h"
+
+#include "config.h"
 #include "common.h"
 #include "events.h"
 #include "ioctl.h"
-#include "procinfo.h"
-
 
 #define BUFSIZE 30
 

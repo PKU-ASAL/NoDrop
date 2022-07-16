@@ -19,7 +19,6 @@
 // #define NOD_TEST(task) if (!(STR_EQU((task)->comm, "nginx") || STR_EQU((task)->comm, "httpd") || STR_EQU((task)->comm, "redis-server") || STR_EQU((task)->comm, "postmark") || STR_EQU((task)->comm, "openssl") || STR_EQU((task)->comm, "7z")))
 #define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
 #define ASSERT(expr) BUG_ON(!(expr))
-#define MONITOR_PATH "./monitor/monitor"
 
 #define NOD_SUCCESS 0
 #define NOD_SUCCESS_LOAD 1
