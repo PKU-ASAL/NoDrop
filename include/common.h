@@ -31,11 +31,13 @@
 
 struct nod_stack_info {
 	int ioctl_fd;
-	int nr;
 	int pkey;
+	int nr;
 	long code;
 	unsigned long fsbase;
 	unsigned long hash;
+	char *buffer;
+	struct nod_buffer_info *buffer_info;
 };
 
 struct nod_monitor_info {
@@ -46,7 +48,8 @@ __attribute__((unused))
 static unsigned long 
 nod_calc_hash(struct nod_stack_info *stack)
 {
-	return stack->fsbase ^ (stack->ioctl_fd + 42) ^ (stack->pkey - 42);
+	return stack->fsbase ^ (stack->ioctl_fd + 42) ^ (stack->pkey - 42) ^ 
+		(unsigned long)stack->buffer ^ (unsigned long)stack->buffer_info;
 }
 
 #endif //_COMMON_H_

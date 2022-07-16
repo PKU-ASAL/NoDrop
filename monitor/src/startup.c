@@ -33,21 +33,16 @@ struct nod_monitor_info __info = {.fsbase = 0};
 static char mmheap_pool[NOD_MONITOR_MEM_SIZE];
 
 // declarations of processing logic
-int nod_monitor_main(struct nod_buffer *buffer);
-
+int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info);
 weak void nod_monitor_init(int argc, char *argv[], char *env[]) {};
-
 weak void nod_monitor_exit(long code) {};
 
 // declarations of startup
 static void nod_start_main(int, char **, char **);
-
 static void nod_restore_context(struct nod_stack_info *p);
 
 weak void init();
-
 weak void _fini();
-
 int __libc_start_main(int (*)(), int, char **,
                       void (*)(), void(*)(), void(*)());
 
@@ -70,7 +65,9 @@ nod_restore_context(struct nod_stack_info *p) {
         nod_monitor_exit(p->nr);
         syscall(p->nr, p->code);
     } else {
+#ifdef NOD_PKEY_SUPPORT
         if (likely(p->pkey != -1)) pkey_set(p->pkey, PKEY_DISABLE_WRITE);
+#endif
         ioctl(p->ioctl_fd, NOD_IOCTL_RESTORE_CONTEXT, p);
     }
     NOREACH
@@ -83,20 +80,20 @@ nod_initialize(struct nod_stack_info *p) {
     if (unlikely(__info.fsbase == 0)) {
         __info.fsbase = p->fsbase;
         mprotect(&__info, (sizeof(__info) + getpagesize() - 1) / getpagesize(), PROT_READ);
-
+#ifdef NOD_PKEY_SUPPORT
         if (p->pkey != -1) {
             pkey_set(p->pkey, 0);
             ASSERT_EXIT(likely(pkey_mprotect(&__bdata, (unsigned long) &__edata - (unsigned long) &__bdata,
                                              PROT_READ | PROT_WRITE, p->pkey) != -1),
                         "pkey_mprotect for data segenemtn failed",);
         }
+#endif
     }
     nod_mmheap_init(mmheap_pool, sizeof(mmheap_pool));
 }
 
 static void
 nod_start_main(int argc, char **argv, char **env) {
-    struct nod_buffer *buffer;
     struct nod_stack_info *p = (struct nod_stack_info *) argv[--argc];
 
     argv[argc] = 0;
@@ -106,27 +103,44 @@ nod_start_main(int argc, char **argv, char **env) {
         nod_monitor_init(argc, argv, env);
     } else {
         syscall(SYS_arch_prctl, ARCH_SET_FS, p->fsbase);
+#ifdef NOD_PKEY_SUPPORT
         if (p->pkey != -1) {
             pkey_set(p->pkey, 0);
         }
+#endif
     }
 
     ASSERT_OUT(likely((p->ioctl_fd = open(NOD_IOCTL_PATH, O_RDONLY)) >= 0),
                "Open " NOD_IOCTL_PATH " failed",);
 
-    p->hash = nod_calc_hash(p);
-
-    buffer = (struct nod_buffer *) mmap(NULL, sizeof(struct nod_buffer),
-                                        PROT_READ, MAP_PRIVATE, p->ioctl_fd, 0);
-    ASSERT_OUT(likely(buffer != MAP_FAILED), "Cannot allocate buffer", buffer = 0);
-    if (p->pkey != -1) {
-        ASSERT_OUT(likely(pkey_mprotect(buffer, sizeof(struct nod_buffer), PROT_READ, p->pkey) != -1),
-                   "pkey_mprotect for buffer failed",);
+    if (unlikely(p->buffer == NULL)) {
+        p->buffer = (char *) mmap(NULL, BUFFER_SIZE,
+                                PROT_READ, MAP_PRIVATE, p->ioctl_fd, 0);
+        ASSERT_OUT(likely(p->buffer != MAP_FAILED), 
+                "Cannot allocate buffer", p->buffer = NULL);
+#ifdef NOD_PKEY_SUPPORT
+        if (p->pkey != -1) {
+            ASSERT_OUT(likely(pkey_mprotect(p->buffer, sizeof(struct nod_buffer), PROT_READ, p->pkey) != -1),
+                    "pkey_mprotect for buffer failed",);
+        }
+#endif
+    }
+    
+    if (unlikely(p->buffer_info == NULL)) {
+        p->buffer_info = (struct nod_buffer_info *) mmap(NULL, sizeof(struct nod_buffer_info*),
+                                                       PROT_READ | PROT_WRITE, MAP_PRIVATE, p->ioctl_fd, 0);
+        ASSERT_OUT(likely(p->buffer_info != MAP_FAILED), 
+                "Cannot allocate buffer info", p->buffer_info = NULL);
+#ifdef NOD_PKEY_SUPPORT
+        if (p->pkey != -1) {
+            ASSERT_OUT(likely(pkey_mprotect(p->buffer_info, sizeof(struct nod_buffer_info), PROT_READ | PROT_WRITE, p->pkey) != -1),
+                    "pkey_mprotect for buffer info failed",);
+        }
+#endif
     }
 
-    nod_monitor_main(buffer);
-
-    munmap(buffer, sizeof(struct nod_buffer));
+    p->hash = nod_calc_hash(p);
+    nod_monitor_main(p->buffer, p->buffer_info);
 
 out:
     nod_restore_context(p);

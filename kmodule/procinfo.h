@@ -43,8 +43,7 @@ struct nod_proc_info {
 	struct list_head list;
 	pid_t pid;
 	struct mm_struct *mm;
-	struct nod_buffer *ubuffer;
-	struct nod_kbuffer buffer;
+	struct nod_buffer buffer;
 	int ioctl_fd;
 	unsigned long load_addr;
 	enum nod_proc_status status;

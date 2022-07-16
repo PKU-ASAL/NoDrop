@@ -131,7 +131,7 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
             } else {
                 /* 
                  * If the child process has its own address space,
-                 * he should inherit parent's procinfo.
+                 * he should inherit parent's procinfo, including buffer, load address and pkey.
                  * We mark it here and do it lazily.
                  */
                 if (!nod_proc_acquire(NOD_CLONE, NULL, -1, current))

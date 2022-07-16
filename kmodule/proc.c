@@ -38,7 +38,7 @@ __proc_buf_reset(struct nod_proc_info *this, unsigned long *ret, va_list args)
 static int
 __proc_bufcount_read(struct nod_proc_info *this, unsigned long *ret, va_list args)
 {
-    struct nod_kbuffer *buf = &this->buffer;
+    struct nod_buffer *buf = &this->buffer;
     struct buffer_count_info *info = va_arg(args, struct buffer_count_info *);
     down_read(&buf->sem);
     info->event_count += buf->event_count;
@@ -71,7 +71,7 @@ nod_dev_read(struct file *filp, char __user *buf, size_t count, loff_t *off) {
 static int
 __proc_buf_copy(struct nod_proc_info *this, unsigned long *ret, va_list args)
 {
-    struct nod_kbuffer *buf = &this->buffer;
+    struct nod_buffer *buf = &this->buffer;
     char **ptr = va_arg(args, char **);
     uint64_t *count = va_arg(args, uint64_t *);
     uint64_t len = va_arg(args, uint64_t);
@@ -198,6 +198,7 @@ out:
 static int nod_dev_mmap(struct file *filp, struct vm_area_struct *vma)
 {
     int ret;
+    long length;
     struct nod_proc_info *p;
 
     p = filp->private_data;
@@ -207,18 +208,30 @@ static int nod_dev_mmap(struct file *filp, struct vm_area_struct *vma)
 
     if (vma->vm_pgoff != 0) {
         vpr_err("invalid pgoff %lu, must be 0\n", vma->vm_pgoff);
-        return -EINVAL;
+        return -EIO;
     }
+    
+    length = vma->vm_end - vma->vm_start;
+    if (length <= PAGE_SIZE) {
+        ret = remap_vmalloc_range(vma, p->buffer.info, 0);
+        if (ret < 0) {
+            vpr_err("remap_vmalloc_range for buffer info failed (%d)\n", ret);
+            return ret;
+        }
+    } else if (length == BUFFER_SIZE) {
+        if (vma->vm_flags & VM_WRITE) {
+            vpr_err("invalid mmap flags 0x%lx\n", vma->vm_flags);
+            return -EINVAL;
+        }
 
-    if (vma->vm_flags & VM_WRITE) {
-        vpr_err("invalid mmap flags 0x%lx\n", vma->vm_flags);
-        return -EINVAL;
-    }
-
-    ret = remap_vmalloc_range(vma, p->ubuffer, 0);
-    if (ret < 0) {
-        vpr_err("remap_vmalloc_range failed (%d)\n", ret);
-        return ret;
+        ret = remap_vmalloc_range(vma, p->buffer.buffer, 0);
+        if (ret < 0) {
+            vpr_err("remap_vmalloc_range for buffer failed (%d)\n", ret);
+            return ret;
+        }
+    } else {
+        vpr_err("invalid mmap size %ld\n", length);
+        return -EIO;
     }
 
     return 0;

@@ -363,13 +363,11 @@ nod_load_monitor(struct nod_proc_info *p)
     nod_prepare_security(p);
     nod_prepare_context(p, regs);
 
-    copy_to_user_buffer(&p->buffer, p->ubuffer);
-
     elf_reg_init(&current->thread, regs, 0);
     regs->sp = sp;
     regs->cx = regs->ip = entry;
 
-    return NOD_SUCCESS;
+    return NOD_SUCCESS_LOAD;
 
 out:
     vpr_err("cannot transfer logging buffer\n");

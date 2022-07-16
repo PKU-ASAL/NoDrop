@@ -21,32 +21,66 @@ do_record_one_event(struct nod_proc_info *p,
     struct event_filler_arguments args;
     struct nod_buffer_info *info;
     struct nod_event_hdr *hdr;
-    struct nod_kbuffer *buffer;
+    struct nod_buffer *buffer;
 
     buffer = &p->buffer;
     info = buffer->info;
 
     down_write(&buffer->sem);
+    
+    if (unlikely(buffer->overflow.filled == 1)) {
+        info->tail = ((struct nod_event_hdr *)buffer->overflow.addr)->len;
+        ++info->nevents;
+        ++buffer->event_count;
 
-start:
+        memmove(buffer->buffer, buffer->overflow.addr, info->tail);
+        buffer->overflow.filled = 0;
+    }
+
     freespace = BUFFER_SIZE - info->tail;
 
     args.nargs = g_event_info[event_type].nparams;
     args.arg_data_offset = args.nargs * sizeof(uint16_t);
 
     force = event_datap->force;
+    restart = 0;
 
-    if (freespace < args.arg_data_offset + sizeof(struct nod_event_hdr)) {
-        // If this event is enforced to transfer to monitor
-        // and the buffer is full at the same time,
-        // cancel the force flag
-        force = 0;
-
-        restart = 1;
-        goto loading;
+restart:
+    if (freespace < args.arg_data_offset + sizeof(struct nod_event_hdr) || restart) {
+        // When the buffer is full, the next event log will temporarily write to the overflow page
+        // The content of this page will be writen to buffer in the next syscall enter.
+        hdr = (struct nod_event_hdr *)buffer->overflow.addr;
+        args.buf_ptr = buffer->overflow.addr + sizeof(struct nod_event_hdr);
+        args.buffer_size = PAGE_SIZE - sizeof(struct nod_event_hdr);
+        
+        force = 1;
+        buffer->overflow.filled = 1;
+    } else {
+        hdr = (struct nod_event_hdr *)(buffer->buffer + info->tail);
+        args.buf_ptr = buffer->buffer + info->tail + sizeof(struct nod_event_hdr);
+        args.buffer_size = freespace - sizeof(struct nod_event_hdr);
     }
 
-    hdr = (struct nod_event_hdr *)(buffer->buffer + info->tail);
+    if (!restart) {
+        args.event_type = event_type;
+        args.str_storage = buffer->str_storage;
+        args.nevents = info->nevents;
+        args.snaplen = 80; // temporary MAGIC number
+        args.is_socketcall = false;
+
+        if (event_datap->category == NODC_SYSCALL) {
+            args.regs = event_datap->event_info.syscall_data.regs;
+            args.syscall_nr = event_datap->event_info.syscall_data.id;
+        } else {
+            args.regs = NULL;
+            args.syscall_nr = -1;
+        }
+
+    }
+
+    args.curarg = 0;
+    args.arg_data_size = args.buffer_size - args.arg_data_offset;
+
     hdr->ts = ts;
     hdr->tid = current->pid;
     hdr->type = event_type;
@@ -54,74 +88,36 @@ start:
     hdr->nargs = args.nargs;
     hdr->magic = NOD_EVENT_HDR_MAGIC & 0xFFFFFFFF;
 
-    args.buf_ptr = buffer->buffer + info->tail + sizeof(struct nod_event_hdr);
-    args.buffer_size = freespace - sizeof(struct nod_event_hdr);
-    args.event_type = event_type;
-    args.str_storage = buffer->str_storage;
-
-    if (event_datap->category == NODC_SYSCALL) {
-        args.regs = event_datap->event_info.syscall_data.regs;
-        args.syscall_nr = event_datap->event_info.syscall_data.id;
-    } else {
-        args.regs = NULL;
-        args.syscall_nr = -1;
-    }
-
-    args.curarg = 0;
-    args.arg_data_size = args.buffer_size - args.arg_data_offset;
-    args.nevents = info->nevents;
-    args.snaplen = 80; // temporary MAGIC number
-    args.is_socketcall = false;
-
     cbret = nod_filler_callback(&args);
 
     if (cbret == NOD_SUCCESS) {
         if (likely(args.curarg == args.nargs)) {
             event_size = sizeof(struct nod_event_hdr) + args.arg_data_offset;
-
             hdr->len = event_size;
-            info->tail += event_size;
 
-            ++info->nevents;
-            ++buffer->event_count;
+            if (likely(buffer->overflow.filled == 0)) {
+                info->tail += event_size;
+                ++info->nevents;
+                ++buffer->event_count;
+            }
         } else {
             pr_err("corrupted filler for event type %d (added %u args, should have added %u args)\n",
                     event_type,
                     args.curarg,
                     args.nargs);
+            force = 0;
         }
     } else if (cbret == NOD_FAILURE_BUFFER_FULL) {
-        force = 0;
-
         restart = 1;
-        goto loading;
-    } else {
-        goto out;
+        goto restart;
     }
 
-out:
     if (force) {
-        restart = 0;
-        goto loading;
+        cbret = nod_load_monitor(p);
     }
 
-out_ret:
     up_write(&buffer->sem);
     return cbret; 
-
-loading:
-    if (nod_load_monitor(p) == NOD_SUCCESS) {
-        reset_buffer(buffer, NOD_INIT_INFO);
-        if (restart)
-            goto start;
-        else {
-            cbret = NOD_SUCCESS_LOAD;
-            goto out_ret;
-        }
-    }
-
-    cbret = NOD_FAILURE_BUG;
-    goto out;
 }
 
 inline nanoseconds nod_nsecs(void) {
@@ -136,7 +132,7 @@ inline nanoseconds nod_nsecs(void) {
 }
 
 int
-init_buffer(struct nod_kbuffer *buffer)
+init_buffer(struct nod_buffer *buffer)
 {
     int ret;
     unsigned int j;
@@ -153,15 +149,23 @@ init_buffer(struct nod_kbuffer *buffer)
 		pr_err("Error allocating the string storage\n");
         goto init_buffer_err;
     }
+    
+    buffer->overflow.addr = (char *)__get_free_page(GFP_KERNEL);
+    if (!buffer->overflow.addr) {
+        ret = -ENOMEM;
+        pr_err("Error allocating the overflow page\n");
+        goto init_buffer_err;
+    }
+    buffer->overflow.filled = 0;
 
-    buffer->info = vmalloc(sizeof(struct nod_buffer_info));
+    buffer->info = vmalloc_user(sizeof(struct nod_buffer_info));
     if (!buffer->info) {
         ret = -ENOMEM;
         pr_err("Error allocating buffer memory\n");
         goto init_buffer_err;
     }
 
-    buffer->buffer = vmalloc(BUFFER_SIZE);
+    buffer->buffer = vmalloc_user(BUFFER_SIZE);
     if (!buffer->buffer) {
         ret = -ENOMEM;
         pr_err("Error allocating buffer memory\n");
@@ -182,7 +186,7 @@ init_buffer_err:
 }
 
 void
-free_buffer(struct nod_kbuffer *buffer)
+free_buffer(struct nod_buffer *buffer)
 {
     if (buffer->info) {
         vfree(buffer->info);
@@ -193,6 +197,12 @@ free_buffer(struct nod_kbuffer *buffer)
         vfree(buffer->buffer);
         buffer->buffer = NULL;
     }
+    
+    if (buffer->overflow.addr) {
+        free_page((unsigned long)buffer->overflow.addr);
+        buffer->overflow.addr = 0;
+        buffer->overflow.filled = 0;
+    }
 
     if (buffer->str_storage) {
         free_page((unsigned long)buffer->str_storage);
@@ -201,11 +211,12 @@ free_buffer(struct nod_kbuffer *buffer)
 }
 
 void
-reset_buffer(struct nod_kbuffer *buffer, int flags) 
+reset_buffer(struct nod_buffer *buffer, int flags) 
 {
     if (flags & NOD_INIT_INFO) {
         buffer->info->nevents = 0;
         buffer->info->tail = 0;
+        buffer->overflow.filled = 0;
     }
 
     if (flags & NOD_INIT_COUNT)

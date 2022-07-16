@@ -117,7 +117,7 @@ static int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer, void *__da
     return 0;
 }
 
-int nod_monitor_main(struct nod_buffer *buffer) {
+int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info) {
     FILE *file;
     char *ptr, *buffer_end;
     struct nod_event_hdr *hdr;
@@ -127,8 +127,8 @@ int nod_monitor_main(struct nod_buffer *buffer) {
         return 0;
     }
 
-    ptr = buffer->buffer;
-    buffer_end = buffer->buffer + buffer->info.tail;
+    ptr = buffer;
+    buffer_end = ptr + buffer_info->tail;
     while (ptr < buffer_end) {
         hdr = (struct nod_event_hdr *)ptr; 
         _parse(file, hdr, (char *)(hdr + 1), 0);
@@ -136,6 +136,7 @@ int nod_monitor_main(struct nod_buffer *buffer) {
         ptr += hdr->len;
     }
 
+    buffer_info->tail = 0;
     fclose(file);
 
     return 0;

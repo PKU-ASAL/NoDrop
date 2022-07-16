@@ -114,21 +114,13 @@ nod_alloc_procinfo(void)
 
     memset(p, 0, sizeof(struct nod_proc_info));
 
-    p->ubuffer = vmalloc_user(sizeof(struct nod_buffer));
-    if (!p->ubuffer) {
-        vpr_err("allocate user buffer for nod_proc_info failed\n");
-        goto out_free_cache;
-    }
-
     if(init_buffer(&p->buffer)) {
         vpr_err("allocate kernel buffer for nod_proc_info failed\n");
-        goto out_free_buffer;
+        goto out_free_cache;
     }
 
     return p;
 
-out_free_buffer:
-    vfree(p->ubuffer);
 out_free_cache:
     kmem_cache_free(proc_info_cachep, p);
 out:
@@ -139,7 +131,6 @@ void
 nod_free_procinfo(struct nod_proc_info *p)
 {
     free_buffer(&p->buffer);
-    vfree(p->ubuffer);
     kmem_cache_free(proc_info_cachep, p);
 }
 
@@ -262,6 +253,8 @@ nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned long *, va_list),
     unsigned long ret;
     va_list args;
     struct rb_node *n;
+    
+    ret = 0;
 
     down_write(&proc_info_rt.sem);
     for (n = rb_first(&proc_info_rt.root); n; n = rb_next(n)) {
@@ -276,6 +269,7 @@ nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned long *, va_list),
             break;
         }
     }
+
 out:
     up_write(&proc_info_rt.sem);
     return ret;

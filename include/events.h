@@ -886,25 +886,20 @@ struct nod_buffer_info {
     volatile uint32_t tail;
 };
 
-struct nod_buffer {
-    char buffer[BUFFER_SIZE];
-    struct nod_buffer_info info;
+#ifdef __KERNEL__
+struct nod_overflow_page {
+    char *addr;
+    int filled;
 };
 
-#ifdef __KERNEL__
-struct nod_kbuffer {
+struct nod_buffer {
     char *buffer;
 	char *str_storage;
     struct nod_buffer_info *info;
-	struct rw_semaphore sem;
 	uint64_t event_count;
+	struct rw_semaphore sem;
+    struct nod_overflow_page overflow;
 };
-
-static inline void copy_to_user_buffer(const struct nod_kbuffer *kbuf, struct nod_buffer *ubuf)
-{
-	memcpy(ubuf->buffer, kbuf->buffer, BUFFER_SIZE);
-	memcpy(&ubuf->info, kbuf->info, sizeof(struct nod_buffer_info));
-}
 #endif //__KERNEL__
 
 #define NOD_EVENT_HDR_MAGIC 0xCAFEBABE
