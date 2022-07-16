@@ -121,7 +121,7 @@ elf_load_phdrs(struct elfhdr *elf_ex,
     if (size > ELF_MIN_ALIGN)
         goto out;
 
-    elf_phdata = kmalloc(size, GFP_KERNEL);
+    elf_phdata = vmalloc(size);
     if (!elf_phdata)
         goto out;
 
@@ -136,7 +136,7 @@ elf_load_phdrs(struct elfhdr *elf_ex,
     err = 0;
 out:
     if (err) {
-        kfree(elf_phdata);
+        vfree(elf_phdata);
         elf_phdata = NULL;
     }
     *elf_phdrs = elf_phdata;
@@ -169,7 +169,7 @@ elf_load_shdrs(struct elfhdr *elf_ex,
     if (size > ELF_MIN_ALIGN)
         goto out;
 
-    elf_shdata = kmalloc(size, GFP_KERNEL);
+    elf_shdata = vmalloc(size);
     if (!elf_shdata)
         goto out;
     /* Read in the section headers */
@@ -183,7 +183,7 @@ elf_load_shdrs(struct elfhdr *elf_ex,
     err = 0;
 out:
     if (err) {
-        kfree(elf_shdata);
+        vfree(elf_shdata);
         elf_shdata = NULL;
     }
     *elf_shdrs = elf_shdata;
@@ -207,7 +207,7 @@ elf_load_shstrtab(struct elfhdr *elf_ex,
     size = str_shdr->sh_size;
     pos = str_shdr->sh_offset;
 
-    elf_shstrdata = kmalloc(size, GFP_KERNEL);    
+    elf_shstrdata = vmalloc(size);
     if (!elf_shstrdata)
         goto out;
 
@@ -221,7 +221,7 @@ elf_load_shstrtab(struct elfhdr *elf_ex,
 
 out:
     if (err) {
-        kfree(elf_shstrdata);
+        vfree(elf_shstrdata);
         elf_shstrdata = NULL;
     }
     *elf_shstrtab = elf_shstrdata;

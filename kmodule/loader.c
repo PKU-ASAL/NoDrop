@@ -394,8 +394,10 @@ int loader_init(void)
 
     filp_monitor = open_exec(MONITOR_PATH);
     retval = PTR_ERR(filp_monitor);
-    if (IS_ERR(filp_monitor))
+    if (IS_ERR(filp_monitor)) {
+        filp_monitor = NULL;
         goto out;
+    }
 
     pos = 0;
     retval = kernel_read(filp_monitor, &monitor_elf_ex, sizeof(monitor_elf_ex), &pos);
@@ -451,7 +453,7 @@ int loader_init(void)
                 goto out_free_monitor;
 
             retval = -ENOMEM;
-            elf_interpreter = kmalloc(elf_ppnt->p_filesz, GFP_KERNEL);
+            elf_interpreter = vmalloc(elf_ppnt->p_filesz);
             if (!elf_interpreter)
                 goto out_free_monitor;
 
@@ -470,8 +472,10 @@ int loader_init(void)
 
             filp_interpreter = open_exec(elf_interpreter);
             retval = PTR_ERR(filp_interpreter);
-            if (IS_ERR(filp_interpreter))
+            if (IS_ERR(filp_interpreter)) {
+                filp_interpreter = NULL;
                 goto out_free_interp;
+            }
 
             /* Get the exec headers */
             pos = 0;
@@ -492,7 +496,7 @@ int loader_init(void)
         goto success;
     }
 
-    kfree(elf_interpreter);
+    vfree(elf_interpreter);
     elf_interpreter = NULL;
 
     retval = -ELIBBAD;
@@ -515,19 +519,26 @@ out:
     return retval;
 
 out_free_dentry:
-    allow_write_access(filp_interpreter);
-    if (filp_interpreter)
+    if (filp_interpreter) {
+        allow_write_access(filp_interpreter);
         fput(filp_interpreter);
-    filp_interpreter = NULL;
+        filp_interpreter = NULL;
+    }
 out_free_interp:
-    kfree(elf_interpreter);
-    elf_interpreter = NULL;
+    if (elf_interpreter) {
+        vfree(elf_interpreter);
+        elf_interpreter = NULL;
+    }
 out_free_monitor:
-    allow_write_access(filp_monitor);
-    kfree(elf_shstrtab);
-    if (filp_monitor)
+    if (filp_monitor) {
+        allow_write_access(filp_monitor);
         fput(filp_monitor);
-    filp_monitor = NULL;
+        filp_monitor = NULL;
+    }
+    if (elf_shstrtab) {
+        vfree(elf_shstrtab);
+        elf_shstrtab = NULL;
+    }
     goto out;
 }
 
@@ -535,17 +546,25 @@ void loader_destory(void) {
     if (filp_interpreter) {
         allow_write_access(filp_interpreter);
         fput(filp_interpreter);
+        filp_interpreter = NULL;
     }
 
     if (filp_monitor) {
         allow_write_access(filp_monitor);
         fput(filp_monitor);
+        filp_monitor = NULL;
     }
 
-    if (monitor_elf_phdata)
-        kfree(monitor_elf_phdata);
-    if (monitor_elf_shdata)
-        kfree(monitor_elf_shdata);
-    if (interp_elf_phdata)
-        kfree(interp_elf_phdata);
+    if (monitor_elf_phdata) {
+        vfree(monitor_elf_phdata);
+        monitor_elf_phdata = NULL;
+    }
+    if (monitor_elf_shdata) {
+        vfree(monitor_elf_shdata);
+        monitor_elf_shdata = NULL;
+    }
+    if (interp_elf_phdata) {
+        vfree(interp_elf_phdata);
+        interp_elf_phdata = NULL;
+    }
 }
