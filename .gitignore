@@ -3,6 +3,7 @@
 musl.specs
 config.h
 
+.cache/
 .vscode/
 .idea/
 .gdb_history/
