@@ -14,6 +14,7 @@ struct event_filler_arguments;
     FN(sys_socket_bind)			\
     FN(sys_connect)			\
     FN(sys_send)			\
+    FN(sys_sendto)          \
     FN(sys_recv)			\
     FN(sys_recvfrom)			\
     FN(sys_shutdown)			\

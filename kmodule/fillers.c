@@ -2568,7 +2568,7 @@ int f_sys_connect(struct event_filler_arguments *args)
 	return NOD_SUCCESS;
 }
 
-int f_sys_send_common(struct event_filler_arguments *args, int *fd)
+int f_sys_send_e_common(struct event_filler_arguments *args, int *fd)
 {
 	int res;
 	unsigned long size;
@@ -2607,19 +2607,14 @@ int f_sys_send_common(struct event_filler_arguments *args, int *fd)
 	return NOD_SUCCESS;
 }
 
-int f_sys_send(struct event_filler_arguments *args)
+int f_sys_send_x_common(struct event_filler_arguments *args)
 {
 	int res;
-	int fd;
 	unsigned long val;
 	int64_t retval;
 	unsigned long bufsize;
 
-	res = f_sys_send_common(args, &fd);
-	if (unlikely(res != NOD_SUCCESS))
-		return res;
-
-    /*
+	/*
 	 * Retrieve the FD. It will be used for dynamic snaplen calculation.
 	 */
 	if (!args->is_socketcall)
@@ -2667,6 +2662,18 @@ int f_sys_send(struct event_filler_arguments *args)
 	return NOD_SUCCESS;
 }
 
+int f_sys_send(struct event_filler_arguments *args)
+{
+	int res;
+	int fd;
+
+	res = f_sys_send_e_common(args, &fd);
+	if (unlikely(res != NOD_SUCCESS))
+		return res;
+
+    return f_sys_send_x_common(args);
+}
+
 int f_sys_sendto(struct event_filler_arguments *args)
 {
 	unsigned long val;
@@ -2683,7 +2690,7 @@ int f_sys_sendto(struct event_filler_arguments *args)
 	/*
 	 * Push the common params to the ring
 	 */
-	res = f_sys_send_common(args, &fd);
+	res = f_sys_send_e_common(args, &fd);
 	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
@@ -2735,7 +2742,7 @@ int f_sys_sendto(struct event_filler_arguments *args)
 	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
-	return NOD_SUCCESS;
+	return f_sys_send_x_common(args);
 }
 
 int f_sys_recv_common(struct event_filler_arguments *args, int64_t *retval)
@@ -3529,7 +3536,7 @@ int f_sys_poll(struct event_filler_arguments *args)
 	if (unlikely(res != NOD_SUCCESS))
 		return res;
 
-	return f_sys_poll_x_common(args);
+	return NOD_SUCCESS;
 }
 
 /* NODE_SYSCALL_SELECT: auto fill only */
