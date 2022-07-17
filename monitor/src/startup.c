@@ -112,12 +112,12 @@ nod_start_main(int argc, char **argv, char **env) {
 #endif
     }
 
-    ASSERT_OUT(likely((p->ioctl_fd = open(NOD_IOCTL_PATH, O_RDONLY)) >= 0),
+    ASSERT_OUT(likely((p->ioctl_fd = open(NOD_IOCTL_PATH, O_RDWR)) >= 0),
                "Open " NOD_IOCTL_PATH " failed",);
 
     if (unlikely(p->buffer == NULL)) {
         p->buffer = (char *) mmap(NULL, BUFFER_SIZE,
-                                PROT_READ, MAP_PRIVATE, p->ioctl_fd, 0);
+                                PROT_READ, MAP_SHARED, p->ioctl_fd, 0);
         ASSERT_OUT(likely(p->buffer != MAP_FAILED), 
                 "Cannot allocate buffer", p->buffer = NULL);
 #ifdef NOD_PKEY_SUPPORT
@@ -129,10 +129,15 @@ nod_start_main(int argc, char **argv, char **env) {
     }
     
     if (unlikely(p->buffer_info == NULL)) {
-        p->buffer_info = (struct nod_buffer_info *) mmap(NULL, sizeof(struct nod_buffer_info*),
-                                                       PROT_READ | PROT_WRITE, MAP_PRIVATE, p->ioctl_fd, 0);
+        p->buffer_info = (struct nod_buffer_info *) mmap(NULL, sizeof(struct nod_buffer_info),
+                                                       PROT_READ | PROT_WRITE, MAP_SHARED, p->ioctl_fd, 0);
         ASSERT_OUT(likely(p->buffer_info != MAP_FAILED), 
-                "Cannot allocate buffer info", p->buffer_info = NULL);
+                "Cannot allocate buffer info", 
+                {
+                    if (p->buffer) munmap(p->buffer, BUFFER_SIZE);
+                    p->buffer_info = NULL;
+                    p->buffer = NULL;
+                });
 #ifdef NOD_PKEY_SUPPORT
         if (p->pkey != -1) {
             ASSERT_OUT(likely(pkey_mprotect(p->buffer_info, sizeof(struct nod_buffer_info), PROT_READ | PROT_WRITE, p->pkey) != -1),
@@ -141,10 +146,10 @@ nod_start_main(int argc, char **argv, char **env) {
 #endif
     }
 
-    p->hash = nod_calc_hash(p);
     nod_monitor_main(p->buffer, p->buffer_info);
 
 out:
+    p->hash = nod_calc_hash(p);
     nod_restore_context(p);
 
     /* NOT REACHABLE */

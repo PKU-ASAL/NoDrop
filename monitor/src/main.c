@@ -8,8 +8,10 @@
 #include "events.h"
 #include "common.h"
 
-
+#ifndef PATH_FMT
 #define PATH_FMT STORE_PATH "/%u-%ld.buf"
+#endif
+
 #define SECOND_IN_US 1000000000
 
 static char path[100];
@@ -133,12 +135,12 @@ int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info) {
     buffer_end = ptr + buffer_info->tail;
     while (ptr < buffer_end) {
         hdr = (struct nod_event_hdr *)ptr; 
-        _parse(file, hdr, (char *)(hdr + 1), 0);
-        // fwrite(ptr, hdr->len, 1, file);
+        // _parse(file, hdr, (char *)(hdr + 1), 0);
+        fwrite(ptr, hdr->len, 1, file);
         ptr += hdr->len;
     }
 
-    buffer_info->tail = 0;
+    buffer_info->nevents = buffer_info->tail = 0;
     fclose(file);
 
     return 0;
