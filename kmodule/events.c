@@ -122,17 +122,6 @@ restart:
     return cbret; 
 }
 
-inline nanoseconds nod_nsecs(void) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 17, 0)
-	return ktime_get_real_ns();
-#else
-	/* Don't have ktime_get_real functions */
-	struct timespec ts;
-	getnstimeofday(&ts);
-	return SECOND_IN_NS * ts.tv_sec + ts.tv_nsec;
-#endif
-}
-
 int
 init_buffer(struct nod_buffer *buffer)
 {

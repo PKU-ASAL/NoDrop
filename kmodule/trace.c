@@ -89,8 +89,18 @@ syscall_probe(struct nod_proc_info *p, struct pt_regs *regs, long id, int force)
 
 TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
 {
-    int evt_from, id;
+    int evt_from, id, retval;
     struct nod_proc_info *p;
+
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 20)
+    if (unlikely(current->flags & PF_KTHREAD))
+#else
+    if (unlikely(current->flags & PF_BORROWED_MM))
+#endif
+    {
+        // We are not interested in kernel threads
+        return;
+    }
 
 #ifdef NOD_TEST
     NOD_TEST(current) {
@@ -155,7 +165,7 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
                 p = nod_proc_acquire(evt_from, NULL, -1, current);
                 if (!p) break;
             }
-            syscall_probe(p, regs, id, 0);
+            retval = syscall_probe(p, regs, id, 0);
         }
 
         break;
@@ -167,6 +177,17 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
 
 TRACEPOINT_PROBE(syscall_procexit_probe, struct task_struct *tsk)
 {
+
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 20)
+    if (unlikely(current->flags & PF_KTHREAD))
+#else
+    if (unlikely(current->flags & PF_BORROWED_MM))
+#endif
+    {
+        // We are not interested in kernel threads
+        return;
+    }
+
 #ifdef NOD_TEST
     NOD_TEST(tsk) {
         return;
@@ -238,6 +259,16 @@ hook_general(SYSCALL_DEF) {
     struct nod_proc_info *p;
     
     id = syscall_get_nr(current, current_pt_regs());
+
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 20)
+    if (unlikely(current->flags & PF_KTHREAD))
+#else
+    if (unlikely(current->flags & PF_BORROWED_MM))
+#endif
+    {
+        // We are not interested in kernel threads
+        return syscall_filters[id].oldsyscall(SYSCALL_ARGS);
+    }
 
 #ifdef NOD_TEST
     NOD_TEST(current) {

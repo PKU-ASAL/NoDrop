@@ -15,8 +15,7 @@
 #define vpr_dbg(fmt, ...)
 // #define vpr_dbg(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
 
-#define NOD_TEST(task) if (!(STR_EQU((task)->comm, "a.out") || STR_EQU((task)->comm, "helloworld")))
-// #define NOD_TEST(task) if (!(STR_EQU((task)->comm, "nginx") || STR_EQU((task)->comm, "httpd") || STR_EQU((task)->comm, "redis-server") || STR_EQU((task)->comm, "postmark") || STR_EQU((task)->comm, "openssl") || STR_EQU((task)->comm, "7z")))
+// #define NOD_TEST(task) if (!(task->cred->uid.val == 1000))
 #define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
 #define ASSERT(expr) BUG_ON(!(expr))
 
@@ -91,7 +90,6 @@ int nod_mmap_check(unsigned long addr, unsigned long length);
 #define SECOND_IN_NS 1000000000 // 1s = 1e9ns
 #define NS_TO_SEC(_ns) ((_ns) / SECOND_IN_NS)
 
-nanoseconds nod_nsecs(void);
 int record_one_event(struct nod_proc_info *p, enum nod_event_type type, struct nod_event_data *event_datap);
 int init_buffer(struct nod_buffer *buffer);
 void free_buffer(struct nod_buffer *buffer);
@@ -209,4 +207,16 @@ memory_dump(char *p, size_t size)
 	pr_info("memory dump at 0x%lx (%ld)\n", (unsigned long)p, size);
     for (j = 0; j < size; j += 8)
         pr_info("%*ph\n", 8, &p[j]);
+}
+
+__attribute__((unused))
+static inline nanoseconds nod_nsecs(void) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 17, 0)
+	return ktime_get_real_ns();
+#else
+	/* Don't have ktime_get_real functions */
+	struct timespec ts;
+	getnstimeofday(&ts);
+	return SECOND_IN_NS * ts.tv_sec + ts.tv_nsec;
+#endif
 }
