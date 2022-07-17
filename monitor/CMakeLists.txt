@@ -23,6 +23,11 @@ foreach (FILENAME ${MONITOR_SOURCES})
     configure_file(${FILENAME} src/${TMP_NAME} COPYONLY)
 endforeach ()
 
+if(PATH_FMT)
+        add_definitions(-DPATH_FMT="${PATH_FMT}")
+        message(STATUS "Custom path format ${PATH_FMT}")
+endif()
+
 configure_file(musl.specs musl.specs COPYONLY)
 configure_file(script_x86-64.ld script_x86-64.ld COPYONLY)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/../include/config.h.in 
