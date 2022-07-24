@@ -56,9 +56,14 @@ if(NOT STORE_PATH)
         set(STORE_PATH /tmp/nodrop)
 endif()
 
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+
 message(STATUS "Buffer size: ${BUFFER_SIZE}")
 message(STATUS "Monitor path: ${MONITOR_PATH}")
 message(STATUS "Store path: ${STORE_PATH}")
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
 add_subdirectory(kmodule ${PROJECT_BINARY_DIR}/kmodule)
 add_subdirectory(monitor ${PROJECT_BINARY_DIR}/monitor)

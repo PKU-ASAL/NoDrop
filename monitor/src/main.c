@@ -12,17 +12,10 @@
 #define PATH_FMT STORE_PATH "/%u-%ld.buf"
 #endif
 
-#define SECOND_IN_US 1000000000
-
 static char path[100];
 static struct timeval tv;
 static unsigned int tid;
-
-void nod_monitor_init(int argc, char *argv[], char *env[]) {
-    gettimeofday(&tv, NULL);
-    tid = (unsigned int)syscall(SYS_gettid);
-    sprintf((char *)path, PATH_FMT, tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
-}
+uint64_t g_nevts;
 
 static const char *__print_format[PT_UINT64 + 1][PF_OCT + 1] = {
     [PT_NONE] = {"", "", "", "", ""},/*empty*/
@@ -70,6 +63,7 @@ static int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer, void *__da
         case PT_SIGTYPE:
             fprintf(out, __print_format[PT_UINT8][param->fmt], *(uint8_t *)data);
             break;
+        
         case PT_FLAGS16:
         case PT_UINT16:
         case PT_SYSCALLID:
@@ -115,33 +109,41 @@ static int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer, void *__da
             break;
         }
 
+        // move to the next argument
         data += args[i];
     }
     fprintf(out, ")\n");
     return 0;
 }
 
+void nod_monitor_init(int argc, char *argv[], char *env[]) {
+    gettimeofday(&tv, NULL);
+    tid = (unsigned int)syscall(SYS_gettid);
+    sprintf((char *)path, PATH_FMT, tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
+}
+
 int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info) {
-    FILE *file;
     char *ptr, *buffer_end;
     struct nod_event_hdr *hdr;
+    // FILE *file;
 
-    if(!(file = fopen((const char *)path, "ab+"))) {
-        perror("Cannot open log file");
-        return 0;
-    }
+    // if(!(file = fopen((const char *)path, "ab+"))) {
+    //     perror("Cannot open log file");
+    //     return 0;
+    // }
 
     ptr = buffer;
     buffer_end = ptr + buffer_info->tail;
     while (ptr < buffer_end) {
-        hdr = (struct nod_event_hdr *)ptr; 
+        hdr = (struct nod_event_hdr *)ptr;
+        g_nevts++;
         // _parse(file, hdr, (char *)(hdr + 1), 0);
-        fwrite(ptr, hdr->len, 1, file);
+        // fwrite(ptr, hdr->len, 1, file);
         ptr += hdr->len;
     }
 
+    // fclose(file);
     buffer_info->nevents = buffer_info->tail = 0;
-    fclose(file);
 
     return 0;
 }

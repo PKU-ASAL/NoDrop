@@ -148,8 +148,6 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
                     vpr_err("acquire NOD_CLONE for childed process failed\n");
             }
         } else {
-            
-
             if (id == __NR_execve || id == __NR_execveat) {
                 /*
                  * In execve(), the address space will be replaced with the new one.

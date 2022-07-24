@@ -104,7 +104,6 @@ nod_start_main(int argc, char **argv, char **env) {
         nod_initialize(p);
         nod_monitor_init(argc, argv, env);
     } else {
-        syscall(SYS_arch_prctl, ARCH_SET_FS, p->fsbase);
 #ifdef NOD_PKEY_SUPPORT
         if (p->pkey != -1) {
             pkey_set(p->pkey, 0);

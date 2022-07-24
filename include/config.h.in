@@ -8,4 +8,8 @@
 #define MONITOR_PATH "${MONITOR_PATH}"
 #define STORE_PATH "${STORE_PATH}"
 
+#if BUFFER_SIZE < 4 * Kib
+  #error "Buffer size is smaller than a page"
+#endif
+
 #endif //CONFIG_H_

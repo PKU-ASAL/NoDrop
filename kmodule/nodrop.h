@@ -87,9 +87,6 @@ int nod_load_monitor(struct nod_proc_info *p);
 int nod_mmap_check(unsigned long addr, unsigned long length);
 
 // event.c
-#define SECOND_IN_NS 1000000000 // 1s = 1e9ns
-#define NS_TO_SEC(_ns) ((_ns) / SECOND_IN_NS)
-
 int record_one_event(struct nod_proc_info *p, enum nod_event_type type, struct nod_event_data *event_datap);
 int init_buffer(struct nod_buffer *buffer);
 void free_buffer(struct nod_buffer *buffer);
