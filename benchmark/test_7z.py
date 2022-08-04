@@ -31,6 +31,7 @@ total = sum(res)
 avg = total / len(res)
 variance = 0
 for x in res:
+    print(x)
     variance += (x - avg) * (x - avg)
 variance /= len(res)
 print("Variance:", round(variance, 6))

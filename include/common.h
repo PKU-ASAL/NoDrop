@@ -30,6 +30,7 @@
 #define NOD_MONITOR_MEM_SIZE (4 * 1024)
 
 #define SECOND_IN_NS 1000000000 // 1s = 1e9ns
+#define SECOND_IN_US 1000000 // 1s=1e6us
 #define NS_TO_SEC(_ns) ((_ns) / SECOND_IN_NS)
 
 struct nod_stack_info {

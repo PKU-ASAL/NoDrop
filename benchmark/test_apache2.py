@@ -6,47 +6,50 @@ import subprocess
 
 
 LOOP = 10
-CONNECTION = 1000
+CONNECTION = 10000
+DURATION = 30
 NRCPUS = os.cpu_count()
-URL = "http://127.0.0.1:8089/test.html"
-cmd = "wrk -t %d -c %d %s" % (NRCPUS, CONNECTION, URL)
+URL = "http://127.0.0.1:8088/test.html"
+cmd = "/home/hrz/wrk/wrk -t %d -c %d -d %d --timeout %d %s" % (NRCPUS, CONNECTION, DURATION, DURATION, URL)
 
 def prepare():
-    subprocess.run("./nginx/nginx_/sbin/nginx", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run("./apache2/httpd_/bin/apachectl -k start -f conf/httpd.conf", shell=True)
+    time.sleep(1)
+
 
 def execute_wrk():
     f = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     lines = f.stdout.decode("utf-8").split("\n")
     ret = float(lines[-3].split(": ")[-1])
-    return 1e6 / ret
+    return 1e6/ret
 
 def finish():
-    subprocess.run("./nginx/nginx_/sbin/nginx -s quit", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    subprocess.run("./apache2/httpd_/bin/apachectl -k stop", shell=True)
+    time.sleep(1)
+    # subprocess.run("rm -f apache2/httpd_/logs/*", shell=True)
 
 res = []
-total_cost = 0
 print(cmd)
 try:
     for i in range(LOOP):
-        print("loop %d ..." % i, end="", flush=True)
         prepare()
-        start = time.time()
+        print("loop %d ..." % i, end="", flush=True)
         ret = execute_wrk()
-        total_cost += time.time() - start
-        finish()
         res.append(ret)
-        print(round(ret, 3), "us/req")
+        print(ret, "us/req")
+        finish()
 
     total = sum(res)
     avg = total / len(res)
     variance = 0
     for x in res:
-        print(x)
         variance += (x - avg) * (x - avg)
     variance /= len(res)
     print("Variance:", round(variance, 6))
-    print("Average:", round(avg, 2), "us per req")
-    print("Total cost", total_cost, "s")
+    print("Average:", round(avg, 2), "us/req")
+
+    for x in res:
+        print(round(x, 3))
 
 except Exception as e:
     print(e)

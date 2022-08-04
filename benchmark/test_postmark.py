@@ -6,7 +6,7 @@ import subprocess
 
 LOOP = 10
 NUMBER = 500
-TRANSAC = 250000
+TRANSAC = 10000
 MIN_SIZE = 5120
 MAX_SIZE = 524288
 
@@ -17,9 +17,9 @@ def prepare():
     global cmd
     with open(config_file, "w") as f:
         f.write("set transactions %d\n" % TRANSAC)
-        # f.write("set size %d %d\n" % (MIN_SIZE, MAX_SIZE))
+        f.write("set size %d %d\n" % (MIN_SIZE, MAX_SIZE))
         f.write("set number %d\n" % NUMBER)
-        # f.write("show\n")
+        f.write("show\n")
         f.write("run\n")
         f.write("quit\n")
 
@@ -47,6 +47,7 @@ total = sum(res)
 avg = total / len(res)
 variance = 0
 for x in res:
+    print(x)
     variance += (x - avg) * (x - avg)
 variance /= len(res)
 print("Variance:", round(variance, 6))

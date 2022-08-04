@@ -1,7 +1,7 @@
 #!/bin/sh
 
 INSTALL_DIR=`pwd`/httpd_
-mkdir $INSTALL_DIR
+mkdir -p $INSTALL_DIR
 
 tar -xf http-test-files-1.tar.xz
 tar -xf httpd-2.4.48.tar.bz2

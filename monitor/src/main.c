@@ -125,25 +125,30 @@ void nod_monitor_init(int argc, char *argv[], char *env[]) {
 int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info) {
     char *ptr, *buffer_end;
     struct nod_event_hdr *hdr;
-    // FILE *file;
+    FILE *file;
 
-    // if(!(file = fopen((const char *)path, "ab+"))) {
-    //     perror("Cannot open log file");
-    //     return 0;
-    // }
+    if(!(file = fopen((const char *)path, "ab+"))) {
+        perror("Cannot open log file");
+        return 0;
+    }
 
     ptr = buffer;
     buffer_end = ptr + buffer_info->tail;
     while (ptr < buffer_end) {
         hdr = (struct nod_event_hdr *)ptr;
-        g_nevts++;
+        // g_nevts++;
         // _parse(file, hdr, (char *)(hdr + 1), 0);
-        // fwrite(ptr, hdr->len, 1, file);
+        fwrite(ptr, hdr->len, 1, file);
         ptr += hdr->len;
     }
 
-    // fclose(file);
+    fclose(file);
+    
+    // printf("enter\n");
+    // int i;
+    // for(i = 0; i < 100000000; ++i)    getuid();
     buffer_info->nevents = buffer_info->tail = 0;
+    // printf("return\n");
 
     return 0;
 }

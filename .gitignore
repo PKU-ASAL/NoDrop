@@ -9,12 +9,15 @@ config.h
 .gdb_history/
 *build*
 nginx_/
-redis_/
-redis-*/
 nginx-*/
+redis_/
+memtier_/
+redis-*/
 httpd_/
 httpd-*/
 http-test-files/
+memcached_/
+mcperf_/
 musl/
 *.txt
 !CMakeLists.txt

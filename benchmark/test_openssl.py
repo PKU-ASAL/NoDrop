@@ -10,7 +10,8 @@ cmd = "openssl speed -multi %d -seconds %d rsa4096"
 
 def prepare():
     global cmd
-    nproc = os.cpu_count()
+    # nproc = os.cpu_count()
+    nproc = 16
     cmd = cmd % (nproc, TEST_SEC)
     print(cmd)
 
@@ -35,6 +36,7 @@ total = sum(res)
 avg = total / len(res)
 variance = 0
 for x in res:
+    print(x)
     variance += (x - avg) * (x - avg)
 variance /= len(res)
 print("Variance:", round(variance, 6))

@@ -5,35 +5,28 @@ import time
 import subprocess
 from multiprocessing import Process, Semaphore
 
+
 LOOP = 10
-# THREAD = 2
-THREAD = 4
-# THREAD = 8
-DURATION = 20
-CLIENTS = 50
-HOST = "localhost"
-PORT = 6379
-cmd = "./redis/memtier_/memtier_benchmark --hide-histogram -P redis -s %s -p %d " \
-        "-t %d -c %d --test-time=%d" % (HOST, PORT, THREAD, CLIENTS, DURATION)
-# cmd = "./redis/redis_/src/redis-benchmark -h %s -p %d -n %d -P 32 -q -c 50 -t set,get,lpush,lpop,sadd --csv" % (HOST, PORT, REQUESTS_NUM)
+# NRCPUS = 1
+NRCPUS = 16
+# NRCPUS = 32
+CONNECTION = 100
+DURATION = 10
+URL = "http://127.0.0.1:8089/test.html"
+cmd = "/home/jeshrz/wrk/wrk -t %d -c %d -d %d --timeout %d %s" % (NRCPUS, CONNECTION, DURATION, DURATION, URL)
 
 def prepare():
-    proc = subprocess.Popen("cgexec -g cpuset:app ./redis/redis_/src/redis-server ./redis/redis_/redis.conf", shell=True, stdout=subprocess.DEVNULL)
+    subprocess.run("cgexec -g cpuset:app ./nginx/nginx_/sbin/nginx", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(3)
-    return proc
 
-def execute_redis_benmark():
+def execute_wrk():
     f = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     lines = f.stdout.decode("utf-8").split("\n")
-    return float(lines[-2].strip().split(" ")[-1].strip())
-    # for line in lines:
-    #     data = line.split(",")
-    #     if data[0] == '"LPUSH"':
-    #         return 1e6 / float(data[1][1:-1])
-    print("err")
+    ret = float(lines[-3].split(": ")[-1])
+    return 1e6 / ret
 
-def finish(proc):
-    subprocess.run("kill -2 %d" % proc.pid, shell=True)
+def finish():
+    subprocess.run("./nginx/nginx_/sbin/nginx -s quit", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
     time.sleep(3)
 
 s1 = Semaphore(0)
@@ -46,17 +39,17 @@ def task1():
     for i in range(LOOP):
         s1.acquire()
         if first == 0:
-            finish(proc)
-        proc = prepare()
+            finish()
+        prepare()
         first = 0
         s2.release()
     s1.acquire()
-    finish(proc)
+    finish()
 
 def task2():
     with open("/sys/fs/cgroup/cpuset/perf/tasks", "w") as f:
         f.write(str(os.getpid()))
-
+    
     res = []
     total_cost = 0
     print(cmd)
@@ -66,7 +59,7 @@ def task2():
             s1.release()
             s2.acquire()
             start = time.time()
-            ret = execute_redis_benmark()
+            ret = execute_wrk()
             total_cost += time.time() - start
             res.append(ret)
             print(round(ret, 3), "us/req")
@@ -80,13 +73,16 @@ def task2():
             variance += (x - avg) * (x - avg)
         variance /= len(res)
         print("Variance:", round(variance, 6))
-        print("Average:", round(avg, 3), "us per req")
+        print("Average:", round(avg, 2), "us per req")
         print("Total cost", total_cost, "s")
 
     except Exception as e:
         print(e)
 
 def main():
+    if os.getuid() != 0:
+        print("Run as root")
+        exit(0)
     p1 = Process(target=task1)
     p2 = Process(target=task2)
     p1.start()
