@@ -122,6 +122,10 @@ void nod_monitor_init(int argc, char *argv[], char *env[]) {
     sprintf((char *)path, PATH_FMT, tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
 }
 
+void nod_monitor_exit(int code) {
+  printf("%ld\n", g_nevts);
+}
+
 int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info) {
     char *ptr, *buffer_end;
     struct nod_event_hdr *hdr;
@@ -136,7 +140,7 @@ int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info) {
     buffer_end = ptr + buffer_info->tail;
     while (ptr < buffer_end) {
         hdr = (struct nod_event_hdr *)ptr;
-        // g_nevts++;
+        g_nevts++;
         // _parse(file, hdr, (char *)(hdr + 1), 0);
         fwrite(ptr, hdr->len, 1, file);
         ptr += hdr->len;

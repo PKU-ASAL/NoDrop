@@ -8,8 +8,12 @@
 #include "syscall.h"
 #include "events.h"
 #include "common.h"
+#include "ioctl.h"
 
 #include "config.h"
+
+DEFINE_PER_CPU(struct nod_event_statistic, g_stat);
+EXPORT_PER_CPU_SYMBOL(g_stat);
 
 static int 
 do_record_one_event(struct nod_proc_info *p,
@@ -24,16 +28,18 @@ do_record_one_event(struct nod_proc_info *p,
     struct nod_buffer_info *info;
     struct nod_event_hdr *hdr;
     struct nod_buffer *buffer;
+    struct nod_event_statistic *stat;
 
     buffer = &p->buffer;
     info = buffer->info;
+    stat = &per_cpu(g_stat, smp_processor_id());
 
     down_write(&buffer->sem);
     
     if (unlikely(buffer->overflow.filled == 1)) {
         info->tail = ((struct nod_event_hdr *)buffer->overflow.addr)->len;
         ++info->nevents;
-        ++buffer->event_count;
+        stat->n_evts++;
 
         memmove(buffer->buffer, buffer->overflow.addr, info->tail);
         buffer->overflow.filled = 0;
@@ -100,7 +106,7 @@ restart:
             if (likely(buffer->overflow.filled == 0)) {
                 info->tail += event_size;
                 ++info->nevents;
-                ++buffer->event_count;
+                stat->n_evts++;
             }
         } else {
             pr_err("corrupted filler for event type %d (added %u args, should have added %u args)\n",
@@ -112,6 +118,8 @@ restart:
     } else if (cbret == NOD_FAILURE_BUFFER_FULL) {
         restart = 1;
         goto restart;
+    } else {
+        stat->n_drop_evts++; 
     }
 
     if (force) {

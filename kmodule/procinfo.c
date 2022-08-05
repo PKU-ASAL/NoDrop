@@ -11,7 +11,7 @@
 
 #include "nodrop.h"
 #include "procinfo.h"
-
+#include "ioctl.h"
 
 static struct kmem_cache *proc_info_cachep = NULL;
 
@@ -180,6 +180,7 @@ nod_proc_release(struct task_struct *task)
     }
 
     retval = p->status;
+    per_cpu(g_stat, smp_processor_id()).n_drop_evts_unsolved += p->buffer.info->nevents;
 
     __remove_proc_info(p);
     nod_free_procinfo(p);

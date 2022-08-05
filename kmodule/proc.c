@@ -99,12 +99,13 @@ __proc_buf_copy(struct nod_proc_info *this, unsigned long *ret, va_list args)
 static long 
 nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-    int ret;
+    int ret, cpu;
     uint64_t count;
     char *ptr;
     struct buffer_count_info cinfo;
     struct fetch_buffer_struct fetch;
     struct nod_stack_info stack;
+    struct nod_event_statistic tot_stat, *stat;
     struct nod_proc_info *p = filp->private_data;
 
     switch(cmd) {
@@ -145,6 +146,29 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
             goto out;
         }
         break;
+
+    case NOD_IOCTL_READ_STATISTICS:
+        memset(&tot_stat, 0, sizeof(tot_stat));
+        for_each_possible_cpu(cpu) {
+          stat = &per_cpu(g_stat, cpu);
+          tot_stat.n_evts += stat->n_evts;
+          tot_stat.n_drop_evts += stat->n_drop_evts;
+          tot_stat.n_drop_evts_unsolved += stat->n_drop_evts_unsolved;
+        }
+
+        if (copy_to_user((void *)arg, (void *)&tot_stat, sizeof(tot_stat))) {
+          ret = -EFAULT;
+          goto out;
+        }
+        break;
+
+    case NOD_IOCTL_CLEAR_STATISTICS:
+        for_each_possible_cpu(cpu) {
+          stat = &per_cpu(g_stat, cpu);
+          memset(stat, 0, sizeof(*stat));
+        }
+        break;
+
     case NOD_IOCTL_STOP_RECORDING:
         untrace_syscall();
 

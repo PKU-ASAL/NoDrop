@@ -29,7 +29,7 @@ int main() {
     for(i=0;i<1;i++)
     //for(i=0;i<10;i++)
     {
-        int fd = open("StressTesting/attack.txt", O_WRONLY| O_CREAT);
+        int fd = open("StressTesting/attack.txt", O_WRONLY| O_CREAT, 0777);
         write(fd, msg, sizeof(msg));
         close(fd);
     }

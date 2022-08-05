@@ -13,9 +13,10 @@ int main(int argc, char *argv[]) {
     FILE *file;
     struct buffer_count_info cinfo;
     struct fetch_buffer_struct fetch;
+    struct nod_event_statistic stat;
 
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s [clean|fetch|start|stop|count]\n", argv[0]);
+        fprintf(stderr, "Usage: %s [clean|fetch|stat|clear-stat|start|stop|count]\n", argv[0]);
         return 0;
     }
 
@@ -66,6 +67,14 @@ int main(int argc, char *argv[]) {
         if (!ioctl(fd, NOD_IOCTL_READ_BUFFER_COUNT_INFO, &cinfo)) {
             printf("event_count=%lu,unflushed_count=%lu,unflushed_len=%lu\n", cinfo.event_count, cinfo.unflushed_count, cinfo.unflushed_len);
         }
+    } else if (!strcmp(argv[1], "stat")) {
+      if (!ioctl(fd, NOD_IOCTL_READ_STATISTICS, &stat)) {
+          printf("n_evts\tdrop_evts\tdrop_unsolved\n%ld\t%ld\t%ld\n", stat.n_evts, stat.n_drop_evts, stat.n_drop_evts_unsolved);
+      }
+    } else if (!strcmp(argv[1], "clear-stat")) {
+      if (!ioctl(fd, NOD_IOCTL_CLEAR_STATISTICS, 0)) {
+        fprintf(stderr, "Statistics cleared\n");
+      }
     } else if (!strcmp(argv[1], "stop")) {
         if (!ioctl(fd, NOD_IOCTL_STOP_RECORDING, 0))
             fprintf(stderr, "Stopped\n");

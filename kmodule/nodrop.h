@@ -7,6 +7,7 @@
 #include "common.h"
 #include "events.h"
 #include "procinfo.h"
+#include "ioctl.h"
 
 #define vpr_log(xxx, fmt, ...) pr_##xxx("(%d)%s[%d][%s:%d]: " fmt, smp_processor_id(), current->comm, current->pid, __func__, __LINE__, ##__VA_ARGS__)
 #define vpr_err(fmt, ...) vpr_log(err, fmt, ##__VA_ARGS__)
@@ -15,7 +16,7 @@
 #define vpr_dbg(fmt, ...)
 // #define vpr_dbg(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
 
-#define NOD_TEST(task) if (!(task->cred->uid.val == 1000))
+#define NOD_TEST(task) if (!(task->cred->uid.val == 1001))
 // #define NOD_TEST(task) if (!(STR_EQU(current->comm, "control")))
 #define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
 #define ASSERT(expr) BUG_ON(!(expr))
@@ -88,6 +89,7 @@ int nod_load_monitor(struct nod_proc_info *p);
 int nod_mmap_check(unsigned long addr, unsigned long length);
 
 // event.c
+DECLARE_PER_CPU(struct nod_event_statistic, g_stat);
 int record_one_event(struct nod_proc_info *p, enum nod_event_type type, struct nod_event_data *event_datap);
 int init_buffer(struct nod_buffer *buffer);
 void free_buffer(struct nod_buffer *buffer);
