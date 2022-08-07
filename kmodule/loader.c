@@ -371,7 +371,7 @@ nod_load_monitor(struct nod_proc_info *p)
     return NOD_SUCCESS_LOAD;
 
 out:
-    vpr_err("cannot transfer logging buffer\n");
+    vpr_err("cannot transfer logging buffer (%d)\n", retval);
     return retval;
 }
 

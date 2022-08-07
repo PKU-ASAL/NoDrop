@@ -3,6 +3,7 @@ configure_file(stress.sh stress.sh COPYONLY)
 configure_file(attack.sh attack.sh COPYONLY)
 
 add_executable(stress EXCLUDE_FROM_ALL stress.c)
+add_executable(stress-fork EXCLUDE_FROM_ALL stress-fork.c)
 add_executable(attack EXCLUDE_FROM_ALL attack.c)
 
 target_link_libraries(stress pthread)

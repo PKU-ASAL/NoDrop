@@ -6,8 +6,9 @@ import signal
 import subprocess
 
 NRTHREAD = 1
+CONFIG = [(10, 10000), (50, 10000), (100, 10000), (650, 10000), (1000, 10000), (5000, 10000), (10000, 10000)]
 # CONFIG = [(100, 10), (100, 50), (100, 100), (100, 500), (100, 1000), (100, 5000), (100, 10000)]
-CONFIG = [(100, 10), (100, 10)]
+# CONFIG = [(100, 10)]
 
 def change(uid, gid):
     def result():
@@ -22,12 +23,24 @@ class Base:
     def finish(self):
         self.n_evts = self.n_recv_evts = 0
 
-    def stress(self, interval, loop, nr):
-        proc = subprocess.Popen("/home/bench/stress %d %d %d" % (interval, loop, nr), 
-                preexec_fn=change(1001, 1001), stdout=subprocess.PIPE, shell=True)
-        proc.wait() 
-        lines = proc.communicate()[0].decode("utf-8").split("\n");
-        self.count = int(lines[0].strip().split("/")[0])
+    # def stress(self, interval, loop, nr):
+        # proc = subprocess.Popen("/home/bench/stress %d %d %d" % (interval, loop, nr), 
+        #         preexec_fn=change(1001, 1001), stdout=subprocess.PIPE, shell=True)
+        # proc.wait() 
+        # lines = proc.communicate()[0].decode("utf-8").split("\n");
+        # self.count = int(lines[0].strip().split("/")[0])
+
+    def stress(self, n, m, nr):
+        subprocess.run("rm -rf /tmp/count/*", shell=True)
+        proc = subprocess.Popen("/home/bench/stress-fork %d %d %d" % (n, m, nr),
+                preexec_fn=change(1001, 1001), shell=True)
+        proc.wait()
+        self.count = 0
+        for path, _, filelist in os.walk("/tmp/count"):
+            for filename in filelist:
+                with open(os.path.join(path, filename), "r") as f:
+                    line = f.readline()
+                    self.count += int(line.strip().split("/")[0])
 
 class Sysdig(Base):
     def start(self):
@@ -46,6 +59,10 @@ class Sysdig(Base):
         self.n_recv_evts = self.n_evts - self.n_recv_evts
 
 class NoDrop(Base):
+    def start(self):
+        subprocess.run("rm -rf /tmp/nodrop/count", shell=True)
+        subprocess.run("mkdir -p /tmp/nodrop/count", shell=True)
+
     def finish(self):
         p = subprocess.run("/home/jeshrz/NoDrop/build/scripts/ctrl/ctrl stat", shell=True, stdout=subprocess.PIPE)
         lines = p.stdout.decode("utf-8").split("\n")
@@ -54,18 +71,13 @@ class NoDrop(Base):
         self.n_evts = int(data[0])
         subprocess.run("/home/jeshrz/NoDrop/build/scripts/ctrl/ctrl clear-stat", shell=True, stderr=subprocess.DEVNULL)
 
-    def stress(self, interval, loop, nr):
-        proc = subprocess.Popen("/home/bench/stress %d %d %d" % (interval, loop, nr), 
-                preexec_fn=change(1001, 1001), stdout=subprocess.PIPE, shell=True)
-        proc.wait() 
-        lines = proc.communicate()[0].decode("utf-8").split("\n");
-        self.count = 0
         self.n_recv_evts = 0
-        for line in lines[:-1]:
-            if "/" in line:
-                self.count = int(line.split("/")[0])
-            else:
-                self.n_recv_evts += int(line)
+        for path, _, filelist in os.walk("/tmp/nodrop/count"):
+            for filename in filelist:
+                with open(os.path.join(path, filename), "r") as f:
+                    fileline = f.readline()
+                    if fileline:
+                        self.n_recv_evts += int(fileline)
 
 class Lttng(Base):
     PREFIX = "/home/jeshrz/lttng/install/bin/"

@@ -883,6 +883,7 @@ enum nod_event_type {
 struct nod_buffer_info {
     volatile uint64_t nevents;
     volatile uint32_t tail;
+    volatile uint64_t n_solved_evts;
 };
 
 #ifdef __KERNEL__

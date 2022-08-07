@@ -39,7 +39,7 @@ do_record_one_event(struct nod_proc_info *p,
     if (unlikely(buffer->overflow.filled == 1)) {
         info->tail = ((struct nod_event_hdr *)buffer->overflow.addr)->len;
         ++info->nevents;
-        stat->n_evts++;
+        ++stat->n_evts;
 
         memmove(buffer->buffer, buffer->overflow.addr, info->tail);
         buffer->overflow.filled = 0;
@@ -175,6 +175,7 @@ init_buffer(struct nod_buffer *buffer)
         buffer->buffer[j] = 0;
     }
 
+    buffer->info->n_solved_evts = 0;
     reset_buffer(buffer, NOD_INIT_INFO | NOD_INIT_COUNT | NOD_INIT_LOCK);
 
     return 0;

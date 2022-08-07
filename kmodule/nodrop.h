@@ -17,7 +17,7 @@
 // #define vpr_dbg(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
 
 #define NOD_TEST(task) if (!(task->cred->uid.val == 1001))
-// #define NOD_TEST(task) if (!(STR_EQU(current->comm, "control")))
+// #define NOD_TEST(task) if (!(STR_EQU(current->comm, "stress")))
 #define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
 #define ASSERT(expr) BUG_ON(!(expr))
 
