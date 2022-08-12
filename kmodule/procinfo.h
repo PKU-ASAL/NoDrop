@@ -4,7 +4,7 @@
 #include <linux/ptrace.h>
 #include <linux/limits.h>
 #include <linux/signal.h>
-#include <linux/list.h>
+#include <linux/hashtable.h>
 
 #include "events.h"
 #include "common.h"
@@ -39,8 +39,7 @@ struct nod_proc_security {
 };
 
 struct nod_proc_info {
-	struct rb_node node;
-	struct list_head list;
+	struct hlist_node rcu;
 	pid_t pid;
 	struct mm_struct *mm;
 	struct nod_buffer buffer;

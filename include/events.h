@@ -897,7 +897,6 @@ struct nod_buffer {
 	char *str_storage;
     struct nod_buffer_info *info;
 	uint64_t event_count;
-	struct rw_semaphore sem;
     struct nod_overflow_page overflow;
 };
 #endif //__KERNEL__

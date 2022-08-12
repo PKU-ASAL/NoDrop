@@ -30,9 +30,7 @@ static int nod_dev_open(struct inode *inode, struct file *filp)
 static int
 __proc_buf_reset(struct nod_proc_info *this, unsigned long *ret, va_list args)
 {
-    down_read(&this->buffer.sem);
     reset_buffer(&this->buffer, NOD_INIT_INFO | NOD_INIT_COUNT);
-    up_read(&this->buffer.sem);
     return NOD_PROC_TRAVERSE_CONTINUE;
 }
 
@@ -41,11 +39,9 @@ __proc_bufcount_read(struct nod_proc_info *this, unsigned long *ret, va_list arg
 {
     struct nod_buffer *buf = &this->buffer;
     struct buffer_count_info *info = va_arg(args, struct buffer_count_info *);
-    down_read(&buf->sem);
     info->event_count += buf->event_count;
     info->unflushed_count += buf->info->nevents;
     info->unflushed_len += buf->info->tail; 
-    up_read(&buf->sem);
     return NOD_PROC_TRAVERSE_CONTINUE;
 }
 
@@ -77,20 +73,16 @@ __proc_buf_copy(struct nod_proc_info *this, unsigned long *ret, va_list args)
     uint64_t *count = va_arg(args, uint64_t *);
     uint64_t len = va_arg(args, uint64_t);
 
-    down_read(&buf->sem);
     if (*count + buf->info->tail <= len) {
         if (copy_to_user((void *)*ptr, (void *)buf->buffer, buf->info->tail)) {
-            up_read(&buf->sem);
             *ret = -EFAULT;
             return NOD_PROC_TRAVERSE_BREAK;
         }
         *ptr += buf->info->tail;
         *count += buf->info->tail;
-        up_read(&buf->sem);
         *ret = 0;
         return NOD_PROC_TRAVERSE_CONTINUE;
     } else {
-        up_read(&buf->sem);
         *ret = 0;
         return NOD_PROC_TRAVERSE_BREAK;
     }

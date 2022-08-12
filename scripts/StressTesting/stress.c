@@ -2,86 +2,72 @@
 #include <signal.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <time.h>
 #include <sys/time.h>
 #include <sys/mman.h>
+#include <sys/wait.h>
+#include <sys/types.h>
 #include <sys/syscall.h>
 
-#define TOTAL_TIME 30
-
-int nr_thread;
-int interval;
-int loop;
-int b_exit;
-pthread_t tids[100];
-struct timespec req, rem;
+int n, m;
+int fd;
+uint64_t nevts;
 struct timeval begin, end;
 
 void do_exit(int sig) {
-  int i;
-  uint64_t each = 0;
-  uint64_t total = 0;
-  b_exit = 1;
   gettimeofday(&end, 0);
-  for(i = 0; i < nr_thread; ++i) {
-    pthread_join(tids[i], (void *)&each);
-    total += each;
-  }
-  printf("%lu/%ld\n", total, ((end.tv_sec - begin.tv_sec) * 1000000 + (end.tv_usec - begin.tv_usec)) / 1000);
+  close(fd);
+  printf("%lu/%ld\n", nevts, ((end.tv_sec - begin.tv_sec) * 1000000 + (end.tv_usec - begin.tv_usec)) / 1000);
   exit(0);
 }
 
-long invoke(uint64_t *nevts) {
+long invoke() {
   long ret;
-  int i, a;
 
-  ret = syscall(SYS_getuid);
-  (*nevts)++;
+  ret = write(fd,"1", 1);
+  nevts++;
 
   return ret;
 }
 
-uint64_t thread_worker() {
+#pragma GCC push_options
+#pragma GCC optimize("O0")
+void thread_worker(int id) {
   int i;
-  uint64_t nevts = 0;
-  signal(SIGINT, SIG_IGN);
-  while(!b_exit) {
-    for(i = 0; i < loop && !b_exit; ++i) {
-      invoke(&nevts);
+  uint64_t count = 0;
+  char path[100];
+  sprintf(path, "/tmp/count/%d", id);
+  freopen(path, "w", stdout);
+
+  fd = open("/dev/null", O_WRONLY);
+
+  signal(SIGINT, do_exit);
+
+  gettimeofday(&begin, 0);
+  while(1) {
+    for(i = 0; i < n; ++i) {
+      invoke();
     }
-    if (!b_exit)
-      nanosleep(&req, &rem);
+    for(i = 0; i < m; ++i) {
+      count++;
+    }
   }
-  return nevts;
 }
+#pragma GCC pop_options
 
 int main(int argc, char *argv[]) {
   int i;
   if (argc < 3) {
-    printf("Usage: %s <interval - in ns> <loop> <# thread>\n", argv[0]);
+    printf("Usage: %s <n - getuid> <m - count> <id>\n", argv[0]);
     exit(1);
   }
 
-  interval = atoi(argv[1]);
-  loop = atoi(argv[2]);
-  nr_thread = argc > 3 ? atoi(argv[3]) : 1;
-  if (nr_thread >= 100) {
-    printf("# thread is larger than 100\n");
-    exit(1);
-  }
-
-  req.tv_nsec = interval;
-  signal(SIGINT, do_exit);
-
-  b_exit = 0;
-  for(i = 0; i < nr_thread; ++i) {
-    pthread_create(&tids[i], 0, (void *(*)(void *))thread_worker, 0);
-  }
-  gettimeofday(&begin, 0);
-  sleep(30);
-  do_exit(0);
+  n = atoi(argv[1]);
+  m = atoi(argv[2]);
+  thread_worker(atoi(argv[3]));
+  main_exit(0);
   return 0;
 }
-//./sysdig "proc.name=a.out and evt.type in (close, open, write)"

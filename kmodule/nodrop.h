@@ -32,7 +32,6 @@
 
 #define NOD_INIT_INFO  (1 << 1)
 #define NOD_INIT_COUNT (1 << 2)
-#define NOD_INIT_LOCK  (1 << 3)
 
 #ifdef CONFIG_X86_64
 #define FSBASE fsbase

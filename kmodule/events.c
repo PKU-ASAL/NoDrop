@@ -34,8 +34,6 @@ do_record_one_event(struct nod_proc_info *p,
     info = buffer->info;
     stat = &per_cpu(g_stat, smp_processor_id());
 
-    down_write(&buffer->sem);
-    
     if (unlikely(buffer->overflow.filled == 1)) {
         info->tail = ((struct nod_event_hdr *)buffer->overflow.addr)->len;
         ++info->nevents;
@@ -126,7 +124,6 @@ restart:
         cbret = nod_load_monitor(p);
     }
 
-    up_write(&buffer->sem);
     return cbret; 
 }
 
@@ -176,7 +173,7 @@ init_buffer(struct nod_buffer *buffer)
     }
 
     buffer->info->n_solved_evts = 0;
-    reset_buffer(buffer, NOD_INIT_INFO | NOD_INIT_COUNT | NOD_INIT_LOCK);
+    reset_buffer(buffer, NOD_INIT_INFO | NOD_INIT_COUNT);
 
     return 0;
 
@@ -221,9 +218,6 @@ reset_buffer(struct nod_buffer *buffer, int flags)
 
     if (flags & NOD_INIT_COUNT)
         buffer->event_count = 0;
-
-    if (flags & NOD_INIT_LOCK)
-        init_rwsem(&buffer->sem);
 }
 
 int 

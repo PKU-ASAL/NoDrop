@@ -1,4 +1,3 @@
-#include <linux/rbtree.h>
 #include <linux/file.h>
 #include <linux/mm.h>
 #include <linux/slab.h>
@@ -6,6 +5,7 @@
 #include <linux/signal.h>
 #include <linux/random.h>
 #include <linux/delay.h>
+#include <linux/hashtable.h>
 #include <asm/pkeys.h>
 
 
@@ -15,72 +15,37 @@
 
 static struct kmem_cache *proc_info_cachep = NULL;
 
-struct {
-    struct rb_root root;
-    struct list_head list;
-    struct rw_semaphore sem;
-} proc_info_rt;
+static DEFINE_READ_MOSTLY_HASHTABLE(proc_info_hl_head, 10);
 
 static inline struct nod_proc_info *
-__find_proc_info(struct rb_root *rt, struct task_struct *task)
+__find_proc_info(struct task_struct *task)
 {
-    struct rb_node *n;
     struct nod_proc_info *p;
 
-    for (n = rt->rb_node; n; ) {
-        p = rb_entry(n, struct nod_proc_info, node);
-        if (task->pid < p->pid)
-            n = n->rb_left;
-        else if (task->pid > p->pid)
-            n = n->rb_right;
-        else {
+    rcu_read_lock();
+    hash_for_each_possible_rcu(proc_info_hl_head, p, rcu, task->pid) {
+        if (p->pid == task->pid) {
+            rcu_read_unlock();
             return p;
         }
     }
+    rcu_read_unlock();
     return NULL;
 }
 
 static inline int
 __insert_proc_info(struct nod_proc_info *p)
 {
-    struct nod_proc_info *n;
-    struct rb_node **new, *parent = NULL;
-    down_write(&proc_info_rt.sem);
+    hash_add_rcu(proc_info_hl_head, &p->rcu, p->pid);
 
-    new = &proc_info_rt.root.rb_node;
-    while (*new) {
-        parent = *new;
-        n = rb_entry(parent, struct nod_proc_info, node);
-        if (p->pid < n->pid)
-            new = &(*new)->rb_left;
-        else if (p->pid > n->pid)
-            new = &(*new)->rb_right;
-        else {
-            up_write(&proc_info_rt.sem);
-            return false;
-        }
-    }
-
-    list_add(&p->list, &proc_info_rt.list);
-
-    rb_link_node(&p->node, parent, new);
-    rb_insert_color(&p->node, &proc_info_rt.root);
-    smp_mb();
-
-    up_write(&proc_info_rt.sem);
     return true;
 }
 
 static void
 __remove_proc_info(struct nod_proc_info *p)
 {
-    down_write(&proc_info_rt.sem);
-
-    list_del(&p->list);
-    rb_erase(&p->node, &proc_info_rt.root);
-    smp_mb();
-
-    up_write(&proc_info_rt.sem);
+    hash_del_rcu(&p->rcu);
+    synchronize_rcu();
 }
 
 void
@@ -142,9 +107,7 @@ nod_proc_acquire(enum nod_proc_status status,
 {
     struct nod_proc_info *p;
 
-    down_read(&proc_info_rt.sem);
-    p = __find_proc_info(&proc_info_rt.root, task);
-    up_read(&proc_info_rt.sem);
+    p = __find_proc_info(task);
     if (p) {
         goto success;
     }
@@ -172,9 +135,7 @@ nod_proc_release(struct task_struct *task)
     int retval;
     struct nod_proc_info *p;
 
-    down_read(&proc_info_rt.sem);
-    p = __find_proc_info(&proc_info_rt.root, task);
-    up_read(&proc_info_rt.sem);
+    p = __find_proc_info(task);
     if (!p) {
         return NOD_UNKNOWN;
     }
@@ -196,9 +157,7 @@ nod_copy_procinfo(struct task_struct *task, struct nod_proc_info *p)
     if (!task->real_parent) 
         return NOD_SUCCESS;
 
-    down_read(&proc_info_rt.sem);
-    parent = __find_proc_info(&proc_info_rt.root, task->group_leader);
-    up_read(&proc_info_rt.sem);
+    parent = __find_proc_info(task->group_leader);
 
     if (parent) {
         p->load_addr = parent->load_addr;
@@ -216,9 +175,7 @@ nod_share_procinfo(struct task_struct *task, struct nod_proc_info *p)
     if (!task->real_parent) 
         return NOD_SUCCESS;
 
-    down_read(&proc_info_rt.sem);
-    parent = __find_proc_info(&proc_info_rt.root, task->group_leader);
-    up_read(&proc_info_rt.sem);
+    parent = __find_proc_info(task->group_leader);
     if (parent) {
         /*
          * Pkey is previously allocated when acquiring nod_proc_info
@@ -239,9 +196,7 @@ nod_event_from(struct nod_proc_info **p)
 {
     struct nod_proc_info *n = NULL;
 
-    down_read(&proc_info_rt.sem);
-    n = __find_proc_info(&proc_info_rt.root, current);
-    up_read(&proc_info_rt.sem);
+    n = __find_proc_info(current);
 
     if (p)  *p = n;    
     return n ? n->status : NOD_OUT;
@@ -250,17 +205,16 @@ nod_event_from(struct nod_proc_info **p)
 unsigned long
 nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned long *, va_list), ...)
 {
-    int fb;
+    int fb, bkt;
     unsigned long ret;
     va_list args;
-    struct rb_node *n;
-    
+    struct nod_proc_info *p; 
     ret = 0;
-
-    down_write(&proc_info_rt.sem);
-    for (n = rb_first(&proc_info_rt.root); n; n = rb_next(n)) {
+    
+    rcu_read_lock();
+    hash_for_each_rcu(proc_info_hl_head, bkt, p, rcu) {
         va_start(args, func);
-        fb = func(rb_entry(n, struct nod_proc_info, node), &ret, args);
+        fb = func(p, &ret, args);
         va_end(args);
         switch(fb) {
         case NOD_PROC_TRAVERSE_BREAK:
@@ -272,7 +226,7 @@ nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned long *, va_list),
     }
 
 out:
-    up_write(&proc_info_rt.sem);
+    rcu_read_unlock();
     return ret;
 }
 
@@ -287,10 +241,6 @@ procinfo_init(void)
         goto out;
     }
 
-    INIT_LIST_HEAD(&proc_info_rt.list);
-    proc_info_rt.root = RB_ROOT;
-    init_rwsem(&proc_info_rt.sem);
-
     retval = 0;
 out:
     return retval;
@@ -299,21 +249,19 @@ out:
 void
 procinfo_destroy(void)
 {
-    struct list_head *pos, *npos;
+    int bkt;
     struct nod_proc_info *this;
+    struct hlist_node *tmp;
     if(proc_info_cachep) {
-        down_write(&proc_info_rt.sem);
-        list_for_each_safe(pos, npos, &proc_info_rt.list) {
-            this = list_entry(pos, struct nod_proc_info, list);
-            while(this->status == NOD_IN || 
-                this->status == NOD_RESTORE_CONTEXT || 
-                this->status == NOD_RESTORE_SECURITY) {
-                vpr_info("wait for exiting monitor (pid %d status %d)\n", this->pid, this->status);
+        rcu_read_lock();
+        hash_for_each_safe(proc_info_hl_head, bkt, tmp, this, rcu) {
+            while(this->status == NOD_IN) {
+                pr_info("wait for exiting monitor (pid %d status %d)\n", this->pid, this->status);
                 msleep(5);
             }
             nod_free_procinfo(this);
         }
-        up_write(&proc_info_rt.sem);
+        rcu_read_unlock();
         kmem_cache_destroy(proc_info_cachep);
     }
 }

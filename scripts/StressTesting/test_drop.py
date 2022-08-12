@@ -6,9 +6,8 @@ import signal
 import subprocess
 
 NRTHREAD = 1
-CONFIG = [(10, 10000), (50, 10000), (100, 10000), (650, 10000), (1000, 10000), (5000, 10000), (10000, 10000)]
-# CONFIG = [(100, 10), (100, 50), (100, 100), (100, 500), (100, 1000), (100, 5000), (100, 10000)]
-# CONFIG = [(100, 10)]
+# CONFIG = [(10, 10000), (50, 10000), (100, 10000), (500, 10000), (1000, 10000), (5000, 10000), (10000, 10000)]
+CONFIG = [(10000, 10000)]
 
 def change(uid, gid):
     def result():
@@ -32,9 +31,12 @@ class Base:
 
     def stress(self, n, m, nr):
         subprocess.run("rm -rf /tmp/count/*", shell=True)
-        proc = subprocess.Popen("/home/bench/stress-fork %d %d %d" % (n, m, nr),
-                preexec_fn=change(1001, 1001), shell=True)
-        proc.wait()
+
+        for i in range(nr):
+            subprocess.Popen("taskset -c %d timeout -s SIGINT 30s /home/bench/stress %d %d %d" % (i, n, m, i),
+                    preexec_fn=change(1001, 1001), shell=True)
+
+        time.sleep(31)
         self.count = 0
         for path, _, filelist in os.walk("/tmp/count"):
             for filename in filelist:
@@ -44,7 +46,7 @@ class Base:
 
 class Sysdig(Base):
     def start(self):
-        self.proc = subprocess.Popen("exec /home/jeshrz/sysdig/build/userspace/sysdig/sysdig -w out.scap", shell=True)
+        self.proc = subprocess.Popen("exec /home/jeshrz/sysdig/build/userspace/sysdig/sysdig -w /tmp/out.scap", shell=True)
         time.sleep(1)
 
     def finish(self):
@@ -60,8 +62,7 @@ class Sysdig(Base):
 
 class NoDrop(Base):
     def start(self):
-        subprocess.run("rm -rf /tmp/nodrop/count", shell=True)
-        subprocess.run("mkdir -p /tmp/nodrop/count", shell=True)
+        subprocess.run("rm -rf /tmp/nodrop/*.buf", shell=True)
 
     def finish(self):
         p = subprocess.run("/home/jeshrz/NoDrop/build/scripts/ctrl/ctrl stat", shell=True, stdout=subprocess.PIPE)
@@ -119,7 +120,7 @@ class Lttng(Base):
 
 class Kaudit(Base):
     def start(self):
-        subprocess.run("rm -rf /var/log/audit/audit.log", shell=True)
+        subprocess.run("rm -rf /tmp/audit/*", shell=True)
         subprocess.run("service auditd restart", shell=True, stdout=subprocess.DEVNULL)
         subprocess.run("auditctl -a always,exit -S all -F uid=bench", shell=True)
 
@@ -159,9 +160,15 @@ if __name__ == '__main__':
     if os.getuid() != 0:
         print("Run as root")
         exit(0)
-    elif len(sys.argv) < 2:
-        print("Usage: %s [sysdig|nodrop|lttng|kaudit]" % sys.argv[0])
+    elif len(sys.argv) < 3:
+        print("Usage: %s [sysdig|nodrop|lttng|kaudit] <nrcore>" % sys.argv[0])
         exit(0)
+
+    NRTHREAD = int(sys.argv[2])
+
+    subprocess.run("mkdir -p /tmp/count", shell=True)
+    subprocess.run("chgrp -R 1001 /tmp/count", shell=True)
+    subprocess.run("chown -R 1001 /tmp/count", shell=True)
 
     if sys.argv[1] == "sysdig":
         target = Sysdig()
