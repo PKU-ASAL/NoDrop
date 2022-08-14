@@ -68,6 +68,5 @@ int main(int argc, char *argv[]) {
   n = atoi(argv[1]);
   m = atoi(argv[2]);
   thread_worker(atoi(argv[3]));
-  main_exit(0);
   return 0;
 }

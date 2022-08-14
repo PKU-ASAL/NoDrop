@@ -1,9 +1,13 @@
 #!/bin/python3
 
+import bt2
 import os, sys
 import time
 import signal
 import subprocess
+
+UID = 1001
+USER = "bench"
 
 NRTHREAD = 1
 # CONFIG = [(10, 10000), (50, 10000), (100, 10000), (500, 10000), (1000, 10000), (5000, 10000), (10000, 10000)]
@@ -22,19 +26,12 @@ class Base:
     def finish(self):
         self.n_evts = self.n_recv_evts = 0
 
-    # def stress(self, interval, loop, nr):
-        # proc = subprocess.Popen("/home/bench/stress %d %d %d" % (interval, loop, nr), 
-        #         preexec_fn=change(1001, 1001), stdout=subprocess.PIPE, shell=True)
-        # proc.wait() 
-        # lines = proc.communicate()[0].decode("utf-8").split("\n");
-        # self.count = int(lines[0].strip().split("/")[0])
-
     def stress(self, n, m, nr):
         subprocess.run("rm -rf /tmp/count/*", shell=True)
 
         for i in range(nr):
-            subprocess.Popen("taskset -c %d timeout -s SIGINT 30s /home/bench/stress %d %d %d" % (i, n, m, i),
-                    preexec_fn=change(1001, 1001), shell=True)
+            subprocess.Popen("taskset -c %d timeout -s SIGINT 30s /home/%s/stress %d %d %d" % (i, USER, n, m, i),
+                    preexec_fn=change(UID, UID), shell=True)
 
         time.sleep(31)
         self.count = 0
@@ -87,7 +84,7 @@ class Lttng(Base):
     def start(self):
         subprocess.run(Lttng.PREFIX + "lttng create test-session --output=" + Lttng.SESSION_PATH, shell=True, stdout=subprocess.DEVNULL)
         subprocess.run(Lttng.PREFIX + "lttng enable-event --kernel --syscall --all", shell=True, stdout=subprocess.DEVNULL)
-        subprocess.run(Lttng.PREFIX + "lttng track --kernel --vuid=bench", shell=True, stdout=subprocess.DEVNULL)
+        subprocess.run(Lttng.PREFIX + "lttng track --kernel --vuid=%d" % UID, shell=True, stdout=subprocess.DEVNULL)
         subprocess.run(Lttng.PREFIX + "lttng start", shell=True, stdout=subprocess.DEVNULL)
 
     def finish(self):
@@ -106,12 +103,10 @@ class Lttng(Base):
         self.n_evts = n_drop_evts + self.n_recv_evts
     
     def get_n_evts(self):
-        import bt2
+        self.n_recv_evts = 0
 
         # Create a trace collection message iterator with this path.
         msg_it = bt2.TraceCollectionMessageIterator(Lttng.SESSION_PATH)
-        self.n_recv_evts = 0
-
         # Iterate the trace messages.
         for msg in msg_it:
             # `bt2._EventMessageConst` is the Python type of an event message.
@@ -122,7 +117,7 @@ class Kaudit(Base):
     def start(self):
         subprocess.run("rm -rf /tmp/audit/*", shell=True)
         subprocess.run("service auditd restart", shell=True, stdout=subprocess.DEVNULL)
-        subprocess.run("auditctl -a always,exit -S all -F uid=bench", shell=True)
+        subprocess.run("auditctl -a always,exit -S all -F uid=%d" % UID, shell=True)
 
     def finish(self):
         subprocess.run("auditctl -D", shell=True, stdout=subprocess.DEVNULL)
@@ -167,8 +162,8 @@ if __name__ == '__main__':
     NRTHREAD = int(sys.argv[2])
 
     subprocess.run("mkdir -p /tmp/count", shell=True)
-    subprocess.run("chgrp -R 1001 /tmp/count", shell=True)
-    subprocess.run("chown -R 1001 /tmp/count", shell=True)
+    subprocess.run("chgrp -R %d /tmp/count" % UID, shell=True)
+    subprocess.run("chown -R %d /tmp/count" % UID, shell=True)
 
     if sys.argv[1] == "sysdig":
         target = Sysdig()
@@ -179,7 +174,6 @@ if __name__ == '__main__':
     elif sys.argv[1] == "kaudit":
         target = Kaudit()
     else:
-        # TODO
         target = Base()
 
     main(target)
