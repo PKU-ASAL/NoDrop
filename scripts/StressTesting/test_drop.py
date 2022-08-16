@@ -10,8 +10,8 @@ UID = 1001
 USER = "bench"
 
 NRTHREAD = 1
-# CONFIG = [(10, 10000), (50, 10000), (100, 10000), (500, 10000), (1000, 10000), (5000, 10000), (10000, 10000)]
-CONFIG = [(10000, 10000)]
+CONFIG = [(10, 10000), (50, 10000), (100, 10000), (500, 10000), (1000, 10000), (5000, 10000), (10000, 10000)]
+# CONFIG = [(10000, 10000)]
 
 def change(uid, gid):
     def result():
@@ -80,10 +80,13 @@ class NoDrop(Base):
 class Lttng(Base):
     PREFIX = "/home/jeshrz/lttng/install/bin/"
     SESSION_PATH = "/tmp/test-session"
+    CHANNEL_NAME = "channel0"
+    READ_TIMER = 2000
 
     def start(self):
-        subprocess.run(Lttng.PREFIX + "lttng create test-session --output=" + Lttng.SESSION_PATH, shell=True, stdout=subprocess.DEVNULL)
-        subprocess.run(Lttng.PREFIX + "lttng enable-event --kernel --syscall --all", shell=True, stdout=subprocess.DEVNULL)
+        subprocess.run(Lttng.PREFIX + "lttng create test-session --output=%s" % Lttng.SESSION_PATH, shell=True, stdout=subprocess.DEVNULL)
+        subprocess.run(Lttng.PREFIX + "lttng enable-channel --kernel %s --read-timer=%d" % (Lttng.CHANNEL_NAME, Lttng.READ_TIMER), shell=True, stdout=subprocess.DEVNULL)
+        subprocess.run(Lttng.PREFIX + "lttng enable-event --kernel --syscall --all -c %s" % Lttng.CHANNEL_NAME, shell=True, stdout=subprocess.DEVNULL)
         subprocess.run(Lttng.PREFIX + "lttng track --kernel --vuid=%d" % UID, shell=True, stdout=subprocess.DEVNULL)
         subprocess.run(Lttng.PREFIX + "lttng start", shell=True, stdout=subprocess.DEVNULL)
 
@@ -156,7 +159,7 @@ if __name__ == '__main__':
         print("Run as root")
         exit(0)
     elif len(sys.argv) < 3:
-        print("Usage: %s [sysdig|nodrop|lttng|kaudit] <nrcore>" % sys.argv[0])
+        print("Usage: %s [sysdig|nodrop|lttng|audit] <nrcore>" % sys.argv[0])
         exit(0)
 
     NRTHREAD = int(sys.argv[2])
@@ -171,7 +174,7 @@ if __name__ == '__main__':
         target = NoDrop()
     elif sys.argv[1] == "lttng":
         target = Lttng()
-    elif sys.argv[1] == "kaudit":
+    elif sys.argv[1] == "audit":
         target = Kaudit()
     else:
         target = Base()
