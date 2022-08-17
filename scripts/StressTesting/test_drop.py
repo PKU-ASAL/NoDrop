@@ -9,7 +9,6 @@ import subprocess
 UID = 1001
 USER = "bench"
 
-NRTHREAD = 1
 CONFIG = [(10, 10000), (50, 10000), (100, 10000), (500, 10000), (1000, 10000), (5000, 10000), (10000, 10000)]
 # CONFIG = [(10000, 10000)]
 
@@ -146,10 +145,10 @@ class Kaudit(Base):
         self.n_recv_evts = n_recv_evts
 
 
-def main(target):
+def main(target, nr):
     for cfg in CONFIG:
         target.start()
-        target.stress(cfg[0], cfg[1], NRTHREAD)
+        target.stress(cfg[0], cfg[1], nr)
         target.finish()
         print("%d/%d" % cfg, target.n_evts)
         print(target.count, target.n_recv_evts)
@@ -162,7 +161,7 @@ if __name__ == '__main__':
         print("Usage: %s [sysdig|nodrop|lttng|audit] <nrcore>" % sys.argv[0])
         exit(0)
 
-    NRTHREAD = int(sys.argv[2])
+    nr = int(sys.argv[2])
 
     subprocess.run("mkdir -p /tmp/count", shell=True)
     subprocess.run("chgrp -R %d /tmp/count" % UID, shell=True)
@@ -179,4 +178,4 @@ if __name__ == '__main__':
     else:
         target = Base()
 
-    main(target)
+    main(target, nr)
