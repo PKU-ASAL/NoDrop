@@ -5575,6 +5575,40 @@ int f_sys_renameat2(struct event_filler_arguments *args)
 }
 
 /* NODE_SYSCALL_USERFAULTFD: auto fill only */
+static __always_inline u32 openat2_resolve_to_scap(unsigned long flags)
+{
+	u32 res = 0;
+#ifdef RESOLVE_NO_XDEV
+	if (flags & RESOLVE_NO_XDEV)
+		res |= NOD_RESOLVE_NO_XDEV;
+#endif
+
+#ifdef RESOLVE_NO_MAGICLINKS
+	if (flags & RESOLVE_NO_MAGICLINKS)
+		res |= NOD_RESOLVE_NO_MAGICLINKS;
+#endif
+
+#ifdef RESOLVE_NO_SYMLINKS
+	if (flags & RESOLVE_NO_SYMLINKS)
+		res |= NOD_RESOLVE_NO_SYMLINKS;
+#endif
+
+#ifdef RESOLVE_BENEATH
+	if (flags & RESOLVE_BENEATH)
+		res |= NOD_RESOLVE_BENEATH;
+#endif
+
+#ifdef RESOLVE_IN_ROOT
+	if (flags & RESOLVE_IN_ROOT)
+		res |= NOD_RESOLVE_IN_ROOT;
+#endif
+
+#ifdef RESOLVE_CACHED
+	if (flags & RESOLVE_CACHED)
+		res |= NOD_RESOLVE_CACHED;
+#endif
+	return res;
+}
 
 int f_sys_openat2(struct event_filler_arguments *args)
 {

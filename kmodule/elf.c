@@ -9,6 +9,7 @@
 #include <linux/binfmts.h>
 #include <linux/ptrace.h>
 #include <linux/mm.h>
+#include <linux/vmalloc.h>
 
 #include "nodrop.h"
 
