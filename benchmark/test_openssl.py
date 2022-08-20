@@ -6,12 +6,12 @@ import subprocess
 
 LOOP = 10
 TEST_SEC = 10
-cmd = "openssl speed -multi %d -seconds %d rsa4096"
+cmd = "cgexec -g cpuset:app openssl speed -multi %d -seconds %d rsa4096"
 
 def prepare():
     global cmd
-    # nproc = os.cpu_count()
-    nproc = 16
+    # nproc = 1
+    nproc = 32
     cmd = cmd % (nproc, TEST_SEC)
     print(cmd)
 

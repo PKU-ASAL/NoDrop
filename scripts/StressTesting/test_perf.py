@@ -22,6 +22,7 @@ def change(uid, gid):
 class Nginx:
     def run(self):
         f = subprocess.run("./test_nginx_cg.py", shell=True, stdout=subprocess.PIPE)
+        # f = subprocess.run("./test_nginx_cg.py", shell=True)
         lines = f.stdout.decode("utf-8").split("\n")
         line = lines[-3]
         ret = float(line.strip().split()[1])
@@ -61,19 +62,17 @@ class Base:
             procs.append(f)
 
         self.perf_ret = app.run()
-        print("ret", self.perf_ret)
 
         for i in range(nr):
-            print("kill", procs[i].pid)
             os.kill(procs[i].pid, signal.SIGINT)
 
-        time.sleep(2)
-        self.count = 0
-        for path, _, filelist in os.walk("/tmp/count"):
-            for filename in filelist:
-                with open(os.path.join(path, filename), "r") as f:
-                    line = f.readline()
-                    self.count += int(line.strip().split("/")[0])
+        time.sleep(1)
+        # self.count = 0
+        # for path, _, filelist in os.walk("/tmp/count"):
+        #     for filename in filelist:
+        #         with open(os.path.join(path, filename), "r") as f:
+        #             line = f.readline()
+        #             self.count += int(line.strip().split("/")[0])
 
 class Sysdig(Base):
     def start(self):
@@ -83,7 +82,27 @@ class Sysdig(Base):
     def finish(self):
         os.kill(self.proc.pid, signal.SIGINT)
         time.sleep(1)
-        p = subprocess.run("dmesg -c", shell=True, stdout=subprocess.PIPE)
+        subprocess.run("rm -rf /tmp/out.scap", shell=True)
+        # time.sleep(1)
+        # p = subprocess.run("dmesg -c", shell=True, stdout=subprocess.PIPE)
+        # lines = p.stdout.decode("utf-8").split("\n")
+        # line = lines[-4]
+        # data = line.split()
+        # self.n_evts = int(data[-3])
+        # self.n_recv_evts = int(data[-1])
+        # self.n_recv_evts = self.n_evts - self.n_recv_evts
+
+class SysdigBlock(Base):
+    def start(self):
+        self.proc = subprocess.Popen("exec cgexec -g cpuset:app /home/jeshrz/sysdig-block/build-2/userspace/sysdig/sysdig -w /tmp/out-block.scap", shell=True)
+        time.sleep(1)
+
+    def finish(self):
+        os.kill(self.proc.pid, signal.SIGINT)
+        time.sleep(1)
+        subprocess.run("rm -rf /tmp/out-block.scap", shell=True)
+        # time.sleep(1)
+        # p = subprocess.run("dmesg -c", shell=True, stdout=subprocess.PIPE)
         # lines = p.stdout.decode("utf-8").split("\n")
         # line = lines[-4]
         # data = line.split()
@@ -93,7 +112,7 @@ class Sysdig(Base):
 
 class NoDrop(Base):
     def start(self):
-        subprocess.run("rm -rf /tmp/nodrop/*.buf", shell=True)
+        pass
 
     def finish(self):
         p = subprocess.run("/home/jeshrz/NoDrop/build/scripts/ctrl/ctrl stat", shell=True, stdout=subprocess.PIPE)
@@ -102,7 +121,8 @@ class NoDrop(Base):
         # data = line.split()
         # self.n_evts = int(data[0])
         subprocess.run("/home/jeshrz/NoDrop/build/scripts/ctrl/ctrl clear-stat", shell=True, stderr=subprocess.DEVNULL)
-
+        subprocess.run("rm -rf /tmp/nodrop", shell=True)
+        subprocess.run("su %s -c \"mkdir /tmp/nodrop\"" % USER, shell=True)
         # self.n_recv_evts = 0
         # for path, _, filelist in os.walk("/tmp/nodrop/count"):
         #     for filename in filelist:
@@ -111,44 +131,6 @@ class NoDrop(Base):
         #             if fileline:
         #                 self.n_recv_evts += int(fileline)
 
-class Lttng(Base):
-    PREFIX = "/home/jeshrz/lttng/install/bin/"
-    SESSION_PATH = "/tmp/test-session"
-    CHANNEL_NAME = "channel0"
-    READ_TIMER = 2000
-
-    def start(self):
-        subprocess.run(Lttng.PREFIX + "lttng create test-session --output=%s" % Lttng.SESSION_PATH, shell=True, stdout=subprocess.DEVNULL)
-        subprocess.run(Lttng.PREFIX + "lttng enable-channel --kernel %s --read-timer=%d" % (Lttng.CHANNEL_NAME, Lttng.READ_TIMER), shell=True, stdout=subprocess.DEVNULL)
-        subprocess.run(Lttng.PREFIX + "lttng enable-event --kernel --syscall --all -c %s" % Lttng.CHANNEL_NAME, shell=True, stdout=subprocess.DEVNULL)
-        subprocess.run(Lttng.PREFIX + "lttng track --kernel --vuid=%d" % UID, shell=True, stdout=subprocess.DEVNULL)
-        subprocess.run(Lttng.PREFIX + "lttng start", shell=True, stdout=subprocess.DEVNULL)
-
-    def finish(self):
-        subprocess.run(Lttng.PREFIX + "lttng stop", shell=True, stdout=subprocess.DEVNULL)
-
-        # p = subprocess.run(Lttng.PREFIX + "lttng status", shell=True, stdout=subprocess.PIPE)
-        # lines = p.stdout.decode("utf-8").split("\n")
-        # n_drop_evts = 0
-        # for line in lines:
-        #     if "Discarded events" in line:
-        #         n_drop_evts = int(line.strip().split()[-1])
-        #         break
-        subprocess.run(Lttng.PREFIX + "lttng destroy", shell=True, stdout=subprocess.PIPE)
-
-    #     self.get_n_evts()
-    #     self.n_evts = n_drop_evts + self.n_recv_evts
-    # 
-    # def get_n_evts(self):
-    #     self.n_recv_evts = 0
-    #
-    #     # Create a trace collection message iterator with this path.
-    #     msg_it = bt2.TraceCollectionMessageIterator(Lttng.SESSION_PATH)
-    #     # Iterate the trace messages.
-    #     for msg in msg_it:
-    #         # `bt2._EventMessageConst` is the Python type of an event message.
-    #         if type(msg) is bt2._EventMessageConst:
-    #             self.n_recv_evts += 1
 
 def main(target, app, nr):
     for cfg in CONFIG:
@@ -164,7 +146,7 @@ if __name__ == '__main__':
         print("Run as root")
         exit(0)
     elif len(sys.argv) < 4:
-        print("Usage: %s [sysdig|nodrop|lttng|camflow] [nginx|redis|openssl] <nrcore>" % sys.argv[0])
+        print("Usage: %s [sysdig|block|nodrop|camflow] [nginx|redis|openssl] <nrcore>" % sys.argv[0])
         exit(0)
 
     nr = int(sys.argv[3])
@@ -175,10 +157,10 @@ if __name__ == '__main__':
 
     if sys.argv[1] == "sysdig":
         target = Sysdig()
+    elif sys.argv[1] == "block":
+        target = SysdigBlock()
     elif sys.argv[1] == "nodrop":
         target = NoDrop()
-    elif sys.argv[1] == "lttng":
-        target = Lttng()
     elif sys.argv[1] == "camflow":
         # TODO
         print("no implement")

@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# TOTAL_CPU=47
-# CPULINE=32
-# CPULINE_BEFORE=`expr $CPULINE - 1`
-TOTAL_CPU=1
-CPULINE=1
+TOTAL_CPU=39
+CPULINE=32
 CPULINE_BEFORE=`expr $CPULINE - 1`
+# TOTAL_CPU=1
+# CPULINE=1
+# CPULINE_BEFORE=`expr $CPULINE - 1`
 
 cgcreate -g cpuset:/perf
 cgcreate -g cpuset:/app

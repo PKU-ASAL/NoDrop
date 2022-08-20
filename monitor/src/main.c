@@ -126,7 +126,7 @@ int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info) {
     struct nod_event_hdr *hdr;
     FILE *file;
 
-    if(!(file = fopen((const char *)path, "ab+"))) {
+    if(!(file = fopen((const char *)path, "wb+"))) { // TEMP
         perror("Cannot open log file");
         return 0;
     }

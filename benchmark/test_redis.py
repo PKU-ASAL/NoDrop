@@ -3,12 +3,13 @@
 import os
 import time
 import subprocess
+import signal
 from multiprocessing import Process, Semaphore
 
 LOOP = 10
 # THREAD = 2
-THREAD = 4
-# THREAD = 8
+# THREAD = 4
+THREAD = 8
 DURATION = 20
 CLIENTS = 50
 HOST = "localhost"
@@ -18,23 +19,25 @@ cmd = "./redis/memtier_/memtier_benchmark --hide-histogram -P redis -s %s -p %d 
 # cmd = "./redis/redis_/src/redis-benchmark -h %s -p %d -n %d -P 32 -q -c 50 -t set,get,lpush,lpop,sadd --csv" % (HOST, PORT, REQUESTS_NUM)
 
 def prepare():
-    proc = subprocess.Popen("cgexec -g cpuset:app ./redis/redis_/src/redis-server ./redis/redis_/redis.conf", shell=True, stdout=subprocess.DEVNULL)
-    time.sleep(3)
+    proc = subprocess.Popen("exec cgexec -g cpuset:app ./redis/redis_/src/redis-server ./redis/redis_/redis.conf", shell=True, stdout=subprocess.DEVNULL)
+    time.sleep(1)
     return proc
 
 def execute_redis_benmark():
-    f = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    lines = f.stdout.decode("utf-8").split("\n")
-    return float(lines[-2].strip().split(" ")[-1].strip())
+    try:
+        f = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        lines = f.stdout.decode("utf-8").split("\n")
+        return float(lines[-2].strip().split(" ")[-1].strip())
+    except Exception:
+        return 0
     # for line in lines:
     #     data = line.split(",")
     #     if data[0] == '"LPUSH"':
     #         return 1e6 / float(data[1][1:-1])
-    print("err")
 
 def finish(proc):
-    subprocess.run("kill -2 %d" % proc.pid, shell=True)
-    time.sleep(3)
+    os.kill(proc.pid, signal.SIGINT)
+    time.sleep(1)
 
 s1 = Semaphore(0)
 s2 = Semaphore(0)

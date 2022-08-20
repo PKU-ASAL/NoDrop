@@ -7,9 +7,8 @@ from multiprocessing import Process, Semaphore
 
 
 LOOP = 10
-# NRCPUS = 1
+# NRCPUS = 2
 NRCPUS = 16
-# NRCPUS = 32
 CONNECTION = 100
 DURATION = 10
 URL = "http://127.0.0.1:8089/test.html"
@@ -17,17 +16,22 @@ cmd = "/home/jeshrz/wrk/wrk -t %d -c %d -d %d --timeout %d %s" % (NRCPUS, CONNEC
 
 def prepare():
     subprocess.run("cgexec -g cpuset:app ./nginx/nginx_/sbin/nginx", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(3)
+    time.sleep(1)
 
 def execute_wrk():
-    f = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    lines = f.stdout.decode("utf-8").split("\n")
-    ret = float(lines[-3].split(": ")[-1])
-    return 1e6 / ret
+    try:
+        f = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        lines = f.stdout.decode("utf-8").split("\n")
+        ret = float(lines[-3].split(": ")[-1])
+        return 1e6 / ret
+    except Exception:
+        return 0
+
 
 def finish():
     subprocess.run("./nginx/nginx_/sbin/nginx -s quit", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
-    time.sleep(3)
+    time.sleep(1)
+    subprocess.run("rm -rf ./nginx/nginx_/logs/access.log", shell=True)
 
 s1 = Semaphore(0)
 s2 = Semaphore(0)

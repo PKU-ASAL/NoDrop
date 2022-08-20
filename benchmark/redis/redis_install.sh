@@ -12,6 +12,7 @@ make hiredis jemalloc linenoise lua
 cd $NOW/redis_
 make MALLOC=libc -j `nproc`
 
+cd $NOW
 tar -xzf memtier_benchmark-1.3.0.tar.gz
 mv -f memtier_benchmark-1.3.0 memtier_
 
