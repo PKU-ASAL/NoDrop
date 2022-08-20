@@ -1,4 +1,0 @@
-#!/bin/bash
-
-echo $$ > /sys/fs/cgroup/cpuset/app/cgroup.procs
-exec /home/jeshrz/NoDrop/benchmark/nginx/nginx_/sbin/nginx-real $*
