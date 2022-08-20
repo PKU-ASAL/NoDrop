@@ -15,23 +15,28 @@ for TOOL in ${TOOLS[@]}
 do
   echo "=========== $TOOL ==========="
 
-  echo "Sysdig-block"
-  insmod /home/jeshrz/sysdig-block/build-2/driver/scap.ko
-  /home/jeshrz/NoDrop/scripts/StressTesting/test_perf.py block $TOOL $NR
-  rmmod scap
+  systemctl start camflowd.service
+  /home/jeshrz/NoDrop/scripts/StressTesting/test_perf.py camflow $TOOL $NR
+  rm -rf /tmp/audit.log
+  
 
-  echo "Sysdig"
-  insmod /home/jeshrz/sysdig/build/driver/scap.ko
-  /home/jeshrz/NoDrop/scripts/StressTesting/test_perf.py sysdig $TOOL $NR
-  rmmod scap
+  # echo "Sysdig-block"
+  # insmod /home/jeshrz/sysdig-block/build-2/driver/scap.ko
+  # /home/jeshrz/NoDrop/scripts/StressTesting/test_perf.py block $TOOL $NR
+  # rmmod scap
 
-  echo "Base"
-  insmod /home/jeshrz/sysdig/build-1/driver/scap.ko
-  /home/jeshrz/NoDrop/scripts/StressTesting/test_perf.py sysdig $TOOL $NR
-  rmmod scap
+  # echo "Sysdig"
+  # insmod /home/jeshrz/sysdig/build/driver/scap.ko
+  # /home/jeshrz/NoDrop/scripts/StressTesting/test_perf.py sysdig $TOOL $NR
+  # rmmod scap
 
-  echo "NoDrop"
-  make -C /home/jeshrz/NoDrop/build load > /dev/null
-  /home/jeshrz/NoDrop/scripts/StressTesting/test_perf.py nodrop $TOOL $NR
-  rmmod nodrop
+  # echo "Base"
+  # insmod /home/jeshrz/sysdig/build-1/driver/scap.ko
+  # /home/jeshrz/NoDrop/scripts/StressTesting/test_perf.py sysdig $TOOL $NR
+  # rmmod scap
+
+  # echo "NoDrop"
+  # make -C /home/jeshrz/NoDrop/build load > /dev/null
+  # /home/jeshrz/NoDrop/scripts/StressTesting/test_perf.py nodrop $TOOL $NR
+  # rmmod nodrop
 done

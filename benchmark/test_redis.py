@@ -6,6 +6,9 @@ import subprocess
 import signal
 from multiprocessing import Process, Semaphore
 
+TOTAL_CPU = 1
+CPULINE = 1
+
 LOOP = 10
 # THREAD = 2
 # THREAD = 4
@@ -14,12 +17,12 @@ DURATION = 20
 CLIENTS = 50
 HOST = "localhost"
 PORT = 6379
-cmd = "./redis/memtier_/memtier_benchmark --hide-histogram -P redis -s %s -p %d " \
-        "-t %d -c %d --test-time=%d" % (HOST, PORT, THREAD, CLIENTS, DURATION)
+cmd = "taskset -c %d-%d ./redis/memtier_/memtier_benchmark --hide-histogram -P redis -s %s -p %d " \
+        "-t %d -c %d --test-time=%d" % (CPULINE, TOTAL_CPU, HOST, PORT, THREAD, CLIENTS, DURATION)
 # cmd = "./redis/redis_/src/redis-benchmark -h %s -p %d -n %d -P 32 -q -c 50 -t set,get,lpush,lpop,sadd --csv" % (HOST, PORT, REQUESTS_NUM)
 
 def prepare():
-    proc = subprocess.Popen("exec cgexec -g cpuset:app ./redis/redis_/src/redis-server ./redis/redis_/redis.conf", shell=True, stdout=subprocess.DEVNULL)
+    proc = subprocess.Popen("exec taskset -c %d-%d ./redis/redis_/src/redis-server ./redis/redis_/redis.conf" % (0, CPULINE - 1), shell=True, stdout=subprocess.DEVNULL)
     time.sleep(1)
     return proc
 
@@ -57,8 +60,8 @@ def task1():
     finish(proc)
 
 def task2():
-    with open("/sys/fs/cgroup/cpuset/perf/tasks", "w") as f:
-        f.write(str(os.getpid()))
+    # with open("/sys/fs/cgroup/cpuset/perf/tasks", "w") as f:
+    #     f.write(str(os.getpid()))
 
     res = []
     total_cost = 0

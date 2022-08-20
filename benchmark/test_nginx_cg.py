@@ -5,17 +5,19 @@ import time
 import subprocess
 from multiprocessing import Process, Semaphore
 
+TOTAL_CPU = 1
+CPULINE = 1
 
 LOOP = 10
-# NRCPUS = 2
-NRCPUS = 16
+NRCPUS = 2
+# NRCPUS = 16
 CONNECTION = 100
 DURATION = 10
 URL = "http://127.0.0.1:8089/test.html"
-cmd = "/home/jeshrz/wrk/wrk -t %d -c %d -d %d --timeout %d %s" % (NRCPUS, CONNECTION, DURATION, DURATION, URL)
+cmd = "taskset -c %d-%d /home/jeshrz/wrk/wrk -t %d -c %d -d %d --timeout %d %s" % (CPULINE, TOTAL_CPU, NRCPUS, CONNECTION, DURATION, DURATION, URL)
 
 def prepare():
-    subprocess.run("cgexec -g cpuset:app ./nginx/nginx_/sbin/nginx", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run("taskset -c %d-%d ./nginx/nginx_/sbin/nginx" % (0, CPULINE - 1), shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1)
 
 def execute_wrk():
@@ -51,8 +53,8 @@ def task1():
     finish()
 
 def task2():
-    with open("/sys/fs/cgroup/cpuset/perf/tasks", "w") as f:
-        f.write(str(os.getpid()))
+    # with open("/sys/fs/cgroup/cpuset/perf/tasks", "w") as f:
+    #     f.write(str(os.getpid()))
     
     res = []
     total_cost = 0

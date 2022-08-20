@@ -4,15 +4,18 @@ import os
 import time
 import subprocess
 
+TOTAL_CPU = 1
+CPULINE = 1
+
 LOOP = 10
 TEST_SEC = 10
-cmd = "cgexec -g cpuset:app openssl speed -multi %d -seconds %d rsa4096"
+cmd = "taskset -c %d-%d openssl speed -multi %d -seconds %d rsa4096"
 
 def prepare():
     global cmd
-    # nproc = 1
-    nproc = 32
-    cmd = cmd % (nproc, TEST_SEC)
+    nproc = 1
+    # nproc = 32
+    cmd = cmd % (0, CPULINE - 1, nproc, TEST_SEC)
     print(cmd)
 
 def execute_openssl():
@@ -20,6 +23,10 @@ def execute_openssl():
     lines = f.stdout.decode("utf-8").split("\n")
     ret = float(lines[-2].split()[3][:-1])
     return ret * 1e6
+
+if os.getuid() == 0:
+    os.setgid(1000)
+    os.setuid(1000)
 
 res = []
 total_cost = 0

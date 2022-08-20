@@ -135,19 +135,21 @@ class Camflow(Base):
         self.nr = nr
 
     def start(self):
-        subprocess.run("rm -rf /tmp/camflow.log", shell=True)
-        subprocess.run("systemctl restart camflowd.service", shell=True)
-        subprocess.run("camflow --track-user root opaque", shell=True)
+        subprocess.run("rm -rf /tmp/audit.log", shell=True)
+        self.proc = subprocess.Popen("exec taskset -c %d-%d /usr/bin/camflowd" % (0, self.nr - 1), shell=True)
+        subprocess.run("camflow --track-user %s track" % USER, shell=True)
+        subprocess.run("camflow --track-user %s propagate" % USER, shell=True)
         subprocess.run("camflow -a true", shell=True)
         subprocess.run("camflow -e true", shell=True)
 
     def finish(self):
-        pass
+        os.kill(self.proc.pid, signal.SIGINT)
+        time.sleep(1)
 
 
 def main(target, app, nr):
     for cfg in CONFIG:
-        target.start()
+        target.start(nr)
         target.stress(cfg[0], cfg[1], app, nr)
         target.finish()
         print("%d/%d" % cfg, target.perf_ret)
