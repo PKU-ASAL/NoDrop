@@ -9,7 +9,7 @@ LOOP = 10
 CONNECTION = 1000
 NRCPUS = os.cpu_count()
 URL = "http://127.0.0.1:8089/test.html"
-cmd = "wrk -t %d -c %d %s" % (NRCPUS, CONNECTION, URL)
+cmd = "./nginx/wrk_/wrk -t %d -c %d %s" % (NRCPUS, CONNECTION, URL)
 
 def prepare():
     subprocess.run("./nginx/nginx_/sbin/nginx", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

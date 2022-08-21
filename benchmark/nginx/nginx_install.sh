@@ -13,10 +13,14 @@ make -j $NRCPUS
 make install
 cd ..
 
-sed -i "s/worker_processes  1;/worker_processes  $NRCPUS;/g" nginx_/conf/nginx.conf
 sed -i "s/        listen       80;/        listen       8089;/g" nginx_/conf/nginx.conf
 
 mv -f http-test-files/* nginx_/html/
 
 rm -rf http-test-files
 rm -rf nginx-1.21.1/
+
+unzip wrk.zip
+mv wrk-master/ wrk_/
+cd wrk_/
+make

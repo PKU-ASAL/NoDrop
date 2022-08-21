@@ -10,6 +10,7 @@ config.h
 *build*
 nginx_/
 nginx-*/
+wrk_/
 redis_/
 memtier_/
 redis-*/
@@ -19,5 +20,6 @@ http-test-files/
 memcached_/
 mcperf_/
 musl/
+musl-src/
 *.txt
 !CMakeLists.txt

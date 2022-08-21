@@ -14,7 +14,7 @@ NRCPUS = 2
 CONNECTION = 100
 DURATION = 10
 URL = "http://127.0.0.1:8089/test.html"
-cmd = "taskset -c %d-%d /home/jeshrz/wrk/wrk -t %d -c %d -d %d --timeout %d %s" % (CPULINE, TOTAL_CPU, NRCPUS, CONNECTION, DURATION, DURATION, URL)
+cmd = "taskset -c %d-%d ./nginx/wrk_/wrk -t %d -c %d -d %d --timeout %d %s" % (CPULINE, TOTAL_CPU, NRCPUS, CONNECTION, DURATION, DURATION, URL)
 
 def prepare():
     subprocess.run("taskset -c %d-%d ./nginx/nginx_/sbin/nginx" % (0, CPULINE - 1), shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
