@@ -6,7 +6,7 @@
 #include <linux/random.h>
 #include <linux/delay.h>
 #include <linux/hashtable.h>
-#include <asm/pkeys.h>
+#include <linux/pkeys.h>
 
 
 #include "nodrop.h"

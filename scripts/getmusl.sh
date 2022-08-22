@@ -1,4 +1,4 @@
-#/bin/sh
+#!/bin/sh
 
 if [ $# -lt 1 ] || [[ "$1" != /* ]]; then 
     echo "Usage: $0 <absolute-path-to-NoDrop>"
@@ -17,33 +17,39 @@ tar xf ${MUSL}-${VERSION}.tar.gz
 mv ${MUSL}-${VERSION} ${ROOT}/musl-src
 mkdir -p ${ROOT}/musl
 
-cd ${ROOT}/musl-src && ./configure --prefix=${ROOT}/musl --disable-shared --enable-optimize --disable-wrapper && cd -
-make -C ${ROOT}/musl-src -j`nproc`
-make -C ${ROOT}/musl-src install
+cd ${ROOT}/musl-src
+CFLAGS="-fPIE" ./configure --prefix=${ROOT}/musl --disable-shared --enable-optimize --disable-wrapper
+make -j`nproc`
+make install
+cd -
+
+incdir=${ROOT}/musl/include
+libdir=${ROOT}/musl/lib
+ldso=/lib/ld-musl-x86_64.so.1
 
 cat > ${ROOT}/monitor/musl.specs << EOF
 %rename cpp_options old_cpp_options
 
 *cpp_options:
--nostdinc -isystem ${ROOT}/musl/include -isystem include%s %(old_cpp_options)
+-nostdinc -isystem $incdir -isystem include%s %(old_cpp_options)
 
 *cc1:
-%(cc1_cpu) -nostdinc -isystem ${ROOT}/musl/include -isystem include%s
+%(cc1_cpu) -nostdinc -isystem $incdir -isystem include%s
 
 *link_libgcc:
--L${ROOT}/musl/lib -L .%s
+-L$libdir -L .%s
 
 *libgcc:
 libgcc.a%s %:if-exists(libgcc_eh.a%s)
 
 *startfile:
-%{static-pie: rcrt1.o} %{!static-pie: %{!shared: ${ROOT}/musl/lib/Scrt1.o}} ${ROOT}/musl/lib/crti.o crtbeginS.o%s
+%{shared:;static:$libdir/crt1.o%s; static-pie:$libdir/rcrt1.o%s; pie:$libdir/Scrt1.o%s; :$libdir/crt1.o%s} $libdir/crti.o%s %{static:crtbeginT.o%s; shared|static-pie|pie:crtbeginS.o%s; :crtbegin.o%s}
 
 *endfile:
-crtendS.o%s ${ROOT}/musl/lib/crtn.o
+%{static:crtend.o%s; shared|static-pie|pie:crtendS.o%s; :crtend.o%s} $libdir/crtn.o%s
 
 *link:
-%{static-pie:-no-dynamic-linker -static} %{!static-pie:-dynamic-linker /lib/ld-musl-x86_64.so.1} -nostdlib %{shared:-shared} %{static:-static} %{rdynamic:-export-dynamic}
+%{!r:--build-id} --no-add-needed %{!static|static-pie:--eh-frame-hdr} --hash-style=gnu %{shared:-shared} %{!shared:%{!static:%{!static-pie:%{rdynamic:-export-dynamic} -dynamic-linker $ldso}} %{static:-static} %{static-pie:-static -pie --no-dynamic-linker -z text}}
 
 *esp_link:
 
@@ -57,4 +63,4 @@ crtendS.o%s ${ROOT}/musl/lib/crtn.o
 EOF
 
 rm -rf ${ROOT}/musl-src
-rm ${ROOT}/${MUSL}-${VERSION}.tar.gz
+rm ${MUSL}-${VERSION}.tar.gz

@@ -33,11 +33,11 @@ configure_file(script_x86-64.ld script_x86-64.ld COPYONLY)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/../include/config.h.in 
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/config.h)
 
-set(NODROP_COMMON_FLAGS "-mno-sse -Wall -ggdb -fPIE -fno-stack-protector --static-pie -specs=musl.specs")
-set(NODROP_DEBUG_FLAGS "-Og -DDEBUG")
+	set(NODROP_COMMON_FLAGS "-mno-sse -Wall -fno-stack-protector -fPIE --static-pie -nostartfiles -specs=musl.specs")
+set(NODROP_DEBUG_FLAGS "-ggdb -Og -DDEBUG")
 set(NODROP_RELEASE_FLAGS "-Os -DNODEBUG -fno-strict-aliasing")
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${NODROP_COMMON_FLAGS} -nostartfiles")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${NODROP_COMMON_FLAGS}")
 set(CMAKE_C_FLAGS_DEBUG "${NODROP_DEBUG_FLAGS}")
 set(CMAKE_C_FLAGS_RELEASE "${NODROP_RELEASE_FLAGS}")
 
@@ -52,7 +52,7 @@ include_directories(
 
 add_executable(${MONITOR} ${MONITOR_SOURCES})
 add_custom_command(TARGET ${MONITOR} POST_BUILD
-        COMMAND strip -R .symtab ${MONITOR} -o ${MONITOR}
+	COMMAND strip -R .symtab ${MONITOR} -o ${MONITOR}
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different monitor "${CMAKE_CURRENT_BINARY_DIR}"
-        COMMENT "strip monitor .symtab section"
+	COMMENT "strip monitor .symtab section"
         VERBATIM)
