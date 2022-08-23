@@ -61,15 +61,28 @@ START ": \n"
 "	call " START "_c \n"
 );
 
+// uint64_t start, end, last_solved;
+// static uint64_t read_time(void) {
+//   struct timespec tv;
+//   syscall(SYS_clock_gettime, 1, &tv);
+//   return (uint64_t)tv.tv_sec * 1000000000 + tv.tv_nsec;
+// }
+
 static void
 nod_restore_context(struct nod_stack_info *p) {
     if (unlikely(SYSCALL_EXIT_FAMILY(p->nr))) {
         nod_monitor_exit(p->nr);
+        // end = read_time();
+        // printf("\n-%llu-%llu-\n", end - start, p->buffer_info->n_solved_evts - last_solved);
+        // last_solved = p->buffer_info->n_solved_evts;
         syscall(p->nr, p->code);
     } else {
 #ifdef NOD_PKEY_SUPPORT
         if (likely(p->pkey != -1)) pkey_set(p->pkey, PKEY_DISABLE_WRITE);
 #endif
+        // end = read_time();
+        // printf("\n-%llu-%llu-\n", end - start, p->buffer_info->n_solved_evts - last_solved);
+        // last_solved = p->buffer_info->n_solved_evts;
         ioctl(p->ioctl_fd, NOD_IOCTL_RESTORE_CONTEXT, p);
     }
     NOREACH
@@ -161,6 +174,8 @@ hidden void _start_c(size_t *sp, size_t *dynv) {
 
     int argc = *sp;
     char **argv = (void *) (sp + 1);
+
+    // start = read_time();
 
     if (likely(__info.fsbase != 0)) {
         nod_start_main(argc, argv, argv + argc + 1);

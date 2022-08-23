@@ -106,12 +106,14 @@ nod_proc_acquire(enum nod_proc_status status,
             struct task_struct *task)
 {
     struct nod_proc_info *p;
+    // nanoseconds start, end;
 
     p = __find_proc_info(task);
     if (p) {
         goto success;
     }
 
+    // start = nod_nsecs();
     p = nod_alloc_procinfo();
     if (!p) {
         if (pre) *pre = NOD_UNKNOWN;
@@ -119,6 +121,8 @@ nod_proc_acquire(enum nod_proc_status status,
     }
 
     nod_init_procinfo(task, p);
+    // end = nod_nsecs();
+    // pr_info("%llu\n", end - start);
 
     ASSERT(__insert_proc_info(p) == true);
 

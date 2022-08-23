@@ -62,12 +62,23 @@ static void compat_unregister_trace(void *func, const char *probename, struct tr
 #endif
 }
 
+// struct nod_count {
+//   nanoseconds total;
+//   int count;
+//   int once;
+// };
+//
+// DEFINE_PER_CPU(struct nod_count, cct);
+
 static int
 syscall_probe(struct nod_proc_info *p, struct pt_regs *regs, long id, int force) {
     int retval;
     long table_index;
     enum nod_event_type type;
     struct nod_event_data event_data;
+    // nanoseconds start, end;
+    // struct nod_count *cnt;
+    // start = nod_nsecs();
 
     table_index = id - SYSCALL_TABLE_ID0;
     if (likely(table_index >= 0 && table_index < SYSCALL_TABLE_SIZE)) {
@@ -84,6 +95,18 @@ syscall_probe(struct nod_proc_info *p, struct pt_regs *regs, long id, int force)
         retval = NOD_FAILURE_INVALID_EVENT;
     }
 
+    // end = nod_nsecs();
+    // cnt = &get_cpu_var(cct);
+    // if (cnt->count < 10000) {
+    //   cnt->total += end - start;
+    //   cnt->count++;
+    // } else {
+    //   if (!cnt->once) {
+    //     pr_info("%lld %d\n", cnt->total, cnt->count);
+    //     cnt->once = 1;
+    //   }
+    // }
+    // put_cpu_var(cct);
     return retval;
 }
 
@@ -91,6 +114,7 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
 {
     int evt_from, id, retval;
     struct nod_proc_info *p;
+    // nanoseconds start, end;
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 20)
     if (unlikely(current->flags & PF_KTHREAD))
@@ -117,14 +141,20 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
     evt_from = nod_event_from(&p);
     switch(evt_from) {
     case NOD_RESTORE_CONTEXT:
+        // start = nod_nsecs();
         nod_restore_security(p);
         nod_restore_context(p, regs);
+        // end = nod_nsecs();
+        // pr_info("post %llu\n", end - start);
         nod_proc_set_out(p);
 
         break;
 
     case NOD_RESTORE_SECURITY:
+        // start = nod_nsecs();
         nod_restore_security(p);
+        // end = nod_nsecs();
+        // pr_info("post %llu\n", end - start);
 
         break;
 

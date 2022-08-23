@@ -323,6 +323,8 @@ nod_load_monitor(struct nod_proc_info *p)
     struct pt_regs *regs;
     struct elf64_hdr *cur_elf_ex;
     uint64_t load_addr = 0, interp_load_addr = 0;
+    // nanoseconds start1, end1;
+    // nanoseconds start2, end2;
 
     char *argv[] = { MONITOR_PATH, NULL };
 
@@ -340,7 +342,9 @@ nod_load_monitor(struct nod_proc_info *p)
     }
 
     if (!p->load_addr) {
+        // start1 = nod_nsecs();
         retval = do_load_monitor(regs, &entry, &load_addr, &interp_load_addr);
+        // end1 = nod_nsecs();
         if (retval != NOD_SUCCESS) {
             goto out;
         }
@@ -354,15 +358,24 @@ nod_load_monitor(struct nod_proc_info *p)
     p->stack.nr = syscall_get_nr(current, regs);
     syscall_get_arguments_deprecated(current, regs, 0, 1, &p->stack.code);
 
+    // if (cur_elf_ex) start2 = nod_nsecs();
     retval = create_elf_tbls(cur_elf_ex, load_addr, interp_load_addr, regs, &p->stack, &sp, argv);
+    // if (cur_elf_ex) {
+    //   end2 = nod_nsecs();
+    //   pr_info("%llu\n", (end1 - start1) + (end2 - start2));
+    // }
     if (retval != NOD_SUCCESS) {
         goto out;
     }
 
     nod_proc_set_in(p);
 
+
+    // start1 = nod_nsecs();
     nod_prepare_security(p);
     nod_prepare_context(p, regs);
+    // end1 = nod_nsecs();
+    // pr_info("pre %llu\n", end1 - start1);
 
     elf_reg_init(&current->thread, regs, 0);
     regs->sp = sp;
