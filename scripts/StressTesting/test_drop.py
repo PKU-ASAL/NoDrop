@@ -6,8 +6,8 @@ import time
 import signal
 import subprocess
 
-UID = 1001
-USER = "bench"
+UID = 1000
+USER = "jeshrz"
 
 CONFIG = [(10, 10000), (50, 10000), (100, 10000), (500, 10000), (1000, 10000), (5000, 10000), (10000, 10000)]
 # CONFIG = [(10000, 10000)]

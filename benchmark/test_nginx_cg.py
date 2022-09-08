@@ -5,14 +5,14 @@ import time
 import subprocess
 from multiprocessing import Process, Semaphore
 
-TOTAL_CPU = 1
-CPULINE = 1
+# TOTAL_CPU, CPULINE = 1, 1
+TOTAL_CPU, CPULINE = 39, 32
 
-LOOP = 10
-NRCPUS = 2
-# NRCPUS = 16
-CONNECTION = 100
-DURATION = 10
+LOOP = 1
+# NRCPUS = 2
+NRCPUS = 32
+CONNECTION = 1000
+DURATION = 20
 URL = "http://127.0.0.1:8089/test.html"
 cmd = "taskset -c %d-%d ./nginx/wrk_/wrk -t %d -c %d -d %d --timeout %d %s" % (CPULINE, TOTAL_CPU, NRCPUS, CONNECTION, DURATION, DURATION, URL)
 
@@ -26,7 +26,8 @@ def execute_wrk():
         lines = f.stdout.decode("utf-8").split("\n")
         ret = float(lines[-3].split(": ")[-1])
         return 1e6 / ret
-    except Exception:
+    except Exception as e:
+        print("test_nginx_cg.py:", e)
         return 0
 
 

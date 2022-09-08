@@ -4,17 +4,17 @@ import os
 import time
 import subprocess
 
-TOTAL_CPU = 1
-CPULINE = 1
+# TOTAL_CPU, CPULINE = 1, 1
+TOTAL_CPU, CPULINE = 39, 32
 
-LOOP = 10
-TEST_SEC = 10
+LOOP = 1
+TEST_SEC = 20
 cmd = "taskset -c %d-%d openssl speed -multi %d -seconds %d rsa4096"
 
 def prepare():
     global cmd
-    nproc = 1
-    # nproc = 32
+    # nproc = 1
+    nproc = 32
     cmd = cmd % (0, CPULINE - 1, nproc, TEST_SEC)
     print(cmd)
 

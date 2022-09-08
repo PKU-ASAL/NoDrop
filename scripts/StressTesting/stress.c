@@ -1,16 +1,16 @@
-#include <stdio.h>
+#include <fcntl.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <pthread.h>
-#include <time.h>
-#include <sys/time.h>
 #include <sys/mman.h>
-#include <sys/wait.h>
-#include <sys/types.h>
 #include <sys/syscall.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
 
 int n, m;
 int fd;
@@ -20,14 +20,17 @@ struct timeval begin, end;
 void do_exit(int sig) {
   gettimeofday(&end, 0);
   close(fd);
-  printf("%lu/%ld\n", nevts, ((end.tv_sec - begin.tv_sec) * 1000000 + (end.tv_usec - begin.tv_usec)) / 1000);
+  printf(
+      "%lu/%ld\n", nevts,
+      ((end.tv_sec - begin.tv_sec) * 1000000 + (end.tv_usec - begin.tv_usec)) /
+          1000);
   exit(0);
 }
 
 long invoke() {
   long ret;
 
-  ret = write(fd,"1", 1);
+  ret = write(fd, "1", 1);
   nevts++;
 
   return ret;
@@ -47,11 +50,11 @@ void thread_worker(int id) {
   signal(SIGINT, do_exit);
 
   gettimeofday(&begin, 0);
-  while(1) {
-    for(i = 0; i < n; ++i) {
+  while (1) {
+    for (i = 0; i < n; ++i) {
       invoke();
     }
-    for(i = 0; i < m; ++i) {
+    for (i = 0; i < m; ++i) {
       count++;
     }
   }

@@ -6,14 +6,16 @@ import subprocess
 import signal
 from multiprocessing import Process, Semaphore
 
-TOTAL_CPU = 1
-CPULINE = 1
+# TOTAL_CPU, CPULINE = 1, 1
+TOTAL_CPU, CPULINE = 39, 32
 
+# LOOP = 1
 LOOP = 10
-THREAD = 2
+# THREAD = 2
 # THREAD = 4
 # THREAD = 8
-DURATION = 20
+THREAD = 16
+DURATION = 10
 CLIENTS = 50
 HOST = "localhost"
 PORT = 6379
