@@ -6,15 +6,18 @@ import subprocess
 import signal
 from multiprocessing import Process, Semaphore
 
-# TOTAL_CPU, CPULINE = 1, 1
-TOTAL_CPU, CPULINE = 39, 32
+UID = 1000
 
-# LOOP = 1
-LOOP = 10
-# THREAD = 2
-# THREAD = 4
-# THREAD = 8
-THREAD = 16
+# TOTAL_CPU, CPULINE = 1, 1     #C1
+# TOTAL_CPU, CPULINE = 5, 4     #C2
+TOTAL_CPU, CPULINE = 23, 16     #C3
+# TOTAL_CPU, CPULINE = 39, 32   #C4
+
+LOOP = 1
+# THREAD = 2    #C1
+# THREAD = 4    #C2
+THREAD = 8      #C3
+# THREAD = 16   #C4
 DURATION = 10
 CLIENTS = 50
 HOST = "localhost"
@@ -49,8 +52,8 @@ s2 = Semaphore(0)
 
 def task1():
     first = 1
-    os.setgid(1000)
-    os.setuid(1000)
+    os.setgid(UID)
+    os.setuid(UID)
     for i in range(LOOP):
         s1.acquire()
         if first == 0:

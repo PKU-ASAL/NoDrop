@@ -19,6 +19,11 @@ do
   # systemctl start camflowd.service
   # /home/jeshrz/NoDrop/scripts/StressTesting/test_perf.py camflow $TOOL $NR
   # rm -rf /tmp/audit.log
+  echo "Sysdig-Multi"
+  insmod /home/jeshrz/sysdig-multi/build/driver/scap.ko
+  /home/jeshrz/NoDrop/scripts/StressTesting/test_perf.py multi $TOOL $NR
+  sleep 10s
+  rmmod scap
 
   echo "Base"
   insmod /home/jeshrz/sysdig/build-1/driver/scap.ko

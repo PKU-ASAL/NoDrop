@@ -137,6 +137,29 @@ class SysdigBlock(Base):
         self.n_recv_evts = int(data[1])
         self.n_recv_evts = self.n_evts - self.n_recv_evts
 
+class SysdigMulti(Base):
+    def start(self):
+        self.procs = []
+        for i in range(self.nr):
+            f = subprocess.Popen("exec taskset -c %d-%d /home/jeshrz/sysdig-multi/build/userspace/sysdig/sysdig -w /tmp/out-%d.scap" % (0, self.nr - 1, i), shell=True)
+            time.sleep(1)
+            self.procs.append(f)
+
+    def finish(self):
+        for i in range(self.nr):
+            os.kill(self.procs[i].pid, signal.SIGINT)
+            time.sleep(5)
+            subprocess.run("rm -rf /tmp/out-%d.scap" % i, shell=True)
+        time.sleep(5)
+        p = subprocess.run("dmesg -c", shell=True, stdout=subprocess.PIPE)
+        # lines = p.stdout.decode("utf-8").split("\n")
+        # line = lines[-4]
+        # data = line.split()[-1].split(",")
+        # self.n_evts = int(data[0])
+        # self.n_recv_evts = int(data[1])
+        # self.n_recv_evts = self.n_evts - self.n_recv_evts
+        self.n_evts = self.n_recv_evts = 0
+
 class NoDrop(Base):
     def start(self):
         pass
@@ -251,7 +274,7 @@ if __name__ == '__main__':
         print("Run as root")
         exit(0)
     elif len(sys.argv) < 4:
-        print("Usage: %s [sysdig|block|nodrop|camflow|lttng|audit] [nginx|redis|openssl] <nrcore>" % sys.argv[0])
+        print("Usage: %s [sysdig|block|multi|nodrop|camflow|lttng|audit] [nginx|redis|openssl] <nrcore>" % sys.argv[0])
         exit(0)
 
     nr = int(sys.argv[3])
@@ -264,6 +287,8 @@ if __name__ == '__main__':
         target = Sysdig(nr)
     elif sys.argv[1] == "block":
         target = SysdigBlock(nr)
+    elif sys.argv[1] == 'multi':
+        target = SysdigMulti(nr)
     elif sys.argv[1] == "nodrop":
         target = NoDrop(nr)
     elif sys.argv[1] == "camflow":
