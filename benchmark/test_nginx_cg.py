@@ -11,19 +11,20 @@ UID = 1000
 # TOTAL_CPU, CPULINE = 5, 4     # C2
 TOTAL_CPU, CPULINE = 23, 16     # C3
 # TOTAL_CPU, CPULINE = 39, 32   # C4
+NRINSTANCE = 8
 
 LOOP = 1
 # NRCPUS = 2    #C1
 # NRCPUS = 8    #C2
 NRCPUS = 16     #C3
 # NRCPUS = 32   #C4
-CONNECTION = 1000
+CONNECTION = 100
 DURATION = 20
 URL = "http://127.0.0.1:8089/test.html"
 cmd = "taskset -c %d-%d ./nginx/wrk_/wrk -t %d -c %d -d %d --timeout %d %s" % (CPULINE, TOTAL_CPU, NRCPUS, CONNECTION, DURATION, DURATION, URL)
 
 def prepare():
-    subprocess.run("taskset -c %d-%d ./nginx/nginx_/sbin/nginx" % (0, CPULINE - 1), shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run("taskset -c %d-%d ./nginx/nginx_/sbin/nginx" % (0, NRINSTANCE - 1), shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1)
 
 def execute_wrk():

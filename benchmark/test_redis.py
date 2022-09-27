@@ -9,14 +9,14 @@ from multiprocessing import Process, Semaphore
 UID = 1000
 
 # TOTAL_CPU, CPULINE = 1, 1     #C1
-# TOTAL_CPU, CPULINE = 5, 4     #C2
-TOTAL_CPU, CPULINE = 23, 16     #C3
+TOTAL_CPU, CPULINE = 5, 4     #C2
+# TOTAL_CPU, CPULINE = 23, 16     #C3
 # TOTAL_CPU, CPULINE = 39, 32   #C4
 
 LOOP = 1
 # THREAD = 2    #C1
-# THREAD = 4    #C2
-THREAD = 8      #C3
+THREAD = 4    #C2
+# THREAD = 8      #C3
 # THREAD = 16   #C4
 DURATION = 10
 CLIENTS = 50
@@ -27,7 +27,8 @@ cmd = "taskset -c %d-%d ./redis/memtier_/memtier_benchmark --hide-histogram -P r
 # cmd = "./redis/redis_/src/redis-benchmark -h %s -p %d -n %d -P 32 -q -c 50 -t set,get,lpush,lpop,sadd --csv" % (HOST, PORT, REQUESTS_NUM)
 
 def prepare():
-    proc = subprocess.Popen("exec taskset -c %d-%d ./redis/redis_/src/redis-server ./redis/redis_/redis.conf" % (0, CPULINE - 1), shell=True, stdout=subprocess.DEVNULL)
+    # proc = subprocess.Popen("exec taskset -c %d-%d ./redis/redis_/src/redis-server ./redis/redis_/redis.conf" % (0, CPULINE - 1), shell=True, stdout=subprocess.DEVNULL)
+    proc = subprocess.Popen("exec cgexec -g cpuset:openssl -g cpu:openssl ./redis/redis_/src/redis-server ./redis/redis_/redis.conf", shell=True, stdout=subprocess.DEVNULL)
     time.sleep(1)
     return proc
 

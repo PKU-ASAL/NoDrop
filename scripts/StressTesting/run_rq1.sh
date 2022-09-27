@@ -24,5 +24,6 @@ ps -ef | grep lttng | awk '{print $2}' | xargs kill
 
 echo Kaudit
 mkdir -p /tmp/audit
-/home/jeshrz/NoDrop/scripts/StressTesting/test_drop.py kaudit $NR
+/home/jeshrz/NoDrop/scripts/StressTesting/test_drop.py audit $NR
 auditctl -D
+service auditd stop

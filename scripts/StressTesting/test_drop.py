@@ -126,8 +126,8 @@ class Kaudit(Base):
 
         n_drop_evts = 0
 
-        p = subprocess.run("auditctl -s", shell=True, stdout=subprocess.PIPE)
-        lines = p.stdout.decode("utf-8").split("\n")
+        p = subprocess.run("auditctl --reset-lost", shell=True, stderr=subprocess.PIPE)
+        lines = p.stderr.decode("utf-8").split("\n")
         for line in lines:
             if "lost" in line:
                 n_drop_evts = int(line.split()[1])
