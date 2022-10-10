@@ -8,15 +8,15 @@ from multiprocessing import Process, Semaphore
 UID = 1000
 
 # TOTAL_CPU, CPULINE = 1, 1     # C1
-# TOTAL_CPU, CPULINE = 5, 4     # C2
-TOTAL_CPU, CPULINE = 23, 16     # C3
+TOTAL_CPU, CPULINE = 5, 4     # C2
+# TOTAL_CPU, CPULINE = 23, 16     # C3
 # TOTAL_CPU, CPULINE = 39, 32   # C4
 NRINSTANCE = 8
 
 LOOP = 1
 # NRCPUS = 2    #C1
-# NRCPUS = 8    #C2
-NRCPUS = 16     #C3
+NRCPUS = 8    #C2
+# NRCPUS = 16     #C3
 # NRCPUS = 32   #C4
 CONNECTION = 100
 DURATION = 20

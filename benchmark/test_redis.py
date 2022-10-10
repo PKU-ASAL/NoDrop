@@ -9,27 +9,36 @@ from multiprocessing import Process, Semaphore
 UID = 1000
 
 # TOTAL_CPU, CPULINE = 1, 1     #C1
-TOTAL_CPU, CPULINE = 5, 4     #C2
+# TOTAL_CPU, CPULINE = 5, 4     #C2
 # TOTAL_CPU, CPULINE = 23, 16     #C3
-# TOTAL_CPU, CPULINE = 39, 32   #C4
+TOTAL_CPU, CPULINE = 39, 32   #C4
 
 LOOP = 1
 # THREAD = 2    #C1
-THREAD = 4    #C2
+# THREAD = 4    #C2
 # THREAD = 8      #C3
-# THREAD = 16   #C4
+THREAD = 16   #C4
 DURATION = 10
-CLIENTS = 50
+CLIENTS = 64
 HOST = "localhost"
 PORT = 6379
 cmd = "taskset -c %d-%d ./redis/memtier_/memtier_benchmark --hide-histogram -P redis -s %s -p %d " \
-        "-t %d -c %d --test-time=%d" % (CPULINE, TOTAL_CPU, HOST, PORT, THREAD, CLIENTS, DURATION)
+        "-t %d -c %d --test-time=%d --ratio=0:10" % (CPULINE, TOTAL_CPU, HOST, PORT, THREAD, CLIENTS, DURATION)
 # cmd = "./redis/redis_/src/redis-benchmark -h %s -p %d -n %d -P 32 -q -c 50 -t set,get,lpush,lpop,sadd --csv" % (HOST, PORT, REQUESTS_NUM)
 
 def prepare():
-    # proc = subprocess.Popen("exec taskset -c %d-%d ./redis/redis_/src/redis-server ./redis/redis_/redis.conf" % (0, CPULINE - 1), shell=True, stdout=subprocess.DEVNULL)
-    proc = subprocess.Popen("exec cgexec -g cpuset:openssl -g cpu:openssl ./redis/redis_/src/redis-server ./redis/redis_/redis.conf", shell=True, stdout=subprocess.DEVNULL)
+    proc = subprocess.Popen("exec taskset -c %d-%d ./redis/redis_/src/redis-server ./redis/redis_/redis.conf" % (0, CPULINE // 2 - 1), shell=True, stdout=subprocess.DEVNULL)
+    # proc = subprocess.Popen("exec cgexec -g cpuset:openssl -g cpu:openssl ./redis/redis_/src/redis-server ./redis/redis_/redis.conf", shell=True, stdout=subprocess.DEVNULL)
     time.sleep(1)
+    f = subprocess.run(["/usr/bin/ps", "-T", "-p", str(proc.pid)], stdout=subprocess.PIPE)
+    lines = f.stdout.decode("utf-8").split("\n")
+    i = 0
+    for line in lines:
+        if ("redis-server" in line) or ("io_thd" in line):
+            pid = line.strip().split()[1]
+            pid = int(pid)
+            subprocess.run("taskset -pc %d %d" % (i % (CPULINE // 2), pid), shell=True, stdout=subprocess.PIPE)
+            i += 1
     return proc
 
 def execute_redis_benmark():
@@ -81,7 +90,7 @@ def task2():
             ret = execute_redis_benmark()
             total_cost += time.time() - start
             res.append(ret)
-            print(round(ret, 3), "us/req")
+            print(round(ret, 3), "kb/s")
 
         s1.release()
         total = sum(res)
@@ -92,7 +101,7 @@ def task2():
             variance += (x - avg) * (x - avg)
         variance /= len(res)
         print("Variance:", round(variance, 6))
-        print("Average:", round(avg, 3), "us per req")
+        print("Average:", round(avg, 3), "kb/s")
         print("Total cost", total_cost, "s")
 
     except Exception as e:

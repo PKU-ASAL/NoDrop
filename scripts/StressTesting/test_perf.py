@@ -10,7 +10,7 @@ USER = "jeshrz"
 
 # CONFIG = [(10, 10000), (50, 10000), (100, 10000), (500, 10000), (1000, 10000), (5000, 10000), (10000, 10000)]
 CONFIG = [(0, 10000), (10, 10000), (20, 10000), (30, 10000), (40, 10000), (50, 10000), (100, 10000)]
-# CONFIG = [(10000, 0)]
+# CONFIG = [(10, 10000)]
 
 def change(uid, gid):
     def result():
@@ -34,7 +34,7 @@ class Nginx:
 
 class Redis:
     def run(self, toolname, nr, n, m, iter):
-        f = subprocess.run("./test_redis.py", shell=True, stdout=subprocess.PIPE)
+        f = subprocess.run("./test_redis_single.py", shell=True, stdout=subprocess.PIPE)
         lines = f.stdout.decode("utf-8").split("\n")
         with open("%s-%s-%d-%d-%d.out.%d" % (toolname, type(self).__name__, nr, n, m, iter), "w") as f:
             for line in lines:
@@ -102,25 +102,24 @@ class Base:
 
 
         for i in range(nr):
-            f = subprocess.Popen("exec taskset -c %d-%d /home/%s/stress %d %d %d" % (0, self.nr - 1, USER, n, m, i),
+            f = subprocess.Popen("exec taskset -c %d /home/%s/stress %d %d %d" % (i, USER, n, m, i),
                     preexec_fn=change(UID, UID), shell=True)
             procs.append(f)
 
-        self.perf_ret = app.run(type(self).__name__, self.nr, n, m, iter)
+        self.perf_ret = app.run(type(self).__name__, nr, n, m, iter)
 
         for f in procs:
             os.kill(f.pid, signal.SIGINT)
 
         time.sleep(2)
         self.count = 0
-        try:
-            for path, _, filelist in os.walk("/tmp/count"):
-                for filename in filelist:
-                    with open(os.path.join(path, filename), "r") as f:
-                        line = f.readline()
-                        self.count += int(line.strip().split("/")[0])
-        except Exception as e:
-            print(e)
+        for i in range(nr):
+            try:
+                with open("/tmp/count/%d" % i, "r") as f:
+                    line = f.readline()
+                    self.count += int(line.strip().split("/")[0])
+            except Exception as e:
+                print(e)
 
 class Sysdig(Base):
     def start(self):
@@ -147,22 +146,27 @@ class SysdigBlock(Base):
 
     def finish(self):
         os.kill(self.proc.pid, signal.SIGINT)
-        time.sleep(2)
+        time.sleep(5)
         subprocess.run("rm -rf /tmp/out-block.scap", shell=True)
-        time.sleep(1)
         p = subprocess.run("dmesg -c", shell=True, stdout=subprocess.PIPE)
         lines = p.stdout.decode("utf-8").split("\n")
-        line = lines[-4]
-        data = line.split()[-1].split(",")
-        self.n_evts = int(data[0])
-        self.n_recv_evts = int(data[1])
-        self.n_recv_evts = self.n_evts - self.n_recv_evts
+        try:
+            line = lines[-4]
+            data = line.split()[-1].split(",")
+            self.n_evts = int(data[0])
+            self.n_recv_evts = int(data[1])
+            self.n_recv_evts = self.n_evts - self.n_recv_evts
+        except Exception:
+            self.n_evts = self.n_recv_evts = 0
 
 class SysdigMulti(Base):
+    # def __init__(self, nr):
+    #     self.nr = nr
+
     def start(self):
         self.procs = []
         for i in range(self.nr):
-            f = subprocess.Popen("exec taskset -c %d-%d /home/jeshrz/sysdig-multi/build/userspace/sysdig/sysdig -w /tmp/out-%d.scap" % (0, self.nr - 1, i), shell=True)
+            f = subprocess.Popen("exec taskset -c %d /home/jeshrz/sysdig-multi/build/userspace/sysdig/sysdig -w /tmp/out-%d.scap" % (i, i), shell=True)
             time.sleep(1)
             self.procs.append(f)
 
@@ -170,7 +174,7 @@ class SysdigMulti(Base):
     def finish(self):
         for i in range(self.nr):
             os.kill(self.procs[i].pid, signal.SIGINT)
-        time.sleep(2)
+        time.sleep(10)
         for i in range(self.nr):
             subprocess.run("rm -rf /tmp/out-%d.scap" % i, shell=True)
         p = subprocess.run("dmesg -c", shell=True, stdout=subprocess.PIPE)
@@ -261,17 +265,18 @@ class Kaudit(Base):
         self.n_recv_evts = n_recv_evts
 
 class Lttng(Base):
-    PREFIX = "/home/jeshrz/lttng/install/bin/"
+    PREFIX = "taskset -c 0-%d /home/jeshrz/lttng/install/bin/"
     SESSION_PATH = "/tmp/test-session"
     CHANNEL_NAME = "channel0"
-    READ_TIMER = 2000
+    READ_TIMER = 1
 
     def start(self):
-        subprocess.run(Lttng.PREFIX + "lttng create test-session --output=%s" % Lttng.SESSION_PATH, shell=True, stdout=subprocess.DEVNULL)
-        subprocess.run(Lttng.PREFIX + "lttng enable-channel --kernel %s --read-timer=%d" % (Lttng.CHANNEL_NAME, Lttng.READ_TIMER), shell=True, stdout=subprocess.DEVNULL)
-        subprocess.run(Lttng.PREFIX + "lttng enable-event --kernel --syscall --all -c %s" % Lttng.CHANNEL_NAME, shell=True, stdout=subprocess.DEVNULL)
-        subprocess.run(Lttng.PREFIX + "lttng track --kernel --vuid=%d" % UID, shell=True, stdout=subprocess.DEVNULL)
-        subprocess.run(Lttng.PREFIX + "lttng start", shell=True, stdout=subprocess.DEVNULL)
+        PREFIX = Lttng.PREFIX % (self.nr - 1)
+        subprocess.run(PREFIX + "lttng create test-session --output=%s" % Lttng.SESSION_PATH, shell=True, stdout=subprocess.DEVNULL)
+        subprocess.run(PREFIX + "lttng enable-channel --kernel %s --read-timer=%d" % (Lttng.CHANNEL_NAME, Lttng.READ_TIMER), shell=True, stdout=subprocess.DEVNULL)
+        subprocess.run(PREFIX + "lttng enable-event --kernel --syscall --all -c %s" % Lttng.CHANNEL_NAME, shell=True, stdout=subprocess.DEVNULL)
+        subprocess.run(PREFIX + "lttng track --kernel --vuid=%d" % UID, shell=True, stdout=subprocess.DEVNULL)
+        subprocess.run(PREFIX + "lttng start", shell=True, stdout=subprocess.DEVNULL)
         f = subprocess.run(["/usr/bin/ps", "-ef"], stdout=subprocess.PIPE)
         lines = f.stdout.decode("utf-8").split("\n")
         for line in lines:
@@ -281,16 +286,17 @@ class Lttng(Base):
                 subprocess.run("taskset -apc 0-%d %d" % (self.nr - 1, pid), shell=True, stdout=subprocess.DEVNULL)
 
     def finish(self):
-        subprocess.run(Lttng.PREFIX + "lttng stop", shell=True, stdout=subprocess.DEVNULL)
+        PREFIX = Lttng.PREFIX % (self.nr - 1)
+        subprocess.run(PREFIX + "lttng stop", shell=True, stdout=subprocess.DEVNULL)
 
-        p = subprocess.run(Lttng.PREFIX + "lttng status", shell=True, stdout=subprocess.PIPE)
+        p = subprocess.run(PREFIX + "lttng status", shell=True, stdout=subprocess.PIPE)
         lines = p.stdout.decode("utf-8").split("\n")
         n_drop_evts = 0
         for line in lines:
             if "Discarded events" in line:
                 n_drop_evts = int(line.strip().split()[-1])
                 break
-        subprocess.run(Lttng.PREFIX + "lttng destroy", shell=True, stdout=subprocess.PIPE)
+        subprocess.run(PREFIX + "lttng destroy", shell=True, stdout=subprocess.PIPE)
 
         self.n_recv_evts = 0
         self.n_evts = n_drop_evts + self.n_recv_evts
@@ -334,13 +340,14 @@ if __name__ == '__main__':
         target = SysdigBlock(nr)
     elif sys.argv[1] == "multi":
         target = SysdigMulti(nr)
-        CONFIG = [(0, 10000), (10, 10000), (100, 10000), (1000, 10000), (5000, 10000), (10000, 10000), (10000, 0)]
+        # CONFIG = [(0, 10000), (10, 10000), (100, 10000), (1000, 10000), (5000, 10000), (10000, 10000), (10000, 0)]
     elif sys.argv[1] == "nodrop":
         target = NoDrop(nr)
     elif sys.argv[1] == "camflow":
         target = Camflow(nr)
     elif sys.argv[1] == "lttng":
         target = Lttng(nr)
+        # CONFIG = [(0, 10000), (10, 10000), (100, 10000), (1000, 10000), (5000, 10000), (10000, 10000), (10000, 0)]
     elif sys.argv[1] == "audit":
         target = Kaudit(nr)
     else:

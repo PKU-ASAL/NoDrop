@@ -19,16 +19,19 @@ def change(uid, gid):
     return result
 
 class Base:
+    def __init__(self, nr):
+        self.nr = nr
+
     def start(self):
         pass
 
     def finish(self):
         self.n_evts = self.n_recv_evts = 0
 
-    def stress(self, n, m, nr):
+    def stress(self, n, m):
         subprocess.run("rm -rf /tmp/count/*", shell=True)
 
-        for i in range(nr):
+        for i in range(self.nr):
             subprocess.Popen("taskset -c %d timeout -s SIGINT 30s /home/%s/stress %d %d %d" % (i, USER, n, m, i),
                     preexec_fn=change(UID, UID), shell=True)
 
@@ -144,11 +147,36 @@ class Kaudit(Base):
         self.n_evts = n_drop_evts + n_recv_evts
         self.n_recv_evts = n_recv_evts
 
+class SysdigMulti(Base):
+    def start(self):
+        self.procs = []
+        for i in range(self.nr):
+            f = subprocess.Popen("exec taskset -c %d /home/jeshrz/sysdig-multi/build/userspace/sysdig/sysdig -w /tmp/out-%d.scap" % (i, i), shell=True)
+            time.sleep(2)
+            self.procs.append(f)
 
-def main(target, nr):
+
+    def finish(self):
+        for i in range(self.nr):
+            os.kill(self.procs[i].pid, signal.SIGINT)
+        time.sleep(10)
+        for i in range(self.nr):
+            subprocess.run("rm -rf /tmp/out-%d.scap" % i, shell=True)
+        p = subprocess.run("dmesg -c", shell=True, stdout=subprocess.PIPE)
+
+        self.n_evts = self.n_recv_evts = 0
+        lines = p.stdout.decode("utf-8").split("\n")
+        for line in lines:
+            if "total_evts" in line:
+                data = line.split()
+                n_evts = int(data[-3])
+                self.n_evts += n_evts
+                self.n_recv_evts += n_evts - int(data[-1])
+
+def main(target):
     for cfg in CONFIG:
         target.start()
-        target.stress(cfg[0], cfg[1], nr)
+        target.stress(cfg[0], cfg[1])
         target.finish()
         print("%d/%d" % cfg, target.n_evts)
         print(target.count, target.n_recv_evts)
@@ -158,7 +186,7 @@ if __name__ == '__main__':
         print("Run as root")
         exit(0)
     elif len(sys.argv) < 3:
-        print("Usage: %s [sysdig|nodrop|lttng|audit] <nrcore>" % sys.argv[0])
+        print("Usage: %s [sysdig|nodrop|lttng|audit|multi] <nrcore>" % sys.argv[0])
         exit(0)
 
     nr = int(sys.argv[2])
@@ -168,14 +196,16 @@ if __name__ == '__main__':
     subprocess.run("chown -R %d /tmp/count" % UID, shell=True)
 
     if sys.argv[1] == "sysdig":
-        target = Sysdig()
+        target = Sysdig(nr)
     elif sys.argv[1] == "nodrop":
-        target = NoDrop()
+        target = NoDrop(nr)
     elif sys.argv[1] == "lttng":
-        target = Lttng()
+        target = Lttng(nr)
     elif sys.argv[1] == "audit":
-        target = Kaudit()
+        target = Kaudit(nr)
+    elif sys.argv[1] == "multi":
+        target = SysdigMulti(nr)
     else:
-        target = Base()
+        target = Base(nr)
 
-    main(target, nr)
+    main(target)

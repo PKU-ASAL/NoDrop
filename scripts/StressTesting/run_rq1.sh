@@ -8,9 +8,16 @@ mkdir -p /tmp/count
 chgrp -R bench /tmp/count
 chown -R bench /tmp/count
 
+echo "Sysdig-Multi"
+insmod /home/jeshrz/sysdig-multi/build/driver/scap.ko
+/home/jeshrz/NoDrop/scripts/StressTesting/test_drop.py multi $NR
+sleep 10s
+rmmod scap
+
 echo "Sysdig"
 insmod /home/jeshrz/sysdig/build/driver/scap.ko
 /home/jeshrz/NoDrop/scripts/StressTesting/test_drop.py sysdig $NR
+sleep 10s
 rmmod scap
 
 echo "NoDrop"

@@ -13,8 +13,8 @@ TOTAL_CPU, CPULINE = 5, 4     #C2
 
 LOOP = 1
 TEST_SEC = 20
-# cmd = "taskset -c %d-%d openssl speed -multi %d -seconds %d rsa4096"
-cmd = "cgexec -g cpu:openssl cpuset:openssl openssl speed -multi %d -seconds %d rsa4096"
+cmd = "taskset -c %d-%d openssl speed -multi %d -seconds %d rsa4096"
+# cmd = "cgexec -g cpu:openssl -g cpuset:openssl openssl speed -multi %d -seconds %d rsa4096"
 
 def prepare():
     global cmd
@@ -22,8 +22,8 @@ def prepare():
     nproc = 4     #C2
     # nproc = 16      #C3
     # nproc = 32    #C4
-    # cmd = cmd % (0, CPULINE - 1, nproc, TEST_SEC)
-    cmd = cmd % (nproc, TEST_SEC)
+    cmd = cmd % (0, CPULINE - 1, nproc, TEST_SEC)
+    # cmd = cmd % (nproc, TEST_SEC)
     print(cmd)
 
 def execute_openssl():
