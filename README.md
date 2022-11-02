@@ -5,7 +5,7 @@ Nodrop is a provenance collector which addresses the “data integrity vs. effic
 
 ## Getting Started
 NoDrop contains 2 major components: the kernel module and the monitor. 
-* **the kernel module**: codes under `src/`. Nodrop-modules builds against a vanilla or distribution kernel, with no need for additional patches.
+* **the kernel module**: codes under `kmodule/`. Nodrop-modules builds against a vanilla or distribution kernel, with no need for additional patches.
 * **the monitor**: codes under `monitor/`. 
 NoDrop is tested on Ubuntu 18.04 with unmodified Linux kernel 4.15.0-171.
 
