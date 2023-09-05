@@ -1,5 +1,5 @@
 # Auditing Frameworks Need Resource Isolation: A Systematic Study on the Super Producer Threat to System Auditing and Its Mitigation
-Prototype source code for the NPDROP research paper, presented at USENIX Security 2023. This paper is available at https://www.usenix.org/conference/usenixsecurity23/presentation/jiang-peng. If you find this repository useful, please cite our paper/repository.
+Prototype source code for the NODROP research paper, presented at USENIX Security 2023. This paper is available at https://www.usenix.org/conference/usenixsecurity23/presentation/jiang-peng. If you find this repository useful, please cite our paper/repository.
 
 We evaluated the event dropping, application performance slowdown and the running overhead of NODROP under different hardware configurations. Due to space limitations of the paper, we have included some results in **Appendix.pdf** in this GitHub repository as mentioned in our paper. 
 
