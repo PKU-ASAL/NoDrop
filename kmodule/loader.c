@@ -7,7 +7,7 @@
 #include <linux/ktime.h>
 #include <linux/fs_struct.h>
 #include <linux/delay.h>
-
+#include <linux/vmalloc.h>
 
 #include "nodrop.h"
 #include "syscall.h"
@@ -52,7 +52,7 @@ check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg
 
     mm = current->mm;
 
-    down_read(&mm->mmap_sem);
+    mmap_read_lock(mm);
     for (vma = mm->mmap; vma; vma = vma->vm_next) {
         if (vma->vm_file == filp_monitor) {
             retval = (*resolve)((struct vm_area_struct const * const)vma, arg);
@@ -63,7 +63,7 @@ check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg
             case MAPPING_NEXT:
                 break;
             default:
-                up_read(&mm->mmap_sem);
+            mmap_read_unlock(mm);
                 ASSERT(false);
             }
         }
@@ -72,7 +72,7 @@ check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg
     retval = MAPPING_NOTFOUND;
 
 out:
-    up_read(&mm->mmap_sem);
+    mmap_read_unlock(mm);
     return retval;
 }
 

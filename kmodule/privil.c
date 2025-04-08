@@ -11,7 +11,7 @@
 #include <linux/path.h>
 #include <linux/fs_struct.h>
 #include <asm/fpu/internal.h>
-
+#include <linux/fdtable.h>
 #include "nodrop.h"
 #include "common.h"
 #include "procinfo.h"
@@ -35,7 +35,7 @@ nod_disable_seccomp(void)
         spin_lock_irq(&current->sighand->siglock);
         current->seccomp.mode = SECCOMP_MODE_DISABLED;
         smp_mb__before_atomic();
-        clear_tsk_thread_flag(current, TIF_SECCOMP);
+        // clear_tsk_thread_flag(current, TIF_SECCOMP);
         spin_unlock_irq(&current->sighand->siglock);
     }
 }
@@ -53,7 +53,7 @@ nod_enable_seccomp(unsigned int mode)
         spin_lock_irq(&current->sighand->siglock);
         current->seccomp.mode = mode;
         smp_mb__before_atomic();
-        set_tsk_thread_flag(current, TIF_SECCOMP);
+        // set_tsk_thread_flag(current, TIF_SECCOMP);
         spin_unlock_irq(&current->sighand->siglock);
     }
 
@@ -191,7 +191,9 @@ nod_restore_security(struct nod_proc_info *p)
 {
     if (p->ioctl_fd >= 0) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
-        ksys_close(p->ioctl_fd);
+        //ksys_close(p->ioctl_fd);
+        filp_close(fget(p->ioctl_fd), NULL);
+        //close_fd(p->ioctl_fd);
 #else
         sys_close(p->ioctl_fd);
 #endif

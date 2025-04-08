@@ -5,7 +5,7 @@
 #include <linux/types.h>
 #include <linux/mutex.h>
 #include <linux/mman.h>
-
+#include <linux/vmalloc.h>
 #include "nodrop.h"
 #include "procinfo.h"
 
@@ -260,13 +260,21 @@ static int nod_dev_release(struct inode *inode, struct file *filp)
     return 0;
 }
 
-static const struct file_operations g_nod_fops = {
-    .open = nod_dev_open,
-    .read = nod_dev_read,
-    .unlocked_ioctl = nod_dev_ioctl,
-    .release = nod_dev_release,
-    .mmap = nod_dev_mmap,
-    .owner = THIS_MODULE
+// static const struct file_operations g_nod_fops = {
+//     .open = nod_dev_open,
+//     .read = nod_dev_read,
+//     .unlocked_ioctl = nod_dev_ioctl,
+//     .release = nod_dev_release,
+//     .mmap = nod_dev_mmap,
+//     .owner = THIS_MODULE
+// };
+
+static const struct proc_ops g_nod_fops = {
+    .proc_open = nod_dev_open,
+    .proc_read = nod_dev_read,
+    .proc_ioctl = nod_dev_ioctl,
+    .proc_release = nod_dev_release,
+    .proc_mmap = nod_dev_mmap,
 };
 
 int proc_init(void) {
