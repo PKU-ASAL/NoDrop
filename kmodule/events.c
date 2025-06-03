@@ -5,7 +5,6 @@
 
 
 #include "nodrop.h"
-#include "syscall.h"
 #include "events.h"
 #include "common.h"
 #include "ioctl.h"
@@ -14,6 +13,28 @@
 
 DEFINE_PER_CPU(struct nod_event_statistic, g_stat);
 EXPORT_PER_CPU_SYMBOL(g_stat);
+
+static volatile unsigned long nod_buffer_size = CONFIG_BUFFER_SIZE;
+
+int nod_event_set_buffer_size(unsigned long size) {
+    if (size < PAGE_SIZE) {
+        return -1;
+    }
+    if (size & (PAGE_SIZE - 1)) {
+        return -1;
+    }
+    WRITE_ONCE(nod_buffer_size, size);
+    vpr_info("set buffer size: %lu\n", nod_buffer_size);
+    return 0;
+}
+
+int nod_event_get_buffer_size(unsigned long *size) {
+    if (size) {
+        *size = nod_buffer_size;
+        return 0;
+    }
+    return -1;
+}
 
 static int 
 do_record_one_event(struct nod_proc_info *p,
@@ -36,23 +57,28 @@ do_record_one_event(struct nod_proc_info *p,
 
     if (unlikely(buffer->overflow.filled == 1)) {
         info->tail = ((struct nod_event_hdr *)buffer->overflow.addr)->len;
-        ++info->nevents;
-        ++stat->n_evts;
+        info->nevents++;
+        stat->n_evts++;
 
         memmove(buffer->buffer, buffer->overflow.addr, info->tail);
         buffer->overflow.filled = 0;
     }
 
-    freespace = BUFFER_SIZE - info->tail;
+    freespace = info->buffer_size - info->tail;
 
     args.nargs = g_event_info[event_type].nparams;
     args.arg_data_offset = args.nargs * sizeof(uint16_t);
 
-    force = event_datap->force;
+    if (event_datap->force || p->load_addr == 0) {
+        force = 1;
+    } else {
+        force = 0;
+    }
     restart = 0;
 
 restart:
-    if (freespace < args.arg_data_offset + sizeof(struct nod_event_hdr) || restart) {
+    if (freespace < args.arg_data_offset + sizeof(struct nod_event_hdr) /* no free space for coming event header */ || 
+        restart /* no free space for coming event data */) {
         // When the buffer is full, the next event log will temporarily write to the overflow page
         // The content of this page will be writen to buffer in the next syscall enter.
         hdr = (struct nod_event_hdr *)buffer->overflow.addr;
@@ -103,7 +129,7 @@ restart:
 
             if (likely(buffer->overflow.filled == 0)) {
                 info->tail += event_size;
-                ++info->nevents;
+                info->nevents++;
                 stat->n_evts++;
             }
         } else {
@@ -131,11 +157,11 @@ int
 init_buffer(struct nod_buffer *buffer)
 {
     int ret;
-    unsigned int j;
+    unsigned long buffer_size = nod_buffer_size;
 
-    if (BUFFER_SIZE / PAGE_SIZE * PAGE_SIZE != BUFFER_SIZE) {
+    if (buffer_size & (PAGE_SIZE - 1)) {
         ret = -EINVAL;
-        pr_err("Buffer size is not a multiple of the page size\n");
+        pr_err("Buffer size is not aligned to the page size\n");
         goto init_buffer_err;
     }
 
@@ -161,17 +187,17 @@ init_buffer(struct nod_buffer *buffer)
         goto init_buffer_err;
     }
 
-    buffer->buffer = vmalloc_user(BUFFER_SIZE);
+    buffer->buffer = vmalloc_user(buffer_size);
     if (!buffer->buffer) {
         ret = -ENOMEM;
         pr_err("Error allocating buffer memory\n");
         goto init_buffer_err;
     }
 
-    for (j = 0; j < BUFFER_SIZE; ++j) {
-        buffer->buffer[j] = 0;
-    }
+    // // clear the buffer
+    // memset(buffer->buffer, 0, buffer_size);
 
+    buffer->info->buffer_size = buffer_size;
     buffer->info->n_solved_evts = 0;
     reset_buffer(buffer, NOD_INIT_INFO | NOD_INIT_COUNT);
 

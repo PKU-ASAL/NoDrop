@@ -4,11 +4,11 @@
 #define Kib 1024
 #define Mib 1024 * Kib
 
-#define BUFFER_SIZE ${BUFFER_SIZE}
-#define MONITOR_PATH "${MONITOR_PATH}"
-#define STORE_PATH "${STORE_PATH}"
+#define CONFIG_BUFFER_SIZE ${BUFFER_SIZE}
+#define CONFIG_MONITOR_PATH "${MONITOR_PATH}"
+#define CONFIG_STORE_PATH "${STORE_PATH}"
 
-#if BUFFER_SIZE < 4 * Kib
+#if CONFIG_BUFFER_SIZE < PAGE_SIZE
   #error "Buffer size is smaller than a page"
 #endif
 

@@ -9,6 +9,7 @@ set(MONITOR_SOURCES
         src/startup.c
         src/dynlink.h
         src/pkeys.h
+        src/tsc.h
         mmheap/mmheap.c
         mmheap/mmheap.h
         ../kmodule/tables/dynamic_params_table.c

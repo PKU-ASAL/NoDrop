@@ -16,8 +16,8 @@
 #define vpr_dbg(fmt, ...)
 // #define vpr_dbg(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
 
-#define NOD_TEST(task) if (!(task->cred->uid.val == 1000))
-// #define NOD_TEST(task) if (!(STR_EQU(current->comm, "stress")))
+// #define NOD_TEST(task) if (!(task->cred->uid.val == 1000))
+#define NOD_TEST(task) if (!(STR_EQU(current->comm, "redis-server")))
 #define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
 #define ASSERT(expr) BUG_ON(!(expr))
 
@@ -93,6 +93,8 @@ int record_one_event(struct nod_proc_info *p, enum nod_event_type type, struct n
 int init_buffer(struct nod_buffer *buffer);
 void free_buffer(struct nod_buffer *buffer);
 void reset_buffer(struct nod_buffer *buffer, int flags);
+int nod_event_set_buffer_size(unsigned long size);
+int nod_event_get_buffer_size(unsigned long *size);
 
 // elf.c
 #define BAD_ADDR(x) ((unsigned long)(x) >= TASK_SIZE)

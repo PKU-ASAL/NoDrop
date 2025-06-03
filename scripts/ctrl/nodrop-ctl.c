@@ -11,12 +11,13 @@ int main(int argc, char *argv[]) {
     int fd;
     int ret;
     FILE *file;
+    unsigned long bufsize;
     struct buffer_count_info cinfo;
     struct fetch_buffer_struct fetch;
     struct nod_event_statistic stat;
 
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s [clean|fetch|stat|clear-stat|start|stop|count]\n", argv[0]);
+        fprintf(stderr, "Usage: %s [clean|fetch|stat|clear-stat|start|stop|count|bufsize (size in KB)]\n", argv[0]);
         return 0;
     }
 
@@ -83,6 +84,19 @@ int main(int argc, char *argv[]) {
         if (!ioctl(fd, NOD_IOCTL_START_RECORDING, 0))
             fprintf(stderr, "Start\n");
 
+    } else if (!strcmp(argv[1], "bufsize")) {
+        if (argc >= 3) {
+            bufsize = (unsigned long)atol(argv[2]);
+            bufsize *= 1024;
+            if ((ret = ioctl(fd, NOD_IOCTL_SET_BUFFER_SIZE, bufsize))) {
+                fprintf(stderr, "set buffer size failed: %d\n", ret);
+            }
+        }
+        if ((ret = ioctl(fd, NOD_IOCTL_GET_BUFFER_SIZE, &bufsize))) {
+            fprintf(stderr, "get buffer size failed: %d\n", ret);
+            return -1;
+        }
+        printf("buffer size: %lu\n", bufsize);
     } else {
         fprintf(stderr, "Unknown cmd %s\n", argv[1]);
     }

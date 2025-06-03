@@ -326,7 +326,7 @@ nod_load_monitor(struct nod_proc_info *p)
     // nanoseconds start1, end1;
     // nanoseconds start2, end2;
 
-    char *argv[] = { MONITOR_PATH, NULL };
+    char *argv[] = { CONFIG_MONITOR_PATH, NULL };
 
     regs = current_pt_regs();
 
@@ -406,7 +406,7 @@ int loader_init(void)
 
     monitor_info_off = 0;
 
-    filp_monitor = open_exec(MONITOR_PATH);
+    filp_monitor = open_exec(CONFIG_MONITOR_PATH);
     retval = PTR_ERR(filp_monitor);
     if (IS_ERR(filp_monitor)) {
         filp_monitor = NULL;
