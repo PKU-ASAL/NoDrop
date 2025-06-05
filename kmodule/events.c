@@ -69,7 +69,7 @@ do_record_one_event(struct nod_proc_info *p,
     args.nargs = g_event_info[event_type].nparams;
     args.arg_data_offset = args.nargs * sizeof(uint16_t);
 
-    if (event_datap->force || p->load_addr == 0) {
+    if (event_datap->force || p->entry_addr == 0) {
         force = 1;
     } else {
         force = 0;

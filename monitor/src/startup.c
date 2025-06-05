@@ -61,21 +61,16 @@ START ": \n"
 "	call " START "_c \n"
 );
 
-// uint64_t start, end, last_solved;
-// static uint64_t read_time(void) {
-//   struct timespec tv;
-//   syscall(SYS_clock_gettime, 1, &tv);
-//   return (uint64_t)tv.tv_sec * 1000000000 + tv.tv_nsec;
-// }
 
 static void
 nod_restore_context(struct nod_stack_info *p) {
-    if (unlikely(SYSCALL_EXIT_FAMILY(p->nr))) {
-        nod_monitor_exit(p->nr);
+    // uint64_t start, end, last_solved;
+    if (unlikely(SYSCALL_EXIT_FAMILY(p->syscall_nr))) {
+        nod_monitor_exit(p->syscall_nr);
         // end = read_time();
         // printf("\n-%llu-%llu-\n", end - start, p->buffer_info->n_solved_evts - last_solved);
         // last_solved = p->buffer_info->n_solved_evts;
-        syscall(p->nr, p->code);
+        syscall(p->syscall_nr, p->exit_code);
     } else {
 #ifdef NOD_PKEY_SUPPORT
         if (likely(p->pkey != -1)) pkey_set(p->pkey, PKEY_DISABLE_WRITE);
@@ -101,6 +96,9 @@ nod_initialize(struct nod_stack_info *p) {
             ASSERT_EXIT(likely(pkey_mprotect(&__bdata, (unsigned long) &__edata - (unsigned long) &__bdata,
                                              PROT_READ | PROT_WRITE, p->pkey) != -1),
                         "pkey_mprotect for data segenemtn failed",);
+            ASSERT_EXIT(likely(pkey_mprotect(p->stack_start, p->stack_end - p->stack_start,
+                                             PROT_READ | PROT_WRITE, p->pkey) != -1),
+                        "pkey_mprotect for stack segment failed",);
         }
 #endif
     }
@@ -109,9 +107,7 @@ nod_initialize(struct nod_stack_info *p) {
 
 static void
 nod_start_main(int argc, char **argv, char **env) {
-    struct nod_stack_info *p = (struct nod_stack_info *) argv[--argc];
-
-    argv[argc] = 0;
+    struct nod_stack_info *p = (struct nod_stack_info *) argv[argc - 1];
 
     if (unlikely(p->fsbase == 0)) {
         nod_initialize(p);
@@ -119,7 +115,7 @@ nod_start_main(int argc, char **argv, char **env) {
     } else {
 #ifdef NOD_PKEY_SUPPORT
         if (p->pkey != -1) {
-            pkey_set(p->pkey, 0);
+            pkey_set(p->pkey, PKEY_WR);
         }
 #endif
     }

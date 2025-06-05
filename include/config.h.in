@@ -7,9 +7,14 @@
 #define CONFIG_BUFFER_SIZE ${BUFFER_SIZE}
 #define CONFIG_MONITOR_PATH "${MONITOR_PATH}"
 #define CONFIG_STORE_PATH "${STORE_PATH}"
+#define CONFIG_MONITOR_STACK_SIZE ${STACK_SIZE}
 
 #if CONFIG_BUFFER_SIZE < PAGE_SIZE
   #error "Buffer size is smaller than a page"
+#endif
+
+#if CONFIG_MONITOR_STACK_SIZE < PAGE_SIZE
+  #error "Stack size is smaller than a page"
 #endif
 
 #endif //CONFIG_H_
