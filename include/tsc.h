@@ -1,6 +1,8 @@
 #ifndef _H_TSC
 #define _H_TSC
 
+#ifndef __KERNEL__
+
 #include <stdint.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
@@ -70,5 +72,7 @@ static void test_ticks_per_ns(int sleeps, uint64_t *elapsed_ticks,
   *elapsed_ticks = tsc_end - tsc_start;
   *elapsed_ns = to_ns(&clock_end) - to_ns(&clock_start);
 }
+
+#endif // __KERNEL__
 
 #endif //_H_TSC
