@@ -44,6 +44,8 @@ set(LUA_SOURCES
 set(MONITOR_SOURCES
         src/main.c
         src/startup.c
+        src/lua_runtime.c
+        src/lua_runtime.h
         src/dynlink.h
         src/pkeys.h
         mmheap/mmheap.c

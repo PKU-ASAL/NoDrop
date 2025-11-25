@@ -27,7 +27,7 @@
 
 #define NOD_MEM_RND_MASK 0x7ff
 #define NOD_SECTION_NAME ".monitor.info"
-#define NOD_MONITOR_MEM_SIZE (4 * 1024)
+#define NOD_MONITOR_MEM_SIZE (1024 * 1024)
 
 #define SECOND_IN_NS 1000000000 // 1s = 1e9ns
 #define SECOND_IN_US 1000000 // 1s=1e6us

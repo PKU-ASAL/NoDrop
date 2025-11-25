@@ -7,10 +7,13 @@
 #include "config.h"
 #include "events.h"
 #include "common.h"
+#include "lua_runtime.h"
 
 #ifndef PATH_FMT
 #define PATH_FMT STORE_PATH "/%u-%ld.buf"
 #endif
+
+#define SCRIPT_PATH "/home/bunny/test.lua"
 
 static char path[100];
 static struct timeval tv;
@@ -144,5 +147,6 @@ int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info) {
     fclose(file);
     buffer_info->nevents = buffer_info->tail = 0;
 
+    lua_run_script(SCRIPT_PATH);
     return 0;
 }
