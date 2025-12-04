@@ -13,7 +13,7 @@
 #define PATH_FMT STORE_PATH "/%u-%ld.buf"
 #endif
 
-#define SCRIPT_PATH "/home/bunny/test.lua"
+#define SCRIPT_PATH "//home/bunny/NoDrop/scripts/lua/test.lua"
 
 static char path[100];
 static struct timeval tv;

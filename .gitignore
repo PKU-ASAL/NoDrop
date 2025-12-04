@@ -27,4 +27,4 @@ musl-src/
 *.out*
 results*
 postmark.pmrc
-lua/
+/lua/
