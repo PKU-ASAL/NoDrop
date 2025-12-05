@@ -41,9 +41,98 @@ void lua_runtime_init(void) {
 }
 
 void decode_event(const struct nod_event_hdr *hdr, struct lua_event *evt) {
-    evt->type = g_event_info[hdr->type].name;
+    const struct nod_event_info *info;
+    const struct nod_param_info *param;
+    struct lua_event_param *dst;
+    uint16_t *args;
+    char *data;
+    memset(evt, 0, sizeof(*evt));
+    if (hdr->type < 0 || hdr->type >= NODE_EVENT_MAX) return;
+
+    info = &g_event_info[hdr->type];
+    evt->type = info->name;
     evt->tid = hdr->tid;
-    evt->ts = hdr->ts;
+    evt->cpu = hdr->cpuid;
+    evt->time = hdr->ts;
+    evt->dir = '?';         // TODO
+
+    evt->nparams = info->nparams;
+    data = (char *)(args + info->nparams);
+    args = (uint16_t *)(hdr + 1);
+    data = (char *)(args + info->nparams);
+    for (int i = 0; i < evt->nparams; i++){
+        param = &info->params[i];
+        dst = &evt->params[i];
+        dst->name = param->name;
+switch (param->type) {
+        case PT_CHARBUF:
+        case PT_FSPATH:
+        case PT_FSRELPATH:
+        case PT_BYTEBUF:
+            dst->type = LUA_ARG_STR;
+            dst->v.str = data;
+            break;
+
+        case PT_FLAGS8:
+        case PT_UINT8:
+        case PT_SIGTYPE:
+            dst->type = LUA_ARG_UINT;
+            dst->v.u64 = *(uint8_t *)data;
+            break;
+
+        case PT_FLAGS16:
+        case PT_UINT16:
+        case PT_SYSCALLID:
+            dst->type = LUA_ARG_UINT;
+            dst->v.u64 = *(uint16_t *)data;
+            break;
+
+        case PT_FLAGS32:
+        case PT_UINT32:
+        case PT_MODE:
+        case PT_UID:
+        case PT_GID:
+        case PT_SIGSET:
+            dst->type = LUA_ARG_UINT;
+            dst->v.u64 = *(uint32_t *)data;
+            break;
+
+        case PT_RELTIME:
+        case PT_ABSTIME:
+        case PT_UINT64:
+            dst->type = LUA_ARG_UINT;
+            dst->v.u64 = *(uint64_t *)data;
+            break;
+
+        case PT_INT8:
+            dst->type = LUA_ARG_INT;
+            dst->v.i64 = *(int8_t *)data;
+            break;
+
+        case PT_INT16:
+            dst->type = LUA_ARG_INT;
+            dst->v.i64 = *(int16_t *)data;
+            break;
+
+        case PT_INT32:
+            dst->type = LUA_ARG_INT;
+            dst->v.i64 = *(int32_t *)data;
+            break;
+
+        case PT_INT64:
+        case PT_ERRNO:
+        case PT_FD:
+        case PT_PID:
+            dst->type = LUA_ARG_INT;
+            dst->v.i64 = *(int64_t *)data;
+            break;
+
+        default:
+            dst->type = LUA_ARG_NONE;
+            break;
+        }
+        data += args[i];
+    }
 }
 
 void update_global_evt(lua_State *L, const struct lua_event *evt)
@@ -94,6 +183,35 @@ void update_global_evt(lua_State *L, const struct lua_event *evt)
         lua_setfield(L, -2, fd->name); // evt[field_name] = value
     }
 
+    lua_newtable(L); // evt.args
+    for (uint32_t i = 0; i < evt->nparams; i++) {
+        const struct lua_event_param *p = &evt->params[i];
+        if (!p->name)
+            continue;
+
+        lua_pushstring(L, p->name);  // key
+
+        switch (p->type) {
+        case LUA_ARG_INT:
+            lua_pushinteger(L, p->v.i64);
+            break;
+
+        case LUA_ARG_UINT:
+            lua_pushinteger(L, (lua_Integer)p->v.u64);
+            break;
+
+        case LUA_ARG_STR:
+            lua_pushstring(L, p->v.str ? p->v.str : "");
+            break;
+
+        default:
+            lua_pushnil(L);
+            break;
+        }
+        lua_settable(L, -3); // args[name] = value
+    }
+    lua_setfield(L, -2, "args");
+    
     lua_pop(L, 1);
 }
 
