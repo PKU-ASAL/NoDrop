@@ -64,7 +64,7 @@ void decode_event(const struct nod_event_hdr *hdr, struct lua_event *evt) {
         param = &info->params[i];
         dst = &evt->params[i];
         dst->name = param->name;
-switch (param->type) {
+        switch (param->type) {
         case PT_CHARBUF:
         case PT_FSPATH:
         case PT_FSRELPATH:

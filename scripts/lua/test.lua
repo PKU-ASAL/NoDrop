@@ -11,7 +11,7 @@ function on_init()
     f:flush()
 end
 
-function on_event(evt)
+function on_event()
     f:write(string.format(
         "type=%s tid=%d cpu=%d time=%d\n",
         tostring(evt.type),
