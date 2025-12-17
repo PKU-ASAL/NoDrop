@@ -70,7 +70,8 @@ void decode_event(const struct nod_event_hdr *hdr, struct lua_event *evt) {
         case PT_FSRELPATH:
         case PT_BYTEBUF:
             dst->type = LUA_ARG_STR;
-            dst->v.str = data;
+            dst->v.str.ptr = data;
+            dst->v.str.len = args[i];
             break;
 
         case PT_FLAGS8:
@@ -201,7 +202,7 @@ void update_global_evt(lua_State *L, const struct lua_event *evt)
             break;
 
         case LUA_ARG_STR:
-            lua_pushstring(L, p->v.str ? p->v.str : "");
+            lua_pushlstring(L, p->v.str.ptr ? p->v.str.ptr : "", p->v.str.len);
             break;
 
         default:

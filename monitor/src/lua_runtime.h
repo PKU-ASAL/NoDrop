@@ -18,7 +18,10 @@ struct lua_event_param {
     union {
         int64_t  i64;
         uint64_t u64;
-        const char *str;
+        struct {
+            const char *ptr;
+            uint16_t len;
+        } str;
     } v;
 };
 
