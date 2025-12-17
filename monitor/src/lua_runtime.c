@@ -57,7 +57,6 @@ void decode_event(const struct nod_event_hdr *hdr, struct lua_event *evt) {
     evt->dir = '?';         // TODO
 
     evt->nparams = info->nparams;
-    data = (char *)(args + info->nparams);
     args = (uint16_t *)(hdr + 1);
     data = (char *)(args + info->nparams);
     for (int i = 0; i < evt->nparams; i++){
