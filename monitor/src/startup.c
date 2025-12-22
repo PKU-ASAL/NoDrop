@@ -17,7 +17,7 @@
 #include "pkeys.h"
 #include "dynlink.h"
 
-// #define SCRIPT_PATH "/home/shendr/NoDrop/scripts/lua/"
+// #define SCRIPT_PATH "/home/***/NoDrop/scripts/lua/"
 
 #define START "_start"
 
@@ -46,7 +46,7 @@ __attribute__((section(NOD_SECTION_NAME))) struct nod_monitor_info __info = {.fs
 static char mmheap_pool[NOD_MONITOR_MEM_SIZE];
 
 // declarations of processing logic
-int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info, char *lua_path, int loaded);
+int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info, char *global_lua_path, time_t global_lua_mtime);
 weak void nod_monitor_init(int argc, char *argv[], char *env[]) {};
 weak void nod_monitor_exit(long code) {};
 
@@ -206,55 +206,50 @@ nod_start_main(int argc, char **argv, char **env)
 
     if (pw && pw->pw_dir && pw->pw_dir[0] == '/')
     {
-        snprintf(lua_path, sizeof(lua_path),
-                 "%s/NoDrop/scripts/lua/%s",
-                 pw->pw_dir, lua_mode);
+        snprintf(lua_path, sizeof(lua_path), "%s/NoDrop/scripts/lua/%s", pw->pw_dir, lua_mode);
     }
     else
     {
-        snprintf(lua_path, sizeof(lua_path),
-                 "/tmp/NoDrop/scripts/lua/%s",
-                 lua_mode);
+        snprintf(lua_path, sizeof(lua_path), "/tmp/NoDrop/scripts/lua/%s", lua_mode);
     }
     struct nod_lua_state kstate;
-    char last_lua_path[256] = {};
-    time_t last_lua_mtime;
-    int loaded = 1;
+    char global_lua_path[256] = {};
+    time_t global_lua_mtime;
+    // int loaded = 1;
 
     if (ioctl(p->ioctl_fd, NOD_IOCTL_GET_LUA_STATE, &kstate) == 0)
     {
-        strncpy(last_lua_path, kstate.lua_path, sizeof(last_lua_path) - 1);
-        last_lua_path[sizeof(last_lua_path) - 1] = '\0';
-        last_lua_mtime = kstate.lua_mtime;
+        strncpy(global_lua_path, kstate.lua_path, sizeof(global_lua_path) - 1);
+        global_lua_path[sizeof(global_lua_path) - 1] = '\0';
+        global_lua_mtime = kstate.lua_mtime;
     }
     else
     {
-        last_lua_path[0] = '\0';
-        last_lua_mtime = 0;
+        global_lua_path[0] = '\0';
+        global_lua_mtime = 0;
     }
 
     struct stat st;
     if (stat(lua_path, &st) == 0)
     {
-        printf("last_lua_path='%s', lua_path='%s'\n", last_lua_path, lua_path);
-        printf("last_lua_mtime=%ld, st_mtime=%ld\n", (long)last_lua_mtime, (long)st.st_mtime);
-        if (strcmp(last_lua_path, lua_path) != 0 || st.st_mtime != last_lua_mtime)
+        // printf("last_lua_path='%s', lua_path='%s'\n", global_lua_path, lua_path);
+        // printf("last_lua_mtime=%ld, st_mtime=%ld\n", (long)global_lua_mtime, (long)st.st_mtime);
+        if (strcmp(global_lua_path, lua_path) != 0 || st.st_mtime != global_lua_mtime)
         {
-            last_lua_mtime = st.st_mtime;
-            strncpy(last_lua_path, lua_path, sizeof(last_lua_path) - 1);
-            last_lua_path[sizeof(last_lua_path) - 1] = '\0';
-            loaded = 0;
+            global_lua_mtime = st.st_mtime;
+            strncpy(global_lua_path, lua_path, sizeof(global_lua_path) - 1);
+            global_lua_path[sizeof(global_lua_path) - 1] = '\0';
 
             struct nod_lua_state new_state;
             memset(&new_state, 0, sizeof(new_state));
-            strncpy(new_state.lua_path, last_lua_path, sizeof(new_state.lua_path) - 1);
-            new_state.lua_mtime = last_lua_mtime;
+            strncpy(new_state.lua_path, global_lua_path, sizeof(new_state.lua_path) - 1);
+            new_state.lua_mtime = global_lua_mtime;
 
             ioctl(p->ioctl_fd, NOD_IOCTL_SET_LUA_STATE, &new_state);
         }
     }
 
-    nod_monitor_main(p->buffer, p->buffer_info, lua_path, loaded);
+    nod_monitor_main(p->buffer, p->buffer_info, global_lua_path, global_lua_mtime);
 
 out:
     p->hash = nod_calc_hash(p);
