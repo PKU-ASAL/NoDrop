@@ -136,7 +136,7 @@ int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info, char *lu
         lua_runtime_init();
         lua_run_script(lua_path);
     }
-    lua_ensure_loaded(lua_path);
+
     char *ptr, *buffer_end;
     struct nod_event_hdr *hdr;
     struct lua_event evt;
