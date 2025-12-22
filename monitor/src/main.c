@@ -125,15 +125,18 @@ void nod_monitor_init(int argc, char *argv[], char *env[])
     gettimeofday(&tv, NULL);
     tid = (unsigned int)syscall(SYS_gettid);
     sprintf((char *)path, PATH_FMT, tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
+
+    // lua_runtime_init();
 }
 
 int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info, char *lua_path, int loaded)
 {
-    if (!loaded)
+    if (!loaded || !lua_is_inited())
     {
         lua_runtime_init();
         lua_run_script(lua_path);
     }
+    lua_ensure_loaded(lua_path);
     char *ptr, *buffer_end;
     struct nod_event_hdr *hdr;
     struct lua_event evt;
