@@ -302,8 +302,3 @@ int lua_run_script(const char *path)
     lua_on_init();
     return ret;
 }
-
-int lua_is_inited()
-{
-    return g_L != NULL;
-}
