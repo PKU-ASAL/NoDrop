@@ -74,6 +74,4 @@ void lua_on_event(const struct lua_event *evt);
 void lua_on_init();
 int lua_run_script(const char *path);
 
-int lua_is_inited(void);
-
 #endif // NODROP_LUA_RUNTIME_H
