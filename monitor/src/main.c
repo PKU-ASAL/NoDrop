@@ -18,9 +18,6 @@ static char path[100];
 static struct timeval tv;
 static unsigned int tid;
 
-static time_t lua_mtime;
-static char lua_path[256];
-
 static const char *__print_format[PT_UINT64 + 1][PF_OCT + 1] = {
     [PT_NONE] = {"", "", "", "", ""},                                         /*empty*/
     [PT_INT8] = {"", "%" PRId8, "0x%" PRIx8, "%010" PRId8, "0%" PRIo8},       /*PT_INT8*/
@@ -132,14 +129,9 @@ void nod_monitor_init(int argc, char *argv[], char *env[])
     lua_runtime_init();
 }
 
-int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info, char *global_lua_path, time_t global_lua_mtime)
+int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info, struct nod_lua_state *global_state)
 {
-    if (strcmp(global_lua_path, lua_path) != 0 || lua_mtime != global_lua_mtime)
-    {
-        lua_mtime = global_lua_mtime;
-        strncpy(lua_path, global_lua_path, sizeof(lua_path) - 1);
-        lua_run_script(lua_path);
-    }
+    lua_run_script(global_state);
 
     char *ptr, *buffer_end;
     struct nod_event_hdr *hdr;

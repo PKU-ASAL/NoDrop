@@ -10,6 +10,7 @@
 
 static lua_State *g_L = NULL;
 static char g_script_buf[8192];
+static struct nod_lua_state run_state;
 
 int lua_load_script(const char *path)
 {
@@ -44,6 +45,9 @@ void lua_runtime_init(void)
     }
 
     luaL_openlibs(g_L);
+
+    run_state.lua_path[0] = "\0";
+    run_state.lua_mtime = 0;
 }
 
 void decode_event(const struct nod_event_hdr *hdr, struct lua_event *evt)
@@ -294,9 +298,16 @@ static int lua_run_code(const char *code)
     return 0;
 }
 
-int lua_run_script(const char *path)
+int lua_run_script(struct nod_lua_state *global_state)
 {
-    if (lua_load_script(path) < 0)
+    if (strcmp(global_state->lua_path, run_state.lua_path) == 0 &&
+        global_state->lua_mtime == run_state.lua_mtime && run_state.lua_mtime != 0)
+    {
+        return 0;
+    }
+    strcpy(run_state.lua_path, global_state->lua_path);
+    run_state.lua_mtime = global_state->lua_mtime; 
+    if (lua_load_script(run_state.lua_path) < 0)
         return -1;
     int ret = lua_run_code(g_script_buf);
     lua_on_init();

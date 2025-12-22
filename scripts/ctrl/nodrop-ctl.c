@@ -3,8 +3,9 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <stdint.h>
-#include <sys/types.h>
 
+#include <sys/types.h>
+#include <sys/stat.h>
 #include "ioctl.h"
 
 int main(int argc, char *argv[])
@@ -14,8 +15,10 @@ int main(int argc, char *argv[])
     FILE *file;
     struct buffer_count_info cinfo;
     struct fetch_buffer_struct fetch;
-    struct nod_event_statistic stat;
-
+    struct nod_event_statistic nod_stat;
+    struct stat lua_st;
+    struct nod_lua_state lua_state;
+    char lua_path[4096];
     if (argc < 2)
     {
         fprintf(stderr, "Usage: %s [clean|fetch|stat|clear-stat|start|stop|count]\n", argv[0]);
@@ -87,9 +90,9 @@ int main(int argc, char *argv[])
     }
     else if (!strcmp(argv[1], "stat"))
     {
-        if (!ioctl(fd, NOD_IOCTL_READ_STATISTICS, &stat))
+        if (!ioctl(fd, NOD_IOCTL_READ_STATISTICS, &nod_stat))
         {
-            printf("n_evts\tdrop_evts\tdrop_unsolved\n%ld\t%ld\t%ld\n", stat.n_evts, stat.n_drop_evts, stat.n_drop_evts_unsolved);
+            printf("n_evts\tdrop_evts\tdrop_unsolved\n%ld\t%ld\t%ld\n", nod_stat.n_evts, nod_stat.n_drop_evts, nod_stat.n_drop_evts_unsolved);
         }
     }
     else if (!strcmp(argv[1], "clear-stat"))
@@ -108,12 +111,28 @@ int main(int argc, char *argv[])
     {
         if (argc <= 2)
         {
-            fprintf(stderr, "Usage: %s start a.lua\n", argv[0]);
+            fprintf(stderr, "Usage: %s start <lua_path>\n", argv[0]);
             return -1;
         }
-        const char *mode_lua = argv[2];
-        if (!ioctl(fd, NOD_IOCTL_START_RECORDING, 0) && !ioctl(fd, NOD_IOCTL_SET_LUA, mode_lua))
-            fprintf(stderr, "Start: %s\n", mode_lua);
+        if (!realpath(argv[2], lua_path))
+        {
+            fprintf(stderr, "%s : lua path error\n", argv[2]);
+            return -1;
+        }
+        if (strlen(lua_path) + 1 > 256)
+        {
+            fprintf(stderr, "%s : lua path too long\n", lua_path);
+            return -1;
+        }
+        strcpy(lua_state.lua_path, lua_path);
+        if (stat(lua_state.lua_path, &lua_st))
+        {
+            fprintf(stderr, "%s : lua file error\n", lua_path);
+            return -1;
+        }
+        lua_state.lua_mtime = lua_st.st_mtime;
+        if (!ioctl(fd, NOD_IOCTL_START_RECORDING, 0) && !ioctl(fd, NOD_IOCTL_SET_LUA_STATE, lua_state))
+            fprintf(stderr, "Start: %s\n", lua_state.lua_path);
     }
     else
     {

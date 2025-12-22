@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include "events.h"
+#include "ioctl.h"
 
 #define LUA_MAX_EVENT_PARAMS NOD_MAX_EVENT_PARAMS
 
@@ -72,6 +73,6 @@ void lua_runtime_init(void);
 
 void lua_on_event(const struct lua_event *evt);
 void lua_on_init();
-int lua_run_script(const char *path);
+int lua_run_script(struct nod_lua_state *global_state);
 
 #endif // NODROP_LUA_RUNTIME_H
