@@ -7,7 +7,8 @@
 
 #include "ioctl.h"
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
     int fd;
     int ret;
     FILE *file;
@@ -15,75 +16,107 @@ int main(int argc, char *argv[]) {
     struct fetch_buffer_struct fetch;
     struct nod_event_statistic stat;
 
-    if (argc < 2) {
+    if (argc < 2)
+    {
         fprintf(stderr, "Usage: %s [clean|fetch|stat|clear-stat|start|stop|count]\n", argv[0]);
         return 0;
     }
 
     fd = open(NOD_IOCTL_PATH, O_RDWR);
-    if (fd < 0) {
+    if (fd < 0)
+    {
         perror("Cannot open " NOD_IOCTL_PATH);
         return 127;
     }
 
-    if (!strcmp(argv[1], "clean")) {
+    if (!strcmp(argv[1], "clean"))
+    {
         if (!ioctl(fd, NOD_IOCTL_CLEAR_BUFFER, 0))
             fprintf(stderr, "Success\n");
-    } else if (!strcmp(argv[1], "fetch")) {
-        if ((ret = ioctl(fd, NOD_IOCTL_READ_BUFFER_COUNT_INFO, &cinfo))) {
+    }
+    else if (!strcmp(argv[1], "fetch"))
+    {
+        if ((ret = ioctl(fd, NOD_IOCTL_READ_BUFFER_COUNT_INFO, &cinfo)))
+        {
             fprintf(stderr, "Get Buffer Count Info failed, reason %d\n", ret);
             return -1;
         }
 
         fetch.len = cinfo.unflushed_len;
         fetch.buf = malloc(fetch.len);
-        if (!fetch.buf) {
+        if (!fetch.buf)
+        {
             fprintf(stderr, "Allocate memory failed\n");
             return -1;
         }
 
-        if ((ret = ioctl(fd, NOD_IOCTL_FETCH_BUFFER, &fetch))) {
+        if ((ret = ioctl(fd, NOD_IOCTL_FETCH_BUFFER, &fetch)))
+        {
             fprintf(stderr, "Fetch Buffer failed, reason %d\n", ret);
             return -1;
         }
 
-        if (argc <= 2) file = stdout;
-        else file = fopen(argv[2], "wb");
-        if (!file) {
+        if (argc <= 2)
+            file = stdout;
+        else
+            file = fopen(argv[2], "wb");
+        if (!file)
+        {
             fprintf(stderr, "Cannot open file\n");
             return -1;
         }
 
-        if (fwrite(fetch.buf, fetch.len, 1, file) == 1) {
+        if (fwrite(fetch.buf, fetch.len, 1, file) == 1)
+        {
             fprintf(stderr, "Write %lu bytes to file %s\n", fetch.len, argc <= 2 ? "stdout" : argv[2]);
-        } else {
+        }
+        else
+        {
             fprintf(stderr, "Write to file %s failed\n", argc <= 2 ? "stdout" : argv[2]);
         }
 
         if (file != stdout)
             fclose(file);
-
-    } else if (!strcmp(argv[1], "count")) {
-        if (!ioctl(fd, NOD_IOCTL_READ_BUFFER_COUNT_INFO, &cinfo)) {
+    }
+    else if (!strcmp(argv[1], "count"))
+    {
+        if (!ioctl(fd, NOD_IOCTL_READ_BUFFER_COUNT_INFO, &cinfo))
+        {
             printf("event_count=%lu,unflushed_count=%lu,unflushed_len=%lu\n", cinfo.event_count, cinfo.unflushed_count, cinfo.unflushed_len);
         }
-    } else if (!strcmp(argv[1], "stat")) {
-      if (!ioctl(fd, NOD_IOCTL_READ_STATISTICS, &stat)) {
-          printf("n_evts\tdrop_evts\tdrop_unsolved\n%ld\t%ld\t%ld\n", stat.n_evts, stat.n_drop_evts, stat.n_drop_evts_unsolved);
-      }
-    } else if (!strcmp(argv[1], "clear-stat")) {
-      if (!ioctl(fd, NOD_IOCTL_CLEAR_STATISTICS, 0)) {
-        fprintf(stderr, "Statistics cleared\n");
-      }
-    } else if (!strcmp(argv[1], "stop")) {
+    }
+    else if (!strcmp(argv[1], "stat"))
+    {
+        if (!ioctl(fd, NOD_IOCTL_READ_STATISTICS, &stat))
+        {
+            printf("n_evts\tdrop_evts\tdrop_unsolved\n%ld\t%ld\t%ld\n", stat.n_evts, stat.n_drop_evts, stat.n_drop_evts_unsolved);
+        }
+    }
+    else if (!strcmp(argv[1], "clear-stat"))
+    {
+        if (!ioctl(fd, NOD_IOCTL_CLEAR_STATISTICS, 0))
+        {
+            fprintf(stderr, "Statistics cleared\n");
+        }
+    }
+    else if (!strcmp(argv[1], "stop"))
+    {
         if (!ioctl(fd, NOD_IOCTL_STOP_RECORDING, 0))
             fprintf(stderr, "Stopped\n");
-
-    } else if (!strcmp(argv[1], "start")) {
-        if (!ioctl(fd, NOD_IOCTL_START_RECORDING, 0))
-            fprintf(stderr, "Start\n");
-
-    } else {
+    }
+    else if (!strcmp(argv[1], "start"))
+    {
+        if (argc <= 2)
+        {
+            fprintf(stderr, "Usage: %s start a.lua\n", argv[0]);
+            return -1;
+        }
+        const char *mode_lua = argv[2];
+        if (!ioctl(fd, NOD_IOCTL_START_RECORDING, 0) && !ioctl(fd, NOD_IOCTL_SET_LUA, mode_lua))
+            fprintf(stderr, "Start: %s\n", mode_lua);
+    }
+    else
+    {
         fprintf(stderr, "Unknown cmd %s\n", argv[1]);
     }
 
