@@ -131,7 +131,7 @@ int main(int argc, char *argv[])
             return -1;
         }
         lua_state.lua_mtime = lua_st.st_mtime;
-        if (!ioctl(fd, NOD_IOCTL_START_RECORDING, 0) && !ioctl(fd, NOD_IOCTL_SET_LUA_STATE, lua_state))
+        if (!ioctl(fd, NOD_IOCTL_START_RECORDING, 0) && !ioctl(fd, NOD_IOCTL_SET_LUA_STATE, &lua_state))
             fprintf(stderr, "Start: %s\n", lua_state.lua_path);
     }
     else
