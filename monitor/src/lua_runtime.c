@@ -46,7 +46,7 @@ void lua_runtime_init(void)
 
     luaL_openlibs(g_L);
 
-    run_state.lua_path[0] = "\0";
+    run_state.lua_path[0] = '\0';
     run_state.lua_mtime = 0;
 }
 
