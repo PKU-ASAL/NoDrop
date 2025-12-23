@@ -20,11 +20,8 @@
 #define NOD_IOCTL_START_RECORDING _IO(NOD_IOCTL_MAGIC, 6)
 #define NOD_IOCTL_RESTORE_SECURITY _IO(NOD_IOCTL_MAGIC, 7)
 #define NOD_IOCTL_RESTORE_CONTEXT _IO(NOD_IOCTL_MAGIC, 8)
-#define NOD_IOCTL_SET_LUA _IOR(NOD_IOCTL_MAGIC, 9, char *)
-#define NOD_IOCTL_GET_LUA _IOW(NOD_IOCTL_MAGIC, 10, char *)
-
-#define NOD_IOCTL_GET_LUA_STATE _IOR(NOD_IOCTL_MAGIC, 11, struct nod_lua_state)
-#define NOD_IOCTL_SET_LUA_STATE _IOW(NOD_IOCTL_MAGIC, 12, struct nod_lua_state)
+#define NOD_IOCTL_GET_LUA_STATE _IOR(NOD_IOCTL_MAGIC, 9, struct nod_lua_state)
+#define NOD_IOCTL_SET_LUA_STATE _IOW(NOD_IOCTL_MAGIC, 10, struct nod_lua_state)
 
 struct buffer_count_info
 {
