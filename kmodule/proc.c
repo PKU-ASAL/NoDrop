@@ -17,7 +17,6 @@
 #define BUFSIZE 30
 #define MAXLEN 64
 
-static char lua_mode[MAXLEN] = "";
 static struct proc_dir_entry *ent;
 static struct nod_lua_state g_lua_state = {
     .lua_path = "",
@@ -223,41 +222,6 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         p->stack.ioctl_fd = -1;
 
         break;
-    case NOD_IOCTL_SET_LUA:
-    {
-        char mode[MAXLEN] = {0};
-
-        if (copy_from_user(mode, (void __user *)arg, sizeof(mode)))
-        {
-            ret = -EFAULT;
-            goto out;
-        }
-
-        mode[MAXLEN - 1] = '\0';
-
-        if (strlen(mode) == 0)
-        {
-            ret = -EINVAL;
-            goto out;
-        }
-
-        strncpy(lua_mode, mode, MAXLEN - 1);
-
-        pr_info("nodrop: monitor mode set to '%s' by pid %d\n",
-                lua_mode, current->pid);
-
-        break;
-    }
-
-    case NOD_IOCTL_GET_LUA:
-    {
-        if (copy_to_user((void __user *)arg, lua_mode, MAXLEN))
-        {
-            ret = -EFAULT;
-            goto out;
-        }
-        break;
-    }
 
     case NOD_IOCTL_GET_LUA_STATE:
     {
