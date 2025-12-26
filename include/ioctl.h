@@ -21,8 +21,8 @@
 #define NOD_IOCTL_START_RECORDING               _IO(NOD_IOCTL_MAGIC, 6)
 #define NOD_IOCTL_RESTORE_SECURITY              _IO(NOD_IOCTL_MAGIC, 7)
 #define NOD_IOCTL_RESTORE_CONTEXT               _IO(NOD_IOCTL_MAGIC, 8)
-#define NOD_IOCTL_GET_BUFFER_SIZE               _IO(NOD_IOCTL_MAGIC, 9)
-#define NOD_IOCTL_SET_BUFFER_SIZE               _IO(NOD_IOCTL_MAGIC, 10)
+#define NOD_IOCTL_GET_BUFFER_SIZE               _IO(NOD_IOCTL_MAGIC, 11)
+#define NOD_IOCTL_SET_BUFFER_SIZE               _IO(NOD_IOCTL_MAGIC, 12)
 
 struct buffer_count_info {
 	uint64_t event_count;
