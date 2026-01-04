@@ -48,7 +48,7 @@ struct nod_event_statistic
 struct nod_lua_state
 {
 	char lua_path[256];
-	time_t lua_mtime;
+	uint64_t lua_mtime;
 };
 
 #endif // NOD_IOCTL_H_

@@ -103,6 +103,7 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
     int ret, cpu;
     uint64_t count;
+    unsigned long bufsize;
     char *ptr;
     struct buffer_count_info cinfo;
     struct fetch_buffer_struct fetch;
@@ -212,47 +213,40 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
             goto out;
         }
 
-        memcpy(&p->stack, &stack, sizeof(stack));
+        memcpy(&p->stack_info, &stack, sizeof(stack));
 
         if (cmd == NOD_IOCTL_RESTORE_CONTEXT)
-            nod_proc_set_context(p, p->stack.ioctl_fd);
+            nod_proc_set_context(p, p->stack_info.ioctl_fd);
         else
-            nod_proc_set_security(p, p->stack.ioctl_fd);
+            nod_proc_set_security(p, p->stack_info.ioctl_fd);
 
-        p->stack.ioctl_fd = -1;
+        p->stack_info.ioctl_fd = -1;
 
         break;
 
     case NOD_IOCTL_GET_LUA_STATE:
-    {
         if (copy_to_user((void __user *)arg,
                          &g_lua_state,
                          sizeof(g_lua_state)))
             return -EFAULT;
         break;
-    }
 
     case NOD_IOCTL_SET_LUA_STATE:
-    {
         if (copy_from_user(&g_lua_state,
                            (void __user *)arg,
                            sizeof(g_lua_state)))
             return -EFAULT;
         break;
-    }
 
     case NOD_IOCTL_SET_BUFFER_SIZE:
-    {
         if (nod_event_set_buffer_size(arg))
         {
             ret = -EINVAL;
             goto out;
         }
         break;
-    }
 
-    case NOD_IOCTL_GET_BUFFER_SIZE:、
-    {
+    case NOD_IOCTL_GET_BUFFER_SIZE:
         if (nod_event_get_buffer_size(&bufsize))
         {
             ret = -EINVAL;
@@ -264,7 +258,7 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
             goto out;
         }
         break;
-    }
+
     default:
         ret = -EINVAL;
         goto out;
