@@ -143,7 +143,7 @@ int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info, struct n
     {
         hdr = (struct nod_event_hdr *)ptr;
         buffer_info->n_solved_evts++;
-        decode_event(hdr, &evt);
+        evt.raw = hdr;
         lua_on_event(&evt);
         ptr += hdr->len;
     }

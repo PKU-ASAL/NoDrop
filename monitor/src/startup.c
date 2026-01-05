@@ -217,7 +217,7 @@ nod_start_main(int argc, char **argv, char **env)
             kstate.lua_mtime = lua_st.st_mtime;
             if (ioctl(p->ioctl_fd, NOD_IOCTL_SET_LUA_STATE, &kstate) != 0)
             {
-                return -1;
+                return;
             }
         }
     }
