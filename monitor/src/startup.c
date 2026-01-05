@@ -16,7 +16,7 @@
 #include "mmheap.h"
 #include "pkeys.h"
 #include "dynlink.h"
-
+#include "tsc.h"
 // #define SCRIPT_PATH "/home/***/NoDrop/scripts/lua/"
 
 #define START "_start"
@@ -80,13 +80,14 @@ __asm__(
 static void
 nod_restore_context(struct nod_stack_info *p)
 {
-    if (unlikely(SYSCALL_EXIT_FAMILY(p->nr)))
+    // uint64_t start, end, last_solved;
+    if (unlikely(SYSCALL_EXIT_FAMILY(p->syscall_nr)))
     {
-        nod_monitor_exit(p->nr);
+        nod_monitor_exit(p->syscall_nr);
         // end = read_time();
         // printf("\n-%llu-%llu-\n", end - start, p->buffer_info->n_solved_evts - last_solved);
         // last_solved = p->buffer_info->n_solved_evts;
-        syscall(p->nr, p->code);
+        syscall(p->syscall_nr, p->exit_code);
     }
     else
     {
@@ -118,6 +119,9 @@ nod_initialize(struct nod_stack_info *p)
             ASSERT_EXIT(likely(pkey_mprotect(&__bdata, (unsigned long)&__edata - (unsigned long)&__bdata,
                                              PROT_READ | PROT_WRITE, p->pkey) != -1),
                         "pkey_mprotect for data segenemtn failed", );
+            ASSERT_EXIT(likely(pkey_mprotect(p->stack_start, p->stack_end - p->stack_start,
+                                             PROT_READ | PROT_WRITE, p->pkey) != -1),
+                        "pkey_mprotect for stack segment failed", );
         }
 #endif
     }
@@ -127,9 +131,7 @@ nod_initialize(struct nod_stack_info *p)
 static void
 nod_start_main(int argc, char **argv, char **env)
 {
-    struct nod_stack_info *p = (struct nod_stack_info *)argv[--argc];
-
-    argv[argc] = 0;
+    struct nod_stack_info *p = (struct nod_stack_info *)argv[argc - 1];
 
     if (unlikely(p->fsbase == 0))
     {
@@ -141,46 +143,61 @@ nod_start_main(int argc, char **argv, char **env)
 #ifdef NOD_PKEY_SUPPORT
         if (p->pkey != -1)
         {
-            pkey_set(p->pkey, 0);
+            pkey_set(p->pkey, PKEY_WR);
         }
 #endif
     }
-
+    
+    // static char strbuf[256];
+    // uint64_t ts = rdtsc();
     ASSERT_OUT(likely((p->ioctl_fd = open(NOD_IOCTL_PATH, O_RDWR)) >= 0),
                "Open " NOD_IOCTL_PATH " failed", );
-
-    if (unlikely(p->buffer == NULL))
-    {
-        p->buffer = (char *)mmap(NULL, BUFFER_SIZE,
-                                 PROT_READ, MAP_SHARED, p->ioctl_fd, 0);
-        ASSERT_OUT(likely(p->buffer != MAP_FAILED),
-                   "Cannot allocate buffer", p->buffer = NULL);
-#ifdef NOD_PKEY_SUPPORT
-        if (p->pkey != -1)
-        {
-            ASSERT_OUT(likely(pkey_mprotect(p->buffer, BUFFER_SIZE, PROT_READ, p->pkey) != -1),
-                       "pkey_mprotect for buffer failed", );
-        }
-#endif
-    }
 
     if (unlikely(p->buffer_info == NULL))
     {
         p->buffer_info = (struct nod_buffer_info *)mmap(NULL, sizeof(struct nod_buffer_info),
                                                         PROT_READ | PROT_WRITE, MAP_SHARED, p->ioctl_fd, 0);
         ASSERT_OUT(likely(p->buffer_info != MAP_FAILED),
-                   "Cannot allocate buffer info",
-                   {
-                       if (p->buffer)
-                           munmap(p->buffer, BUFFER_SIZE);
-                       p->buffer_info = NULL;
-                       p->buffer = NULL;
-                   });
+                   "Cannot allocate buffer info", p->buffer_info = NULL);
 #ifdef NOD_PKEY_SUPPORT
         if (p->pkey != -1)
         {
             ASSERT_OUT(likely(pkey_mprotect(p->buffer_info, sizeof(struct nod_buffer_info), PROT_READ | PROT_WRITE, p->pkey) != -1),
-                       "pkey_mprotect for buffer info failed", );
+                       "pkey_mprotect for buffer info failed",
+                       {
+                           if (p->buffer_info)
+                               munmap(p->buffer_info, sizeof(struct nod_buffer_info));
+                           p->buffer_info = NULL;
+                       });
+        }
+#endif
+    }
+
+    if (unlikely(p->buffer == NULL))
+    {
+        p->buffer = (char *)mmap(NULL, p->buffer_info->buffer_size,
+                                 PROT_READ, MAP_SHARED, p->ioctl_fd, 0);
+        ASSERT_OUT(likely(p->buffer != MAP_FAILED),
+                   "Cannot allocate buffer",
+                   {
+                       p->buffer = NULL;
+                       if (p->buffer_info)
+                           munmap(p->buffer_info, sizeof(struct nod_buffer_info));
+                       p->buffer_info = NULL;
+                   });
+#ifdef NOD_PKEY_SUPPORT
+        if (p->pkey != -1)
+        {
+            ASSERT_OUT(likely(pkey_mprotect(p->buffer, 4 * 1024, PROT_READ, p->pkey) != -1),
+                       "pkey_mprotect for buffer failed",
+                       {
+                           if (p->buffer)
+                               munmap(p->buffer, p->buffer_info->buffer_size);
+                           p->buffer = NULL;
+                           if (p->buffer_info)
+                               munmap(p->buffer_info, sizeof(struct nod_buffer_info));
+                           p->buffer_info = NULL;
+                       });
         }
 #endif
     }
