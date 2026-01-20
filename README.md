@@ -12,7 +12,7 @@ NoDrop contains 2 major components: the kernel module and the monitor.
 * **the monitor**: codes under `monitor/`. 
 NoDrop is tested on Ubuntu 18.04 with unmodified Linux kernel 4.15.0-171.
 
-See the [example](docs/quick_start(cn).md) of a quick start.
+See the [example](./docs/quick_strat(cn).md) of a quick start.
 
 ### How to Install Nodrop 
 #### Environment requirements
