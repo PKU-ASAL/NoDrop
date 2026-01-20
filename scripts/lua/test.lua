@@ -1,31 +1,34 @@
-local outfile = "/tmp/nodrop_evt_args.log"
+local outfile = "/tmp/nodrop_hello_args.log"
+local f = io.open(outfile, "w")
 
-local f = io.open(outfile, "a")
 if not f then
     print("ERROR: cannot open log file:", outfile)
     return
 end
 
 function on_init()
-    f:write("\n=== Lua logging started ===\n")
+    ftype  = chisel.request_field("evt.type")
+    ffd    = chisel.request_field("evt.arg.fd")
+    fsize = chisel.request_field("evt.arg.size")
+
+    f:write("=== hello world arg test ===\n")
     f:flush()
+    return true
 end
 
 function on_event()
-    f:write(string.format(
-        "type=%s tid=%d cpu=%d time=%d\n",
-        tostring(evt.type),
-        tonumber(evt.tid or -1),
-        tonumber(evt.cpu or -1),
-        tonumber(evt.time or 0)
-    ))
+    local t = evt.field(ftype)
+    if t == "write" then
+        local fd    = evt.field(ffd)
+        local size = evt.field(fsize)
 
-    if evt.args then
-        for k, v in pairs(evt.args) do
-            f:write(string.format("  %s = %s\n", tostring(k), tostring(v)))
-        end
+        f:write(string.format(
+            "write(fd=%s, count=%s)\n",
+            tostring(fd),
+            tostring(size)
+        ))
+        f:flush()
     end
 
-    f:write("\n")
-    f:flush()
+    return true
 end
