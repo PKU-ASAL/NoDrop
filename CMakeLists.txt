@@ -21,7 +21,7 @@ cmake_minimum_required(VERSION 3.0.0 FATAL_ERROR)
 
 project("NoDrop")
 
-option(PKEY_SUPPORT "Using Intel Memory Protection Key to protect consumer's memory" OBJC_EXTENSIONS)
+option(PKEY_SUPPORT "Using Intel Memory Protection Key to protect consumer's memory" ON)
 
 if (NOT DEFINED PROBE_NAME)
         set(PROBE_NAME "nodrop")

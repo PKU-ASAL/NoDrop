@@ -255,6 +255,51 @@ static int lua_evt_field(lua_State *L)
     }
 }
 
+static int get_whole_event(const struct nod_event_hdr *hdr, char *out, int mx_size) {
+    int off = 0;
+    const struct nod_event_info *info;
+    const struct nod_param_info *param;
+    uint16_t *args;
+    char *data;
+    char tmp[256];
+    info = &g_event_info[hdr->type];
+    off += snprintf(out + off, mx_size - off,
+                "%lu %u (%u): %s(",
+                hdr->ts,
+                hdr->tid,
+                hdr->cpuid,
+                info->name);
+    args = (uint16_t *)(hdr + 1);
+    data = (char *)(args + info->nparams);
+
+    for (size_t i = 0; i < info->nparams; ++i)
+    {
+        param = &info->params[i];
+
+        if (i > 0)
+            off += snprintf(out + off, mx_size - off, ", ");
+
+        /* param name */
+        off += snprintf(out + off, mx_size - off,
+                        "%s=", param->name);
+
+        /* param value */
+        evt_arg_to_string(param, data, args[i],
+                          tmp, sizeof(tmp));
+
+        off += snprintf(out + off, mx_size - off,
+                        "%s", tmp);
+
+        data += args[i];
+
+        if (off >= (int)mx_size)
+            break;
+    }
+
+    /* closing */
+    off += snprintf(out + off, mx_size - off, ")\n");
+    return off;
+}
 
 /* ============================================================
  * Lua API: evt.send(ip, port)
@@ -265,16 +310,9 @@ static int lua_evt_send(lua_State *L)
     int port;
 
     const struct nod_event_hdr *hdr;
-    const struct nod_event_info *info;
-    const struct nod_param_info *param;
-
-    uint16_t *args;
-    char *data;
 
     char out[2048];
-    char tmp[256];
     int off = 0;
-    size_t i;
 
     int fd;
     struct sockaddr_in addr;
@@ -290,45 +328,8 @@ static int lua_evt_send(lua_State *L)
     if (hdr->type < 0 || hdr->type >= NODE_EVENT_MAX)
         return 0;
 
-    info = &g_event_info[hdr->type];
-
-    off += snprintf(out + off, sizeof(out) - off,
-                    "%lu %u (%u): %s(",
-                    hdr->ts,
-                    hdr->tid,
-                    hdr->cpuid,
-                    info->name);
-
-    args = (uint16_t *)(hdr + 1);
-    data = (char *)(args + info->nparams);
-
-    for (i = 0; i < info->nparams; ++i)
-    {
-        param = &info->params[i];
-
-        if (i > 0)
-            off += snprintf(out + off, sizeof(out) - off, ", ");
-
-        /* param name */
-        off += snprintf(out + off, sizeof(out) - off,
-                        "%s=", param->name);
-
-        /* param value */
-        evt_arg_to_string(param, data, args[i],
-                          tmp, sizeof(tmp));
-
-        off += snprintf(out + off, sizeof(out) - off,
-                        "%s", tmp);
-
-        data += args[i];
-
-        if (off >= (int)sizeof(out))
-            break;
-    }
-
-    /* closing */
-    off += snprintf(out + off, sizeof(out) - off, ")\n");
-
+    off = get_whole_event(hdr, out, sizeof(out));
+    
     /* ----------------------------
      * UDP send
      * ---------------------------- */
@@ -350,6 +351,43 @@ static int lua_evt_send(lua_State *L)
 }
 
 /* ============================================================
+ * Lua API: evt.save(filename)
+ * ============================================================ */
+static int lua_evt_save(lua_State *L)
+{
+    const char *filename;
+
+    const struct nod_event_hdr *hdr;
+
+    char out[2048];
+    int off = 0;
+
+    FILE *fp;
+
+    filename = luaL_checkstring(L, 1);
+
+    if (!g_current_evt || !g_current_evt->raw)
+        return 0;
+
+    hdr = g_current_evt->raw;
+
+    if (hdr->type < 0 || hdr->type >= NODE_EVENT_MAX)
+        return 0;
+
+    off = get_whole_event(hdr, out, sizeof(out));
+    
+    fp = fopen(filename, "a");
+    
+    if (!fp) {
+        return 0;
+    }
+
+    fwrite(out, 1, (size_t)off, fp);
+    fclose(fp);
+
+    return 0;
+}
+/* ============================================================
  * Lua registration
  * ============================================================ */
 
@@ -369,5 +407,9 @@ void lua_field_register_api(lua_State *L)
     /* evt.send(ip, port)*/
     lua_pushcfunction(L, lua_evt_send);
     lua_setfield(L, -2, "send");
+    /* evt.save(filename)*/
+    lua_pushcfunction(L, lua_evt_save);
+    lua_setfield(L, -2, "save");
     lua_setglobal(L, "evt");
+    
 }
