@@ -13,6 +13,8 @@ static struct nod_lua_state run_state;
 
 int lua_load_script(const char *path)
 {
+    if (!run_state.lua_mtime) 
+        return -1;
     FILE *fp = fopen(path, "rb");
     if (!fp)
         return -1;
@@ -52,7 +54,7 @@ void lua_runtime_init(void)
 
 void lua_on_event(struct lua_event *evt)
 {
-    if (!g_L)
+    if (!g_L || !run_state.lua_mtime)
         return;
     lua_field_set_current_event(evt);
 
@@ -74,7 +76,7 @@ void lua_on_event(struct lua_event *evt)
 
 void lua_on_init()
 {
-    if (!g_L)
+    if (!g_L || !run_state.lua_mtime)
         return;
 
     lua_getglobal(g_L, "on_init");
@@ -91,8 +93,6 @@ void lua_on_init()
         lua_pop(g_L, 1);
     }
 }
-
-
 
 static int lua_run_code(const char *code)
 {
@@ -116,7 +116,7 @@ static int lua_run_code(const char *code)
 int lua_run_script(struct nod_lua_state *global_state)
 {
     if (strcmp(global_state->lua_path, run_state.lua_path) == 0 &&
-        global_state->lua_mtime == run_state.lua_mtime && run_state.lua_mtime != 0)
+        global_state->lua_mtime == run_state.lua_mtime )
     {
         return 0;
     }

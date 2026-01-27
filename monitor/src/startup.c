@@ -192,19 +192,20 @@ nod_start_main(int argc, char **argv, char **env)
         kstate.lua_path[0] = '\0';
         kstate.lua_mtime = 0;
     }
-    struct stat lua_st;
-    if (!stat(kstate.lua_path, &lua_st))
-    {
-        if (lua_st.st_mtime != kstate.lua_mtime)
+    if (kstate.lua_mtime) {
+        struct stat lua_st;
+        if (!stat(kstate.lua_path, &lua_st))
         {
-            kstate.lua_mtime = lua_st.st_mtime;
-            if (ioctl(p->ioctl_fd, NOD_IOCTL_SET_LUA_STATE, &kstate) != 0)
+            if (lua_st.st_mtime != kstate.lua_mtime)
             {
-                return;
+                kstate.lua_mtime = lua_st.st_mtime;
+                if (ioctl(p->ioctl_fd, NOD_IOCTL_SET_LUA_STATE, &kstate) != 0)
+                {
+                    return;
+                }
             }
         }
     }
-
     nod_monitor_main(p->buffer, p->buffer_info, &kstate);
 
 out:

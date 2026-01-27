@@ -109,28 +109,36 @@ int main(int argc, char *argv[])
     }
     else if (!strcmp(argv[1], "start"))
     {
-        if (argc <= 2)
+        if (argc > 3)
         {
             fprintf(stderr, "Usage: %s start <lua_path>\n", argv[0]);
             return -1;
         }
-        if (!realpath(argv[2], lua_path))
+        if (argc == 3)
         {
-            fprintf(stderr, "%s : lua path error\n", argv[2]);
-            return -1;
+            if (!realpath(argv[2], lua_path))
+            {
+                fprintf(stderr, "%s : lua path error\n", argv[2]);
+                return -1;
+            }
+            if (strlen(lua_path) + 1 > 256)
+            {
+                fprintf(stderr, "%s : lua path too long\n", lua_path);
+                return -1;
+            }
+            strcpy(lua_state.lua_path, lua_path);
+            if (stat(lua_state.lua_path, &lua_st))
+            {
+                fprintf(stderr, "%s : lua file error\n", lua_path);
+                return -1;
+            }
+            lua_state.lua_mtime = lua_st.st_mtime;
         }
-        if (strlen(lua_path) + 1 > 256)
+        else
         {
-            fprintf(stderr, "%s : lua path too long\n", lua_path);
-            return -1;
+            lua_state.lua_path[0] = '\0';
+            lua_state.lua_mtime = 0;
         }
-        strcpy(lua_state.lua_path, lua_path);
-        if (stat(lua_state.lua_path, &lua_st))
-        {
-            fprintf(stderr, "%s : lua file error\n", lua_path);
-            return -1;
-        }
-        lua_state.lua_mtime = lua_st.st_mtime;
         if (!ioctl(fd, NOD_IOCTL_START_RECORDING, 0) && !ioctl(fd, NOD_IOCTL_SET_LUA_STATE, &lua_state))
             fprintf(stderr, "Start: %s\n", lua_state.lua_path);
     }
