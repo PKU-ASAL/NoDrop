@@ -141,6 +141,27 @@ int main(int argc, char *argv[])
         }
         if (!ioctl(fd, NOD_IOCTL_START_RECORDING, 0) && !ioctl(fd, NOD_IOCTL_SET_LUA_STATE, &lua_state))
             fprintf(stderr, "Start: %s\n", lua_state.lua_path);
+    } 
+    else if (!strcmp(argv[1], "record"))
+    {
+        if (argc > 3) {
+            fprintf(stderr, "Usage: %s record true/false\n", argv[0]);
+            return -1;
+        }
+        int record_flag = 1;
+        if (argc == 3) {
+            if (!strcmp(argv[2], "false"))
+                record_flag = 0;
+            else if (!strcmp(argv[2], "true"))
+                record_flag = 1;
+            else {
+                fprintf(stderr, "Usage: %s record [true, false] (default true)\n", argv[0]);
+                return -1;
+            }
+        }
+        if (!ioctl(fd, NOD_IOCTL_SET_RECORD_FLAG, &record_flag)) {
+            fprintf(stderr, "Record set %s\n", record_flag ? "true":"false");
+        }
     }
     else
     {
