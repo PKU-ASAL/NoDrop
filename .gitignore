@@ -28,3 +28,4 @@ musl-src/
 results*
 postmark.pmrc
 /lua/
+/zlib/

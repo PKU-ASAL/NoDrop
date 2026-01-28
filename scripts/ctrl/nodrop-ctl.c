@@ -145,22 +145,24 @@ int main(int argc, char *argv[])
     else if (!strcmp(argv[1], "record"))
     {
         if (argc > 3) {
-            fprintf(stderr, "Usage: %s record true/false\n", argv[0]);
+            fprintf(stderr, "Usage: %s record [normal, compress, none] (default normal)\n", argv[0]);
             return -1;
         }
-        int record_flag = 1;
+        int record_flag = NOD_RECORD_MODE_START;
         if (argc == 3) {
-            if (!strcmp(argv[2], "false"))
-                record_flag = 0;
-            else if (!strcmp(argv[2], "true"))
-                record_flag = 1;
+            if (!strcmp(argv[2], "none"))
+                record_flag = NOD_RECORD_MODE_STOP;
+            else if (!strcmp(argv[2], "normal"))
+                record_flag = NOD_RECORD_MODE_START;
+            else if (!strcmp(argv[2], "compress"))
+                record_flag = NOD_RECORD_MODE_COMPRESS;
             else {
-                fprintf(stderr, "Usage: %s record [true, false] (default true)\n", argv[0]);
+                fprintf(stderr, "Usage: %s record [normal, compress, none] (default normal)\n", argv[0]);
                 return -1;
             }
         }
         if (!ioctl(fd, NOD_IOCTL_SET_RECORD_FLAG, &record_flag)) {
-            fprintf(stderr, "Record set %s\n", record_flag ? "true":"false");
+            fprintf(stderr, "Record set %s\n", record_flag==0 ? "none": record_flag == 1 ? "normal" : "compress");
         }
     }
     else

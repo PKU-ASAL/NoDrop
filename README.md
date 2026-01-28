@@ -27,9 +27,10 @@ See the [example](./docs/quick_strat(cn).md) of a quick start.
 ```shell
  ./scripts/getmusl.sh <absolute-path-to-Nodrop>
 ```
-* To get lua, run the following command
+* To get lua and zlib, run the following command
 ```shell
  ./scripts/getlua.sh
+ ./scripts/getzlib.sh
 ```
 #### Installation Instructions
 ```shell

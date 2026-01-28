@@ -9,14 +9,15 @@
 
 #include "common.h"
 #include "lua_runtime.h"
+#include "record_writer.h"
 
-#ifndef PATH_FMT
-#define PATH_FMT STORE_PATH "/%u-%ld.buf"
-#endif
 
-static char path[100];
 static struct timeval tv;
 static unsigned int tid;
+
+struct record_writer rw = {
+    .mode = -1,
+};
 
 static const char *__print_format[PT_UINT64 + 1][PF_OCT + 1] = {
     [PT_NONE] = {"", "", "", "", ""},                                         /*empty*/
@@ -29,6 +30,7 @@ static const char *__print_format[PT_UINT64 + 1][PF_OCT + 1] = {
     [PT_UINT32] = {"", "%" PRIu32, "0x%" PRIx32, "%010" PRIu32, "0%" PRIo32}, /*PT_UINT32*/
     [PT_UINT64] = {"", "%" PRIu64, "0x%" PRIx64, "%010" PRIu64, "0%" PRIo64}  /*PT_UINT64*/
 };
+
 
 static int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer, void *__data)
 {
@@ -124,7 +126,7 @@ void nod_monitor_init(int argc, char *argv[], char *env[])
 {
     gettimeofday(&tv, NULL);
     tid = (unsigned int)syscall(SYS_gettid);
-    sprintf((char *)path, PATH_FMT, tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
+    set_record_path(tv, tid);
 
     lua_runtime_init();
 }
@@ -136,14 +138,7 @@ int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info, struct n
     char *ptr, *buffer_end;
     struct nod_event_hdr *hdr;
     struct lua_event evt;
-    FILE *file;
-
-    if (record_flag) {
-        if(!(file = fopen((const char *)path, "wb+"))) { // TEMP
-            perror("Cannot open log file");
-            return 0;
-        }
-    }
+    new_record_writer(&rw, record_flag);
     ptr = buffer;
     buffer_end = ptr + buffer_info->tail;
     while (ptr < buffer_end)
@@ -152,11 +147,11 @@ int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info, struct n
         buffer_info->n_solved_evts++;
         evt.raw = hdr;
         lua_on_event(&evt);
-        if (record_flag) fwrite(ptr, hdr->len, 1, file);
+        write_record_writer(&rw, ptr);
         ptr += hdr->len;
     }
 
-    if (record_flag) fclose(file);
+    close_record_writer(&rw);
     buffer_info->nevents = buffer_info->tail = 0;
 
     // lua_run_script(SCRIPT_PATH);

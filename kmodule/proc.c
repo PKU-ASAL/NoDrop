@@ -22,7 +22,7 @@ static struct nod_lua_state g_lua_state = {
     .lua_path = "",
     .lua_mtime = 0,
 };
-static int g_record_flag = false;
+static int g_record_flag = NOD_RECORD_MODE_STOP;
 static int nod_dev_open(struct inode *inode, struct file *filp)
 {
     struct nod_proc_info *p;

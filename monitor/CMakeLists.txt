@@ -40,12 +40,33 @@ set(LUA_SOURCES
         ${LUA_SRC_DIR}/linit.c
 )
 
+set(ZLIB_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../zlib")
+
+set(ZLIB_SOURCES   
+    ${ZLIB_SRC_DIR}/adler32.c
+    ${ZLIB_SRC_DIR}/compress.c
+    ${ZLIB_SRC_DIR}/crc32.c
+    ${ZLIB_SRC_DIR}/deflate.c
+    ${ZLIB_SRC_DIR}/gzclose.c
+    ${ZLIB_SRC_DIR}/gzlib.c
+    ${ZLIB_SRC_DIR}/gzread.c
+    ${ZLIB_SRC_DIR}/gzwrite.c
+    ${ZLIB_SRC_DIR}/infback.c
+    ${ZLIB_SRC_DIR}/inffast.c
+    ${ZLIB_SRC_DIR}/inflate.c
+    ${ZLIB_SRC_DIR}/inftrees.c
+    ${ZLIB_SRC_DIR}/trees.c
+    ${ZLIB_SRC_DIR}/uncompr.c
+    ${ZLIB_SRC_DIR}/zutil.c
+)
 
 set(MONITOR_SOURCES
         src/main.c
         src/startup.c
         src/lua_runtime.c
         src/lua_runtime.h
+        src/record_writer.c
+        src/record_writer.h
         src/lua_field.c
         src/lua_field.h
         src/dynlink.h
@@ -59,7 +80,7 @@ set(MONITOR_SOURCES
         ../include/events.h
         ../include/ioctl.h)
         
-list(APPEND MONITOR_SOURCES ${LUA_SOURCES})
+list(APPEND MONITOR_SOURCES ${LUA_SOURCES} ${ZLIB_SOURCES})
 
 foreach (FILENAME ${MONITOR_SOURCES})
     get_filename_component(TMP_NAME ${FILENAME} NAME)
@@ -93,6 +114,7 @@ include_directories(
         ../include
         mmheap/
         ${LUA_SRC_DIR}
+        ${ZLIB_SRC_DIR}
 )
 
 add_executable(${MONITOR} ${MONITOR_SOURCES})

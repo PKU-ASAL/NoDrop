@@ -25,6 +25,10 @@
 #define NOD_IOCTL_SET_RECORD_FLAG _IO(NOD_IOCTL_MAGIC, 11)
 #define NOD_IOCTL_GET_RECORD_FLAG _IO(NOD_IOCTL_MAGIC, 12)
 
+#define NOD_RECORD_MODE_STOP 0
+#define NOD_RECORD_MODE_START 1
+#define NOD_RECORD_MODE_COMPRESS 2
+
 struct buffer_count_info
 {
 	uint64_t event_count;
