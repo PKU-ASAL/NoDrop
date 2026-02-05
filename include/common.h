@@ -36,10 +36,12 @@
 struct nod_stack_info {
 	int ioctl_fd;
 	int pkey;
-	int nr;
-	long code;
+	int syscall_nr;
+	long exit_code;
 	unsigned long fsbase;
 	unsigned long hash;
+  uint64_t stack_start;
+  uint64_t stack_end;
 	char *buffer;
 	struct nod_buffer_info *buffer_info;
 };

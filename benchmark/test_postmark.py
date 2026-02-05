@@ -1,55 +1,90 @@
 #!/usr/bin/python3
 
+import os
 import time
+import shutil
 import subprocess
 
+#####################################
+# Configuration
+#####################################
+
+# C1: postmark uses exactly 1 core
+POSTMARK_CPU = os.environ.get("TARGET_CPU_CORE", "0")
 
 LOOP = 10
+
+# Postmark parameters
 NUMBER = 500
 TRANSAC = 10000
 MIN_SIZE = 5120
 MAX_SIZE = 524288
 
-config_file = "postmark.pmrc"
-cmd = "postmark %s"
+WORKDIR = "./postmark_data"
+CONFIG_FILE = "postmark.pmrc"
+
+#####################################
+# Prepare config and workdir
+#####################################
 
 def prepare():
-    global cmd
-    with open(config_file, "w") as f:
-        f.write("set transactions %d\n" % TRANSAC)
-        f.write("set size %d %d\n" % (MIN_SIZE, MAX_SIZE))
-        f.write("set number %d\n" % NUMBER)
+    # Clean working directory (very important)
+    if os.path.exists(WORKDIR):
+        shutil.rmtree(WORKDIR)
+    os.makedirs(WORKDIR, exist_ok=True)
+
+    with open(CONFIG_FILE, "w") as f:
+        f.write(f"set transactions {TRANSAC}\n")
+        f.write(f"set size {MIN_SIZE} {MAX_SIZE}\n")
+        f.write(f"set number {NUMBER}\n")
+        f.write(f"set location {WORKDIR}\n")
         f.write("show\n")
         f.write("run\n")
         f.write("quit\n")
 
-    cmd = cmd % config_file
-    print(cmd)
+#####################################
+# Execute postmark
+#####################################
 
 def execute_postmark():
+    cmd = f"taskset -c {POSTMARK_CPU} postmark {CONFIG_FILE}"
     start = time.time()
-    f = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
-    return (time.time() - start) * 1e3
+    subprocess.run(
+        cmd,
+        shell=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return (time.time() - start) * 1e3   # ms
 
+#####################################
+# Main benchmark loop
+#####################################
 
-res = []
-total_cost = 0
-prepare()
-for i in range(LOOP):
-    print("loop %d ..." % i, end="", flush=True)
-    start = time.time()
-    ret = execute_postmark()
-    total_cost += time.time() - start
-    res.append(ret)
-    print(round(ret, 3), "ms")
+def main():
+    if os.getuid() != 0:
+        print("Run as root")
+        return
 
-total = sum(res)
-avg = total / len(res)
-variance = 0
-for x in res:
-    print(x)
-    variance += (x - avg) * (x - avg)
-variance /= len(res)
-print("Variance:", round(variance, 6))
-print("Average:", round(avg, 3), "ms")
-print("Total cost", total_cost, "s")
+    prepare()
+
+    res = []
+    total_cost = 0
+
+    for i in range(LOOP):
+        print(f"loop {i} ...", end="", flush=True)
+        start = time.time()
+        ret = execute_postmark()
+        total_cost += time.time() - start
+        res.append(ret)
+        print(round(ret, 3), "ms")
+
+    avg = sum(res) / len(res)
+    var = sum((x - avg) ** 2 for x in res) / len(res)
+
+    print("Variance:", round(var, 6))
+    print("Average:", round(avg, 3), "ms")
+    print("Total cost", round(total_cost, 3), "s")
+
+if __name__ == "__main__":
+    main()

@@ -55,15 +55,15 @@ nod_init_procinfo(struct task_struct *task, struct nod_proc_info *p)
     p->mm = task->mm;
 
     p->ioctl_fd = -1;
-    p->load_addr = 0;
+    p->entry_addr = 0;
 
-    if (p->stack.pkey > 0) mm_pkey_free(p->mm, p->stack.pkey);
+    if (p->stack_info.pkey > 0) mm_pkey_free(p->mm, p->stack_info.pkey);
 
     memset(&p->ctx, 0, sizeof(p->ctx));
     memset(&p->sec, 0, sizeof(p->sec));
-    memset(&p->stack, 0, sizeof(p->stack));
+    memset(&p->stack_info, 0, sizeof(p->stack_info));
 
-    p->stack.pkey = mm_pkey_alloc(p->mm);
+    p->stack_info.pkey = mm_pkey_alloc(p->mm);
 }
 
 struct nod_proc_info *
@@ -164,8 +164,8 @@ nod_copy_procinfo(struct task_struct *task, struct nod_proc_info *p)
     parent = __find_proc_info(task->group_leader);
 
     if (parent) {
-        p->load_addr = parent->load_addr;
-        memcpy(&p->stack, &parent->stack, sizeof(struct nod_stack_info));
+        p->entry_addr = parent->entry_addr;
+        memcpy(&p->stack_info, &parent->stack_info, sizeof(struct nod_stack_info));
     }
     
     return NOD_SUCCESS;    
@@ -186,9 +186,9 @@ nod_share_procinfo(struct task_struct *task, struct nod_proc_info *p)
          * Now the process is inherited from parent, including pkey
          * Free the original pkey here.
          */ 
-        if (p->stack.pkey != parent->stack.pkey) {
-            if (p->stack.pkey > 0) mm_pkey_free(p->mm, p->stack.pkey);
-            p->stack.pkey = parent->stack.pkey;
+        if (p->stack_info.pkey != parent->stack_info.pkey) {
+            if (p->stack_info.pkey > 0) mm_pkey_free(p->mm, p->stack_info.pkey);
+            p->stack_info.pkey = parent->stack_info.pkey;
         }
     }
     

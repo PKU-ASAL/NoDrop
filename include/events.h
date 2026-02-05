@@ -884,6 +884,7 @@ struct nod_buffer_info {
     volatile uint64_t nevents;
     volatile uint32_t tail;
     volatile uint64_t n_solved_evts;
+    unsigned long buffer_size;
 };
 
 #ifdef __KERNEL__
@@ -894,9 +895,9 @@ struct nod_overflow_page {
 
 struct nod_buffer {
     char *buffer;
-	char *str_storage;
+	  char *str_storage;
     struct nod_buffer_info *info;
-	uint64_t event_count;
+	  uint64_t event_count;
     struct nod_overflow_page overflow;
 };
 #endif //__KERNEL__
@@ -905,7 +906,7 @@ struct nod_buffer {
 struct nod_event_hdr {
     nanoseconds ts;
     uint32_t tid;
-	uint16_t cpuid;
+	  uint16_t cpuid;
     uint16_t type;
     uint32_t len;
     uint32_t nargs;
@@ -919,7 +920,7 @@ struct nod_name_value {
 
 struct event_filler_arguments {
     char *buf_ptr;
-	char *str_storage;
+	  char *str_storage;
     enum nod_event_type event_type;
     uint64_t nevents;
     uint32_t buffer_size;
@@ -930,9 +931,9 @@ struct event_filler_arguments {
     uint32_t arg_data_size;
     uint32_t snaplen;
     struct pt_regs *regs;
-	bool is_socketcall;
-	int fd;
-	unsigned long socketcall_args[6];
+    bool is_socketcall;
+    int fd;
+    unsigned long socketcall_args[6];
 };
 
 struct nod_event_data {

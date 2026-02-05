@@ -50,7 +50,7 @@ In NoDrop, there are 3 variables can be configured with cmake.
 When you generate cmake files, you can specify these variables. For example, if you want to set that buffer size is 4MB, monitor path is `/my/path/to/monitor` and store path is `/my/path/to/store`, you can run the following commands
 
 ```
-cmake .. -DBUFFER_SIZE=4*Mib -DMONITOR_PATH=/my/path/to/monitor -DSTORE_PATH=/my/path/to/store
+cmake .. -DBUFFER_SIZE=8*Mib -DMONITOR_PATH=/my/path/to/monitor -DSTORE_PATH=/my/path/to/store
 ```
 
 For buffer size, you can specify it with integer or using unit including Kib and Mib. For the above exmaple, you can also sepcify the buffer size using `-DBUFFER_SIZE=4096*1024`.

@@ -22,8 +22,10 @@
 #define NOD_IOCTL_RESTORE_CONTEXT _IO(NOD_IOCTL_MAGIC, 8)
 #define NOD_IOCTL_GET_LUA_STATE _IOR(NOD_IOCTL_MAGIC, 9, struct nod_lua_state)
 #define NOD_IOCTL_SET_LUA_STATE _IOW(NOD_IOCTL_MAGIC, 10, struct nod_lua_state)
-#define NOD_IOCTL_SET_RECORD_FLAG _IO(NOD_IOCTL_MAGIC, 11)
-#define NOD_IOCTL_GET_RECORD_FLAG _IO(NOD_IOCTL_MAGIC, 12)
+#define NOD_IOCTL_GET_BUFFER_SIZE _IO(NOD_IOCTL_MAGIC, 11)
+#define NOD_IOCTL_SET_BUFFER_SIZE _IO(NOD_IOCTL_MAGIC, 12)
+#define NOD_IOCTL_SET_RECORD_FLAG _IO(NOD_IOCTL_MAGIC, 13)
+#define NOD_IOCTL_GET_RECORD_FLAG _IO(NOD_IOCTL_MAGIC, 14)
 
 #define NOD_RECORD_MODE_STOP 0
 #define NOD_RECORD_MODE_START 1
@@ -52,7 +54,7 @@ struct nod_event_statistic
 struct nod_lua_state
 {
 	char lua_path[256];
-	time_t lua_mtime;
+	uint64_t lua_mtime;
 };
 
 #endif // NOD_IOCTL_H_
