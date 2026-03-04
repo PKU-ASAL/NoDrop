@@ -44,13 +44,11 @@ struct nod_proc_info {
 	struct mm_struct *mm;
 	struct nod_buffer buffer;
 	int ioctl_fd;
-	uint64_t entry_addr;
-  uint64_t stack_addr;
-  uint64_t stack_info_addr;
+	unsigned long load_addr;
 	enum nod_proc_status status;
 	struct nod_proc_context ctx;
 	struct nod_proc_security sec;
-	struct nod_stack_info stack_info;
+	struct nod_stack_info stack;
 };
 
 #define nod_proc_set_in(proc)			nod_proc_set_status(proc, NOD_IN, -1)

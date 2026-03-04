@@ -3,9 +3,6 @@
 
 #define PKEY_DISABLE_ACCESS 0x1
 #define PKEY_DISABLE_WRITE  0x2
-#define PKEY_WR   (0)
-#define PKEY_RO   (PKEY_DISABLE_WRITE)
-#define PKEY_NA   (PKEY_DISABLE_WRITE | PKEY_DISABLE_ACCESS)
 
 static inline void
 wrpkru(unsigned int pkru)

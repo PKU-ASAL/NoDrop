@@ -5,145 +5,101 @@ import time
 import subprocess
 from multiprocessing import Process, Semaphore
 
-#####################################
-# Configuration
-#####################################
+UID = 1000
 
-# nginx uses exactly 1 core
-NGINX_CPU = os.environ.get("NGINX_CPU_CORE", "0")
-
-# wrk runs on other cores
-WRK_CPU = os.environ.get("WRK_CPU_CORES", "1-2")
-
-NRINSTANCE = 1       # nginx worker instances (not CPU cores)
+# TOTAL_CPU, CPULINE = 1, 1     # C1
+TOTAL_CPU, CPULINE = 5, 4     # C2
+# TOTAL_CPU, CPULINE = 23, 16     # C3
+# TOTAL_CPU, CPULINE = 39, 32   # C4
+NRINSTANCE = 8
 
 LOOP = 1
-NRCPUS = 8           # wrk threads
+# NRCPUS = 2    #C1
+NRCPUS = 8    #C2
+# NRCPUS = 16     #C3
+# NRCPUS = 32   #C4
 CONNECTION = 100
 DURATION = 20
 URL = "http://127.0.0.1:8089/test.html"
-
-UID = 1000
-
-cmd = (
-    f"taskset -c {WRK_CPU} ./nginx/wrk_/wrk "
-    f"-t {NRCPUS} -c {CONNECTION} -d {DURATION} "
-    f"--timeout {DURATION} {URL}"
-)
-
-#####################################
-# nginx lifecycle
-#####################################
+cmd = "taskset -c %d-%d ./nginx/wrk_/wrk -t %d -c %d -d %d --timeout %d %s" % (CPULINE, TOTAL_CPU, NRCPUS, CONNECTION, DURATION, DURATION, URL)
 
 def prepare():
-    subprocess.run(
-        f"taskset -c {NGINX_CPU} ./nginx/nginx_/sbin/nginx",
-        shell=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    subprocess.run("taskset -c %d-%d ./nginx/nginx_/sbin/nginx" % (0, NRINSTANCE - 1), shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1)
-
-def finish():
-    subprocess.run(
-        "./nginx/nginx_/sbin/nginx -s quit",
-        shell=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    time.sleep(1)
-    subprocess.run(
-        "rm -rf ./nginx/nginx_/logs/access.log",
-        shell=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-#####################################
-# wrk execution
-#####################################
 
 def execute_wrk():
     try:
-        f = subprocess.run(
-            cmd,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-        )
+        f = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         lines = f.stdout.decode("utf-8").split("\n")
-        # wrk output: latency average is usually third line from bottom
         ret = float(lines[-3].split(": ")[-1])
-        return 1e6 / ret   # us per request
+        return 1e6 / ret
     except Exception as e:
-        print("execute_wrk error:", e)
+        print("test_nginx_cg.py:", e)
         return 0
 
-#####################################
-# Multiprocessing logic
-#####################################
+
+def finish():
+    subprocess.run("./nginx/nginx_/sbin/nginx -s quit", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    time.sleep(1)
+    subprocess.run("rm -rf ./nginx/nginx_/logs/access.log", shell=True)
 
 s1 = Semaphore(0)
 s2 = Semaphore(0)
 
 def task1():
-    first = True
+    first = 1
     os.setgid(UID)
     os.setuid(UID)
-    for _ in range(LOOP):
+    for i in range(LOOP):
         s1.acquire()
-        if not first:
+        if first == 0:
             finish()
         prepare()
-        first = False
+        first = 0
         s2.release()
     s1.acquire()
     finish()
 
 def task2():
+    # with open("/sys/fs/cgroup/cpuset/perf/tasks", "w") as f:
+    #     f.write(str(os.getpid()))
+    
     res = []
     total_cost = 0
-
     print(cmd)
+    try:
+        for i in range(LOOP):
+            print("loop %d ..." % i, end="", flush=True)
+            s1.release()
+            s2.acquire()
+            start = time.time()
+            ret = execute_wrk()
+            total_cost += time.time() - start
+            res.append(ret)
+            print(round(ret, 3), "us/req")
 
-    for i in range(LOOP):
-        print(f"loop {i} ...", end="", flush=True)
         s1.release()
-        s2.acquire()
+        total = sum(res)
+        avg = total / len(res)
+        variance = 0
+        for x in res:
+            print(x)
+            variance += (x - avg) * (x - avg)
+        variance /= len(res)
+        print("Variance:", round(variance, 6))
+        print("Average:", round(avg, 2), "us per req")
+        print("Total cost", total_cost, "s")
 
-        start = time.time()
-        ret = execute_wrk()
-        total_cost += time.time() - start
-
-        res.append(ret)
-        print(round(ret, 3), "us/req")
-
-    s1.release()
-
-    avg = sum(res) / len(res)
-    var = sum((x - avg) ** 2 for x in res) / len(res)
-
-    print("Variance:", round(var, 6))
-    print("Average:", round(avg, 2), "us per req")
-    print("Total cost", round(total_cost, 3), "s")
-
-#####################################
-# Main
-#####################################
+    except Exception as e:
+        print(e)
 
 def main():
     if os.getuid() != 0:
         print("Run as root")
-        return
-
+        exit(0)
     p1 = Process(target=task1)
     p2 = Process(target=task2)
-
     p1.start()
     p2.start()
 
-    p1.join()
-    p2.join()
-
-if __name__ == "__main__":
-    main()
+main()

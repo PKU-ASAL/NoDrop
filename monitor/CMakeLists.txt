@@ -76,7 +76,6 @@ set(MONITOR_SOURCES
         ../kmodule/tables/dynamic_params_table.c
         ../kmodule/tables/events_table.c
         ../kmodule/tables/flags_table.c
-        ../include/tsc.h
         ../include/common.h
         ../include/events.h
         ../include/ioctl.h)

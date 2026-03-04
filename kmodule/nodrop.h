@@ -93,8 +93,6 @@ int record_one_event(struct nod_proc_info *p, enum nod_event_type type, struct n
 int init_buffer(struct nod_buffer *buffer);
 void free_buffer(struct nod_buffer *buffer);
 void reset_buffer(struct nod_buffer *buffer, int flags);
-int nod_event_set_buffer_size(unsigned long size);
-int nod_event_get_buffer_size(unsigned long *size);
 
 // elf.c
 #define BAD_ADDR(x) ((unsigned long)(x) >= TASK_SIZE)

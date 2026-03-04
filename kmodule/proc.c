@@ -5,7 +5,7 @@
 #include <linux/types.h>
 #include <linux/mutex.h>
 #include <linux/mman.h>
-#include <linux/vmalloc.h>
+
 #include "nodrop.h"
 #include "procinfo.h"
 
@@ -103,7 +103,6 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
     int ret, cpu;
     uint64_t count;
-    unsigned long bufsize;
     char *ptr;
     struct buffer_count_info cinfo;
     struct fetch_buffer_struct fetch;
@@ -213,14 +212,14 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
             goto out;
         }
 
-        memcpy(&p->stack_info, &stack, sizeof(stack));
+        memcpy(&p->stack, &stack, sizeof(stack));
 
         if (cmd == NOD_IOCTL_RESTORE_CONTEXT)
-            nod_proc_set_context(p, p->stack_info.ioctl_fd);
+            nod_proc_set_context(p, p->stack.ioctl_fd);
         else
-            nod_proc_set_security(p, p->stack_info.ioctl_fd);
+            nod_proc_set_security(p, p->stack.ioctl_fd);
 
-        p->stack_info.ioctl_fd = -1;
+        p->stack.ioctl_fd = -1;
 
         break;
 
@@ -241,26 +240,6 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
             return -EFAULT;
         break;
     }
-    case NOD_IOCTL_SET_BUFFER_SIZE:
-        if (nod_event_set_buffer_size(arg))
-        {
-            ret = -EINVAL;
-            goto out;
-        }
-        break;
-
-    case NOD_IOCTL_GET_BUFFER_SIZE:
-        if (nod_event_get_buffer_size(&bufsize))
-        {
-            ret = -EINVAL;
-            goto out;
-        }
-        if (copy_to_user((void *)arg, (void *)&bufsize, sizeof(bufsize)))
-        {
-            ret = -EFAULT;
-            goto out;
-        }
-        break;
 
     case NOD_IOCTL_SET_RECORD_FLAG:
         if (copy_from_user(&g_record_flag,
@@ -290,7 +269,6 @@ static int nod_dev_mmap(struct file *filp, struct vm_area_struct *vma)
     int ret;
     long length;
     struct nod_proc_info *p;
-    const struct nod_buffer_info *info;
 
     p = filp->private_data;
     if (!p || p->status != NOD_IN)
@@ -304,18 +282,17 @@ static int nod_dev_mmap(struct file *filp, struct vm_area_struct *vma)
         return -EIO;
     }
 
-    info = (const struct nod_buffer_info *)p->buffer.info;
     length = vma->vm_end - vma->vm_start;
     if (length <= PAGE_SIZE)
     {
-        ret = remap_vmalloc_range(vma, (void *)info, 0);
+        ret = remap_vmalloc_range(vma, p->buffer.info, 0);
         if (ret < 0)
         {
             vpr_err("remap_vmalloc_range for buffer info failed (%d)\n", ret);
             return ret;
         }
     }
-    else if (length == info->buffer_size)
+    else if (length == BUFFER_SIZE)
     {
         if (vma->vm_flags & VM_WRITE)
         {
@@ -345,21 +322,13 @@ static int nod_dev_release(struct inode *inode, struct file *filp)
     return 0;
 }
 
-// static const struct file_operations g_nod_fops = {
-//     .open = nod_dev_open,
-//     .read = nod_dev_read,
-//     .unlocked_ioctl = nod_dev_ioctl,
-//     .release = nod_dev_release,
-//     .mmap = nod_dev_mmap,
-//     .owner = THIS_MODULE};
-
-static const struct proc_ops g_nod_fops = {
-    .proc_open = nod_dev_open,
-    .proc_read = nod_dev_read,
-    .proc_ioctl = nod_dev_ioctl,
-    .proc_release = nod_dev_release,
-    .proc_mmap = nod_dev_mmap,
-};
+static const struct file_operations g_nod_fops = {
+    .open = nod_dev_open,
+    .read = nod_dev_read,
+    .unlocked_ioctl = nod_dev_ioctl,
+    .release = nod_dev_release,
+    .mmap = nod_dev_mmap,
+    .owner = THIS_MODULE};
 
 int proc_init(void)
 {

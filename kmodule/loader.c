@@ -7,14 +7,14 @@
 #include <linux/ktime.h>
 #include <linux/fs_struct.h>
 #include <linux/delay.h>
-#include <linux/mman.h>
-#include <linux/vmalloc.h>
+
 
 #include "nodrop.h"
 #include "syscall.h"
 #include "procinfo.h"
 
 #include "common.h"
+#include "events.h"
 #include "config.h"
 
 static struct elf_phdr *monitor_elf_phdata, *interp_elf_phdata;
@@ -52,7 +52,7 @@ check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg
 
     mm = current->mm;
 
-    mmap_read_lock(mm);
+    down_read(&mm->mmap_sem);
     for (vma = mm->mmap; vma; vma = vma->vm_next) {
         if (vma->vm_file == filp_monitor) {
             retval = (*resolve)((struct vm_area_struct const * const)vma, arg);
@@ -63,7 +63,7 @@ check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg
             case MAPPING_NEXT:
                 break;
             default:
-            mmap_read_unlock(mm);
+                up_read(&mm->mmap_sem);
                 ASSERT(false);
             }
         }
@@ -72,7 +72,7 @@ check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg
     retval = MAPPING_NOTFOUND;
 
 out:
-    mmap_read_unlock(mm);
+    up_read(&mm->mmap_sem);
     return retval;
 }
 
@@ -83,77 +83,67 @@ nod_mmap_check(unsigned long addr, unsigned long length)
     return check_mapping(get_monitor_addr, (void *)arg) == MAPPING_OK ? 1 : 0;
 }
 
-static unsigned long
-create_stack_with_red_zone(unsigned long addr, unsigned long size)
-{
-    unsigned long stack_begin;
-    unsigned long prefer_addr = addr;
-    if (prefer_addr > PAGE_SIZE) {
-        prefer_addr -= PAGE_SIZE;
-    }
-    stack_begin = vm_mmap(NULL, prefer_addr, size + PAGE_SIZE + PAGE_SIZE, 0, MAP_PRIVATE | MAP_ANONYMOUS, 0);
-    if (BAD_ADDR(stack_begin)) {
-        return stack_begin;
-    }
-
-    addr = stack_begin + PAGE_SIZE;
-    vm_munmap(addr, size);
-    addr = vm_mmap(NULL, addr, size, PROT_READ | PROT_WRITE,
-                   MAP_PRIVATE | MAP_ANONYMOUS, 0);
-    return addr;
-}
-
-
 static int
 create_elf_tbls(struct elfhdr *exec,
                 uint64_t load_addr,
                 uint64_t interp_load_addr,
-                struct nod_stack_info *stack_info,
-                uint64_t *stack_info_addr,
+                const struct pt_regs *regs,
+                const struct nod_stack_info *stack,
                 uint64_t *target_sp,
-                int argc,
-                const char *argv[]) {
+                char *argv[]) {
 
-#define STACK_ROUND(sp, items)  ((elf_addr_t __user *)(((uint64_t) ((sp) - (items))) &~ 15UL))
-#define STACK_ADD(sp, items)    ((elf_addr_t __user *)(sp) - (items))
-#define STACK_ALLOC(sp, len)    ({(sp) -= (len); sp;})
+#define STACK_ROUND(sp, items) 	((elf_addr_t __user *)(((uint64_t) ((sp) - (items))) &~ 15UL))
+#define STACK_ADD(sp, items) ((elf_addr_t __user *)(sp) - (items))
+#define STACK_ALLOC(sp, len) ({(sp) -= (len); sp;})
 
-    int i, envc, elf_info_idx, items;
-    uint64_t p, arg_start, env_start;
-    unsigned char k_rand_bytes[16];
+    int i, argc, envc;
+    int elf_info_idx;
+    int items;
+    uint64_t p;
+    uint64_t arg_start, env_start, original_rsp;
 
     elf_addr_t __user *sp;
     elf_addr_t __user *u_rand_bytes;
     elf_addr_t *elf_info = NULL;
+    unsigned char k_rand_bytes[16];
 
-    // allocate a dedicate stack for the consumer
-    p = create_stack_with_red_zone(0, CONFIG_MONITOR_STACK_SIZE);
-    if (BAD_ADDR(p))
-        goto err;
-    stack_info->stack_start = p;
-    stack_info->stack_end = p + CONFIG_MONITOR_STACK_SIZE;
-    p = stack_info->stack_end - sizeof(void *);
+    p = original_rsp = regs->sp;
 
-    // generate random bytes
-    get_random_bytes(k_rand_bytes, sizeof(k_rand_bytes));
-    u_rand_bytes = (elf_addr_t __user *)STACK_ALLOC(p, sizeof(k_rand_bytes));
-    if (copy_to_user(u_rand_bytes, k_rand_bytes, sizeof(k_rand_bytes)))
+    if (exec) {
+        /*
+        * Generate 16 random bytes for userspace PRNG seeding.
+        */
+        i = sizeof(k_rand_bytes);
+    } else {
+        /*
+         * Put randomly-sized (8~15) bytes for stack randomization
+         */
+        i = (get_random_int() % 8) + 8;
+    }
+
+    get_random_bytes(k_rand_bytes, i);
+    u_rand_bytes = (elf_addr_t __user *)STACK_ALLOC(p, i);
+    if (copy_to_user(u_rand_bytes, k_rand_bytes, i))
         goto err;
+
+    // get the number of arg vector and env vector
+    for (argc = 0; argv[argc]; argc++);
 
     // put nod_stack_info into Runtime stack
-    *stack_info_addr = p = STACK_ALLOC(p, sizeof(*stack_info));
-    if (copy_to_user((char __user *)p, stack_info, sizeof(*stack_info)))
-        goto err;
+    p = STACK_ALLOC(p, sizeof(*stack));
+    copy_to_user((char __user *)p, stack, sizeof(*stack));
+    argv[argc] = (char *)p;
 
     for(i = argc - 1; i >= 0; --i) {
         int len = strlen(argv[i]) + 1;
         p = STACK_ALLOC(p, len);
-        if (copy_to_user((char __user *)p, argv[i], len))
-            goto err;
+        copy_to_user((char __user *)p, argv[i], len);
     }
     arg_start = p;
 
-    #define INSERT_AUX_ENT(id, val) \
+
+
+#define INSERT_AUX_ENT(id, val) \
     do { \
         elf_info[elf_info_idx++] = id; \
         elf_info[elf_info_idx++] = val; \
@@ -166,22 +156,24 @@ create_elf_tbls(struct elfhdr *exec,
     * we only need to put the argc, argv and env onto the stack
     */
     elf_info_idx = 0;
-    elf_info = vmalloc(sizeof(elf_addr_t) * 12 * 2);
-    if (!elf_info) goto err;
-    INSERT_AUX_ENT(AT_HWCAP, ELF_HWCAP);
-    INSERT_AUX_ENT(AT_PAGESZ, ELF_EXEC_PAGESIZE);
-    INSERT_AUX_ENT(AT_CLKTCK, CLOCKS_PER_SEC);
-    INSERT_AUX_ENT(AT_PHDR, load_addr + exec->e_phoff);
-    INSERT_AUX_ENT(AT_PHENT, sizeof(struct elf_phdr));
-    INSERT_AUX_ENT(AT_PHNUM, exec->e_phnum);
-    INSERT_AUX_ENT(AT_BASE, interp_load_addr);
-    INSERT_AUX_ENT(AT_FLAGS, 0);
-    INSERT_AUX_ENT(AT_ENTRY, load_addr + exec->e_entry);
-    // INSERT_AUX_ENT(AT_EXECFN, original_rsp);
-    INSERT_AUX_ENT(AT_RANDOM, (elf_addr_t)(unsigned long)u_rand_bytes);
-    INSERT_AUX_ENT(AT_NULL, 0);
+    if (exec) {
+        elf_info = vmalloc(sizeof(elf_addr_t) * 12 * 2);
+        if (!elf_info) goto err;
+        INSERT_AUX_ENT(AT_HWCAP, ELF_HWCAP);
+        INSERT_AUX_ENT(AT_PAGESZ, ELF_EXEC_PAGESIZE);
+        INSERT_AUX_ENT(AT_CLKTCK, CLOCKS_PER_SEC);
+        INSERT_AUX_ENT(AT_PHDR, load_addr + exec->e_phoff);
+        INSERT_AUX_ENT(AT_PHENT, sizeof(struct elf_phdr));
+        INSERT_AUX_ENT(AT_PHNUM, exec->e_phnum);
+        INSERT_AUX_ENT(AT_BASE, interp_load_addr);
+        INSERT_AUX_ENT(AT_FLAGS, 0);
+        INSERT_AUX_ENT(AT_ENTRY, load_addr + exec->e_entry);
+        INSERT_AUX_ENT(AT_EXECFN, original_rsp);
+        INSERT_AUX_ENT(AT_RANDOM, (elf_addr_t)(unsigned long)u_rand_bytes);
+        INSERT_AUX_ENT(AT_NULL, 0);
+    }
 
-    #define INSERT_ENV_ENT(start, sp) \
+#define INSERT_ENV_ENT(start, sp) \
     ({\
         size_t len; \
         if (put_user((elf_addr_t)start, (elf_addr_t *)sp++)) \
@@ -192,7 +184,7 @@ create_elf_tbls(struct elfhdr *exec,
         len; \
     })
 
-    #define TRAVERSE_ENV_ENT(start) \
+#define TRAVERSE_ENV_ENT(start) \
     ({\
         size_t len; \
         len = strnlen_user((void __user *)start, MAX_ARG_STRLEN); \
@@ -215,8 +207,7 @@ create_elf_tbls(struct elfhdr *exec,
     sp = STACK_ROUND(sp, items);
     *target_sp = (unsigned long)sp;
 
-    // . <- stacktop
-    /* argc + 1
+    /* argc
      * argv[0]
      * argv[1]
      * ...
@@ -229,10 +220,8 @@ create_elf_tbls(struct elfhdr *exec,
      * env[envc - 1]
      * 0
      * Aux
-     * ...
-     * Contents of argv <--- arg_start
-     * ...
      */
+
 
     // put argc
     // We put argc + 1 here because the additional value of address of nod_stack_info
@@ -247,9 +236,9 @@ create_elf_tbls(struct elfhdr *exec,
     }
 
     // put address of nod_stack_info
-    if(put_user((elf_addr_t)*stack_info_addr, sp++))
+    if(put_user((elf_addr_t)argv[argc], sp++))
         goto err;
-
+    
     // put NULL to mark the end of argv
     if (put_user(0, sp++))
         goto err;
@@ -265,26 +254,21 @@ create_elf_tbls(struct elfhdr *exec,
         goto err;
 
     // put AUXV
-    if (copy_to_user(sp, elf_info, elf_info_idx * sizeof(elf_addr_t))) {
+    if (exec && copy_to_user(sp, elf_info, elf_info_idx * sizeof(elf_addr_t))) {
         goto err;
     }
 
-    vfree(elf_info);
+    if (elf_info) vfree(elf_info);
     return NOD_SUCCESS;
 
 err:
-    vfree(elf_info);
+    *target_sp = original_rsp;
+    if (elf_info) vfree(elf_info);
     return -EFAULT;
 }
 
 static int
-update_stack_info(const struct nod_stack_info *stack_info, uint64_t stack_info_addr)
-{
-    return copy_to_user((char __user *)stack_info_addr, stack_info, sizeof(*stack_info));
-}
-
-static int
-do_load_monitor(struct nod_proc_info *p, int argc, const char *argv[])
+do_load_monitor(const struct pt_regs *regs, uint64_t *entry, uint64_t *load, uint64_t *interp_load)
 {
     int retval;
     uint64_t load_addr = 0;
@@ -312,11 +296,6 @@ do_load_monitor(struct nod_proc_info *p, int argc, const char *argv[])
         goto out;
     }
 
-    retval = create_elf_tbls(&monitor_elf_ex, load_addr, interp_load_addr, 
-                             &p->stack_info, &p->stack_info_addr, &p->stack_addr, argc, argv);
-    if (retval) {
-        goto out;
-    }
 
     load_entry = filp_interpreter ? 
                 interp_load_addr + interp_elf_ex.e_entry : 
@@ -326,7 +305,10 @@ do_load_monitor(struct nod_proc_info *p, int argc, const char *argv[])
             "load interp at %llx\n"
             "entry = %llx\n", load_addr, interp_load_addr, load_entry);
 
-    p->entry_addr = load_entry;
+    if (entry)  *entry = load_entry;
+    if (load)   *load = load_addr;
+    if (interp_load) *interp_load = interp_load_addr;
+
     retval = NOD_SUCCESS;
 
 out:
@@ -337,10 +319,14 @@ int
 nod_load_monitor(struct nod_proc_info *p)
 {
     int retval;
+    uint64_t entry, sp;
     struct pt_regs *regs;
+    struct elf64_hdr *cur_elf_ex;
+    uint64_t load_addr = 0, interp_load_addr = 0;
+    // nanoseconds start1, end1;
+    // nanoseconds start2, end2;
 
-    const int argc = 1;
-    const char *argv[] = { CONFIG_MONITOR_PATH, NULL };
+    char *argv[] = { MONITOR_PATH, NULL };
 
     regs = current_pt_regs();
 
@@ -355,32 +341,45 @@ nod_load_monitor(struct nod_proc_info *p)
         break;
     }
 
-    if (!p->entry_addr) {
-        retval = do_load_monitor(p, argc, argv);
+    if (!p->load_addr) {
+        // start1 = nod_nsecs();
+        retval = do_load_monitor(regs, &entry, &load_addr, &interp_load_addr);
+        // end1 = nod_nsecs();
         if (retval != NOD_SUCCESS) {
             goto out;
         }
-        vpr_dbg("monitor: entry 0x%llx stack [0x%llx-0x%llx] stack_info_addr 0x%llx\n", 
-                 p->entry_addr, p->stack_info.stack_start,
-                 p->stack_info.stack_end, p->stack_info_addr);
+        cur_elf_ex = &monitor_elf_ex;
+        p->load_addr = load_addr;
+    } else {
+        cur_elf_ex = NULL;
+        entry = p->load_addr + monitor_elf_ex.e_entry;
     }
 
-    p->stack_info.syscall_nr = syscall_get_nr(current, regs);
-    // store exit_code from the rdi register for exit-family syscalls
-    syscall_get_arguments_deprecated(current, regs, 0, 1, &p->stack_info.exit_code);
-    retval = update_stack_info(&p->stack_info, p->stack_info_addr);
-    if (retval > 0) {
+    p->stack.nr = syscall_get_nr(current, regs);
+    syscall_get_arguments_deprecated(current, regs, 0, 1, &p->stack.code);
+
+    // if (cur_elf_ex) start2 = nod_nsecs();
+    retval = create_elf_tbls(cur_elf_ex, load_addr, interp_load_addr, regs, &p->stack, &sp, argv);
+    // if (cur_elf_ex) {
+    //   end2 = nod_nsecs();
+    //   pr_info("%llu\n", (end1 - start1) + (end2 - start2));
+    // }
+    if (retval != NOD_SUCCESS) {
         goto out;
     }
 
     nod_proc_set_in(p);
 
+
+    // start1 = nod_nsecs();
     nod_prepare_security(p);
     nod_prepare_context(p, regs);
+    // end1 = nod_nsecs();
+    // pr_info("pre %llu\n", end1 - start1);
 
     elf_reg_init(&current->thread, regs, 0);
-    regs->sp = p->stack_addr;
-    regs->cx = regs->ip = p->entry_addr;
+    regs->sp = sp;
+    regs->cx = regs->ip = entry;
 
     return NOD_SUCCESS_LOAD;
 
@@ -407,7 +406,7 @@ int loader_init(void)
 
     monitor_info_off = 0;
 
-    filp_monitor = open_exec(CONFIG_MONITOR_PATH);
+    filp_monitor = open_exec(MONITOR_PATH);
     retval = PTR_ERR(filp_monitor);
     if (IS_ERR(filp_monitor)) {
         filp_monitor = NULL;
