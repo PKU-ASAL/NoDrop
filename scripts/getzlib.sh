@@ -4,7 +4,7 @@ set -e
 BASE_DIR="$(cd "$(dirname "$0")/.."; pwd)"
 
 ZLIB_VERSION="1.3.1"
-ZLIB_URL="https://zlib.net/zlib-${ZLIB_VERSION}.tar.gz"
+ZLIB_URL="https://zlib.net/fossils/zlib-${ZLIB_VERSION}.tar.gz"
 
 ZLIB_TAR="${BASE_DIR}/zlib-${ZLIB_VERSION}.tar.gz"
 ZLIB_TMP_DIR="${BASE_DIR}/zlib-${ZLIB_VERSION}"
