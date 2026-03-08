@@ -10,7 +10,7 @@
 #include <linux/types.h>
 #include <linux/path.h>
 #include <linux/fs_struct.h>
-#include <asm/fpu/internal.h>
+// #include <asm/fpu/internal.h>
 #include <linux/fdtable.h>
 #include "nodrop.h"
 #include "common.h"

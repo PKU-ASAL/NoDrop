@@ -9,6 +9,7 @@
 #include <linux/delay.h>
 #include <linux/mman.h>
 #include <linux/vmalloc.h>
+#include <linux/version.h>
 
 #include "nodrop.h"
 #include "syscall.h"
@@ -56,7 +57,13 @@ check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg
 #else
     down_read(&mm->mmap_sem);
 #endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    VMA_ITERATOR(vmi, mm, 0);
+    for_each_vma(vmi, vma) {
+    // for (vma = mm->mmap; vma; vma = vma->vm_next) {
+#else
     for (vma = mm->mmap; vma; vma = vma->vm_next) {
+#endif
         if (vma->vm_file == filp_monitor) {
             retval = (*resolve)((struct vm_area_struct const * const)vma, arg);
             switch(retval) {
@@ -87,6 +94,8 @@ out:
     return retval;
 }
 
+
+
 int
 nod_mmap_check(unsigned long addr, unsigned long length) 
 {
@@ -109,8 +118,13 @@ create_stack_with_red_zone(unsigned long addr, unsigned long size)
 
     addr = stack_begin + PAGE_SIZE;
     vm_munmap(addr, size);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,0,0)
     addr = vm_mmap(NULL, addr, size, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANONYMOUS, 0);
+#else
+    addr = vm_mmap(NULL, addr, size, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK | MAP_POPULATE, 0);
+#endif
     return addr;
 }
 
@@ -291,7 +305,11 @@ err:
 static int
 update_stack_info(const struct nod_stack_info *stack_info, uint64_t stack_info_addr)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,0,0)
     return copy_to_user((char __user *)stack_info_addr, stack_info, sizeof(*stack_info));
+#else
+    return copy_to_user((char __user *)stack_info_addr, stack_info, sizeof(*stack_info)) ? -EFAULT : 0;
+#endif
 }
 
 static int

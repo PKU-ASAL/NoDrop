@@ -50,6 +50,20 @@
 #endif
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+#define INVALID_USER_MEMORY \
+	do{\
+		len = (int)strscpy(args->buf_ptr + args->arg_data_offset, \
+			"(INVAL)", \
+			max_arg_size); \
+		if (len == -E2BIG) { \
+			len = max_arg_size; \
+		} else { \
+			len++; \
+		} \
+	} while(0)
+
+#else
 #define INVALID_USER_MEMORY \
     do{\
         len = (int)strlcpy(args->buf_ptr + args->arg_data_offset, \
@@ -58,6 +72,7 @@
         if (++len > (int)max_arg_size) \
             len = max_arg_size;	\
     } while(0)
+#endif
 
 #define merge_64(hi, lo) ((((unsigned long long)(hi)) << 32) + ((lo) & 0xffffffffUL))
 
@@ -254,19 +269,20 @@ static unsigned long nod_get_mm_swap(struct mm_struct *mm)
 struct file *nod_get_mm_exe_file(struct mm_struct *mm)
 {
 	struct file *exe_file;
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0)
+#if defined(get_file_rcu)
 	rcu_read_lock();
 	exe_file = rcu_dereference(mm->exe_file);
-	if (exe_file && !get_file_rcu(exe_file))
+	if(exe_file && !get_file_rcu(exe_file))
 		exe_file = NULL;
 	rcu_read_unlock();
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 7, 0)
+	rcu_read_lock();
+	exe_file = get_file_rcu(&mm->exe_file);
+	rcu_read_unlock();
 #else
-	/* We need mmap_sem to protect against races with removal of
-	 * VM_EXECUTABLE vmas */
 	down_read(&mm->mmap_sem);
 	exe_file = mm->exe_file;
-	if (exe_file)
+	if(exe_file)
 		get_file(exe_file);
 	up_read(&mm->mmap_sem);
 #endif
@@ -738,23 +754,46 @@ static int val_to_ring(struct event_filler_arguments *args, uint64_t val, u32 va
                     INVALID_USER_MEMORY;
                 }
             } else {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+                len = (int)strscpy(args->buf_ptr + args->arg_data_offset,
+                                (const char *)(syscall_arg_t)val,
+                                max_arg_size);
+				if(len == -E2BIG) {
+					len = max_arg_size;
+				} else {
+					len++;
+				}
+
+#else
                 len = (int)strlcpy(args->buf_ptr + args->arg_data_offset,
                                 (const char *)(syscall_arg_t)val,
                                 max_arg_size);
 
                 if (++len > (int)max_arg_size)
                     len = max_arg_size;
+#endif
             }
         } else {
             /*
              * Handle NULL pointers
              */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+            len = (int)strscpy(args->buf_ptr + args->arg_data_offset,
+                "(NULL)",
+                max_arg_size);
+			if(len == -E2BIG) {
+					len = max_arg_size;
+				} else {
+					len++;
+				}
+#else
             len = (int)strlcpy(args->buf_ptr + args->arg_data_offset,
                 "(NULL)",
                 max_arg_size);
 
             if (++len > (int)max_arg_size)
                 len = max_arg_size;
+#endif
         }
 
         break;
@@ -2146,7 +2185,10 @@ cgroups_error:
 
 		if (exe_file != NULL) {
 			if (file_inode(exe_file) != NULL) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+				exe_writable |= (file_permission(exe_file, MAY_WRITE) == 0);
+				exe_writable |= inode_owner_or_capable(file_mnt_idmap(exe_file), file_inode(exe_file));
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 				exe_writable |= (inode_permission(current_user_ns(), file_inode(exe_file), MAY_WRITE) == 0);
 				exe_writable |= inode_owner_or_capable(current_user_ns(), file_inode(exe_file));
 #else

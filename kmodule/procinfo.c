@@ -7,8 +7,8 @@
 #include <linux/delay.h>
 #include <linux/hashtable.h>
 #include <linux/pkeys.h>
-
-
+#include <linux/rcupdate.h>
+#include <linux/version.h>
 #include "nodrop.h"
 #include "procinfo.h"
 #include "ioctl.h"
@@ -23,7 +23,11 @@ __find_proc_info(struct task_struct *task)
     struct nod_proc_info *p;
 
     rcu_read_lock();
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    hash_for_each_possible_rcu(proc_info_hl_head, p, hnode, task->pid) {
+#else
     hash_for_each_possible_rcu(proc_info_hl_head, p, rcu, task->pid) {
+#endif
         if (p->pid == task->pid) {
             rcu_read_unlock();
             return p;
@@ -36,7 +40,11 @@ __find_proc_info(struct task_struct *task)
 static inline int
 __insert_proc_info(struct nod_proc_info *p)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    hash_add_rcu(proc_info_hl_head, &p->hnode, p->pid);
+#else
     hash_add_rcu(proc_info_hl_head, &p->rcu, p->pid);
+#endif
 
     return true;
 }
@@ -44,8 +52,13 @@ __insert_proc_info(struct nod_proc_info *p)
 static void
 __remove_proc_info(struct nod_proc_info *p)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    hash_del_rcu(&p->hnode);
+    call_rcu(&p->rcu, nod_free_procinfo_rcu);
+#else
     hash_del_rcu(&p->rcu);
     synchronize_rcu();
+#endif
 }
 
 void
@@ -98,6 +111,14 @@ nod_free_procinfo(struct nod_proc_info *p)
     free_buffer(&p->buffer);
     kmem_cache_free(proc_info_cachep, p);
 }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+static void nod_free_procinfo_rcu(struct rcu_head *rcu)
+{
+    struct nod_proc_info *p = container_of(rcu, struct nod_proc_info, rcu);
+
+    nod_free_procinfo(p);
+}
+#endif
 
 struct nod_proc_info *
 nod_proc_acquire(enum nod_proc_status status, 
@@ -148,7 +169,9 @@ nod_proc_release(struct task_struct *task)
     per_cpu(g_stat, smp_processor_id()).n_drop_evts_unsolved += p->buffer.info->nevents;
 
     __remove_proc_info(p);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
     nod_free_procinfo(p);
+#endif
 
     return retval;
 }
@@ -216,7 +239,11 @@ nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned long *, va_list),
     ret = 0;
     
     rcu_read_lock();
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    hash_for_each_rcu(proc_info_hl_head, bkt, p, hnode) {
+#else
     hash_for_each_rcu(proc_info_hl_head, bkt, p, rcu) {
+#endif
         va_start(args, func);
         fb = func(p, &ret, args);
         va_end(args);
@@ -256,6 +283,19 @@ procinfo_destroy(void)
     int bkt;
     struct nod_proc_info *this;
     struct hlist_node *tmp;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    if(proc_info_cachep) {
+        hash_for_each_safe(proc_info_hl_head, bkt, tmp, this, hnode) {
+            while(this->status == NOD_IN) {
+                pr_info("wait for exiting monitor (pid %d status %d)\n", this->pid, this->status);
+                msleep(5);
+            }
+            hash_del_rcu(&this->hnode);
+            call_rcu(&this->rcu, nod_free_procinfo_rcu);
+        }
+        kmem_cache_destroy(proc_info_cachep);
+    }
+#else
     if(proc_info_cachep) {
         rcu_read_lock();
         hash_for_each_safe(proc_info_hl_head, bkt, tmp, this, rcu) {
@@ -268,4 +308,5 @@ procinfo_destroy(void)
         rcu_read_unlock();
         kmem_cache_destroy(proc_info_cachep);
     }
+#endif
 }
