@@ -16,9 +16,10 @@
 #define vpr_dbg(fmt, ...)
 // #define vpr_dbg(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
 
-#define NOD_TEST(task) if (!(task->cred->uid.val == 1000))
+// #define NOD_TEST(task) if (!(task->cred->uid.val == 0))
 // #define NOD_TEST(task) if (!(STR_EQU(current->comm, "redis-server")))
 // #define NOD_TEST(task) if (!(STR_EQU(current->comm, "getpid")))
+#define NOD_TEST(task) if (!(STR_EQU(current->comm, "helloworld")))
 #define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
 #define ASSERT(expr) BUG_ON(!(expr))
 

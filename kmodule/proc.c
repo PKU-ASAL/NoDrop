@@ -281,16 +281,7 @@ static int nod_dev_release(struct inode *inode, struct file *filp)
     filp->private_data = NULL;
     return 0;
 }
-
-// static const struct file_operations g_nod_fops = {
-//     .open = nod_dev_open,
-//     .read = nod_dev_read,
-//     .unlocked_ioctl = nod_dev_ioctl,
-//     .release = nod_dev_release,
-//     .mmap = nod_dev_mmap,
-//     .owner = THIS_MODULE
-// };
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
 static const struct proc_ops g_nod_fops = {
     .proc_open = nod_dev_open,
     .proc_read = nod_dev_read,
@@ -298,6 +289,16 @@ static const struct proc_ops g_nod_fops = {
     .proc_release = nod_dev_release,
     .proc_mmap = nod_dev_mmap,
 };
+#else
+static const struct file_operations g_nod_fops = {
+    .open = nod_dev_open,
+    .read = nod_dev_read,
+    .unlocked_ioctl = nod_dev_ioctl,
+    .release = nod_dev_release,
+    .mmap = nod_dev_mmap,
+    .owner = THIS_MODULE
+};
+#endif
 
 int proc_init(void) {
     int ret;

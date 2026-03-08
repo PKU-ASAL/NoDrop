@@ -41,7 +41,7 @@ else()
 endif()
 
 if(NOT BUFFER_SIZE)
-        set(BUFFER_SIZE 8*Mib)
+        set(BUFFER_SIZE 1*Mib)
 endif()
 
 if(NOT MONITOR)

@@ -51,8 +51,11 @@ check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg
     struct vm_area_struct *vma;
 
     mm = current->mm;
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
     mmap_read_lock(mm);
+#else
+    down_read(&mm->mmap_sem);
+#endif
     for (vma = mm->mmap; vma; vma = vma->vm_next) {
         if (vma->vm_file == filp_monitor) {
             retval = (*resolve)((struct vm_area_struct const * const)vma, arg);
@@ -63,7 +66,11 @@ check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg
             case MAPPING_NEXT:
                 break;
             default:
-            mmap_read_unlock(mm);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
+                    mmap_read_unlock(mm);
+#else
+                    up_read(&mm->mmap_sem);
+#endif
                 ASSERT(false);
             }
         }
@@ -72,7 +79,11 @@ check_mapping(int (*resolve) (struct vm_area_struct const * const vma, void *arg
     retval = MAPPING_NOTFOUND;
 
 out:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
     mmap_read_unlock(mm);
+#else
+    up_read(&mm->mmap_sem);
+#endif
     return retval;
 }
 
