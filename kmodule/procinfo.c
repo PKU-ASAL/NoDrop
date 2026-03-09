@@ -57,10 +57,10 @@ __remove_proc_info(struct nod_proc_info *p)
 //     hash_del_rcu(&p->hnode);
 //     call_rcu(&p->rcu, nod_free_procinfo_rcu);
 // #else
-    // mutex_lock(&nod_proc_info_mutex);
+    mutex_lock(&nod_proc_info_mutex);
     hash_del_rcu(&p->rcu);
-    synchronize_rcu();
-    // mutex_unlock(&nod_proc_info_mutex);
+    // synchronize_rcu();
+    mutex_unlock(&nod_proc_info_mutex);
 // #endif
 }
 
