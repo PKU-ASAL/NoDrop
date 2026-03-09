@@ -57,10 +57,15 @@ __remove_proc_info(struct nod_proc_info *p)
 //     hash_del_rcu(&p->hnode);
 //     call_rcu(&p->rcu, nod_free_procinfo_rcu);
 // #else
+# if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
     mutex_lock(&nod_proc_info_mutex);
     hash_del_rcu(&p->rcu);
     // synchronize_rcu();
     mutex_unlock(&nod_proc_info_mutex);
+#else
+    hash_del_rcu(&p->rcu);
+    synchronize_rcu();
+#endif
 // #endif
 }
 
