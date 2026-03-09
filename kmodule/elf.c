@@ -10,6 +10,7 @@
 #include <linux/ptrace.h>
 #include <linux/mm.h>
 #include <linux/vmalloc.h>
+#include <linux/version.h>
 
 #include "nodrop.h"
 
@@ -86,11 +87,19 @@ elf_map(struct file *filep, unsigned long addr,
     */
     if (total_size) {
         total_size = ELF_PAGEALIGN(total_size);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,0,0)
         map_addr = vm_mmap(filep, addr, total_size, prot, type, off);
+#else
+        map_addr = vm_mmap(filep, addr, total_size, prot, type | MAP_POPULATE, off);
+#endif
         if (!BAD_ADDR(map_addr))
             vm_munmap(map_addr+size, total_size-size);
     } else {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,0,0)
         map_addr = vm_mmap(filep, addr, size, prot, type, off);
+#else
+        map_addr = vm_mmap(filep, addr, size, prot, type | MAP_POPULATE, off);
+#endif
     }
 
     return(map_addr);

@@ -24,11 +24,11 @@ __find_proc_info(struct task_struct *task)
     struct nod_proc_info *p;
 
     rcu_read_lock();
-// #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-//     hash_for_each_possible_rcu(proc_info_hl_head, p, hnode, task->pid) {
-// #else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    hash_for_each_possible_rcu(proc_info_hl_head, p, hnode, task->pid) {
+#else
     hash_for_each_possible_rcu(proc_info_hl_head, p, rcu, task->pid) {
-// #endif
+#endif
         if (p->pid == task->pid) {
             rcu_read_unlock();
             return p;
@@ -57,15 +57,10 @@ __remove_proc_info(struct nod_proc_info *p)
 //     hash_del_rcu(&p->hnode);
 //     call_rcu(&p->rcu, nod_free_procinfo_rcu);
 // #else
-# if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
     mutex_lock(&nod_proc_info_mutex);
     hash_del_rcu(&p->rcu);
-    // synchronize_rcu();
-    mutex_unlock(&nod_proc_info_mutex);
-#else
-    hash_del_rcu(&p->rcu);
     synchronize_rcu();
-#endif
+    mutex_unlock(&nod_proc_info_mutex);
 // #endif
 }
 
@@ -177,9 +172,9 @@ nod_proc_release(struct task_struct *task)
     per_cpu(g_stat, smp_processor_id()).n_drop_evts_unsolved += p->buffer.info->nevents;
 
     __remove_proc_info(p);
-// #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
     nod_free_procinfo(p);
-// #endif
+#endif
 
     return retval;
 }
@@ -305,7 +300,7 @@ procinfo_destroy(void)
 //     }
 // #else
     if(proc_info_cachep) {
-        // rcu_read_lock();
+        rcu_read_lock();
         hash_for_each_safe(proc_info_hl_head, bkt, tmp, this, rcu) {
             while(this->status == NOD_IN) {
                 pr_info("wait for exiting monitor (pid %d status %d)\n", this->pid, this->status);
@@ -313,7 +308,7 @@ procinfo_destroy(void)
             }
             nod_free_procinfo(this);
         }
-        // rcu_read_unlock();
+        rcu_read_unlock();
         kmem_cache_destroy(proc_info_cachep);
     }
 // #endif

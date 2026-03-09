@@ -39,16 +39,23 @@ struct nod_proc_security {
 };
 
 struct nod_proc_info {
+// #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+//     struct hlist_node hnode;  
+//     struct rcu_head rcu;  
+// #else
 	struct hlist_node rcu;
+// #endif
 	pid_t pid;
 	struct mm_struct *mm;
 	struct nod_buffer buffer;
 	int ioctl_fd;
-	unsigned long load_addr;
+	uint64_t entry_addr;
+  uint64_t stack_addr;
+  uint64_t stack_info_addr;
 	enum nod_proc_status status;
 	struct nod_proc_context ctx;
 	struct nod_proc_security sec;
-	struct nod_stack_info stack;
+	struct nod_stack_info stack_info;
 };
 
 #define nod_proc_set_in(proc)			nod_proc_set_status(proc, NOD_IN, -1)

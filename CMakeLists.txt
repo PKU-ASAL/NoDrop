@@ -41,11 +41,15 @@ else()
 endif()
 
 if(NOT BUFFER_SIZE)
-        set(BUFFER_SIZE 8*Mib)
+        set(BUFFER_SIZE 1*Mib)
 endif()
 
 if(NOT MONITOR)
         set(MONITOR monitor)
+endif()
+
+if(NOT STACK_SIZE)
+        set(STACK_SIZE 1*Mib)
 endif()
 
 if(NOT MONITOR_PATH)
@@ -61,6 +65,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 message(STATUS "Buffer size: ${BUFFER_SIZE}")
+message(STATUS "Stack size: ${STACK_SIZE}")
 message(STATUS "Monitor path: ${MONITOR_PATH}")
 message(STATUS "Store path: ${STORE_PATH}")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")

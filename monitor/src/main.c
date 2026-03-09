@@ -9,7 +9,7 @@
 #include "common.h"
 
 #ifndef PATH_FMT
-#define PATH_FMT STORE_PATH "/%u-%ld.buf"
+#define PATH_FMT CONFIG_STORE_PATH "/%u-%ld.buf"
 #endif
 
 static char path[100];
@@ -136,8 +136,8 @@ int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info) {
     while (ptr < buffer_end) {
         hdr = (struct nod_event_hdr *)ptr;
         buffer_info->n_solved_evts++;
-        // _parse(file, hdr, (char *)(hdr + 1), 0);
-        fwrite(ptr, hdr->len, 1, file);
+        _parse(file, hdr, (char *)(hdr + 1), 0);
+        // fwrite(ptr, hdr->len, 1, file);
         ptr += hdr->len;
     }
 

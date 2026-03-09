@@ -3,7 +3,7 @@
 
 #include <linux/ptrace.h>
 #include <linux/elf.h>
-
+#include <linux/version.h>
 #include "common.h"
 #include "events.h"
 #include "procinfo.h"
@@ -17,7 +17,9 @@
 // #define vpr_dbg(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
 
 #define NOD_TEST(task) if (!(task->cred->uid.val == 1000))
-// #define NOD_TEST(task) if (!(STR_EQU(current->comm, "stress")))
+// #define NOD_TEST(task) if (!(STR_EQU(current->comm, "redis-server")))
+// #define NOD_TEST(task) if (!(STR_EQU(current->comm, "getpid")))
+// #define NOD_TEST(task) if (!(STR_EQU(current->comm, "helloworld")))
 #define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
 #define ASSERT(expr) BUG_ON(!(expr))
 
@@ -80,7 +82,9 @@ int nod_share_procinfo(struct task_struct *task, struct nod_proc_info *p);
 int nod_event_from(struct nod_proc_info **p);
 int nod_proc_check_mm(struct nod_proc_info *p, unsigned long addr, unsigned long length);
 unsigned long nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned long *, va_list), ...);
-
+// #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+// static void nod_free_procinfo_rcu(struct rcu_head *rcu);
+// #endif
 // loader.c
 int loader_init(void);
 void loader_destory(void);
@@ -93,6 +97,8 @@ int record_one_event(struct nod_proc_info *p, enum nod_event_type type, struct n
 int init_buffer(struct nod_buffer *buffer);
 void free_buffer(struct nod_buffer *buffer);
 void reset_buffer(struct nod_buffer *buffer, int flags);
+int nod_event_set_buffer_size(unsigned long size);
+int nod_event_get_buffer_size(unsigned long *size);
 
 // elf.c
 #define BAD_ADDR(x) ((unsigned long)(x) >= TASK_SIZE)

@@ -27,3 +27,5 @@ musl-src/
 *.out*
 results*
 postmark.pmrc
+/build/
+/musl/
