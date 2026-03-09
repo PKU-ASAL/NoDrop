@@ -16,10 +16,10 @@
 #define vpr_dbg(fmt, ...)
 // #define vpr_dbg(fmt, ...) vpr_log(info, fmt, ##__VA_ARGS__)
 
-// #define NOD_TEST(task) if (!(task->cred->uid.val == 0))
+#define NOD_TEST(task) if (!(task->cred->uid.val == 1000))
 // #define NOD_TEST(task) if (!(STR_EQU(current->comm, "redis-server")))
 // #define NOD_TEST(task) if (!(STR_EQU(current->comm, "getpid")))
-#define NOD_TEST(task) if (!(STR_EQU(current->comm, "helloworld")))
+// #define NOD_TEST(task) if (!(STR_EQU(current->comm, "helloworld")))
 #define STR_EQU(s1, s2) (strcmp(s1, s2) == 0)
 #define ASSERT(expr) BUG_ON(!(expr))
 
@@ -82,9 +82,9 @@ int nod_share_procinfo(struct task_struct *task, struct nod_proc_info *p);
 int nod_event_from(struct nod_proc_info **p);
 int nod_proc_check_mm(struct nod_proc_info *p, unsigned long addr, unsigned long length);
 unsigned long nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned long *, va_list), ...);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-static void nod_free_procinfo_rcu(struct rcu_head *rcu);
-#endif
+// #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+// static void nod_free_procinfo_rcu(struct rcu_head *rcu);
+// #endif
 // loader.c
 int loader_init(void);
 void loader_destory(void);
