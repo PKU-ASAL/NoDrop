@@ -3,30 +3,34 @@
 #include <inttypes.h>
 #include <sys/time.h>
 #include <sys/syscall.h>
+#include <sys/stat.h>
 
 #include "config.h"
-#include "events.h"
+
 #include "common.h"
+#include "lua_runtime.h"
+#include "record_writer.h"
 
-#ifndef PATH_FMT
-#define PATH_FMT CONFIG_STORE_PATH "/%u-%ld.buf"
-#endif
 
-static char path[100];
 static struct timeval tv;
 static unsigned int tid;
 
-static const char *__print_format[PT_UINT64 + 1][PF_OCT + 1] = {
-    [PT_NONE] = {"", "", "", "", ""},/*empty*/
-    [PT_INT8] = {"", "%"PRId8, "0x%"PRIx8, "%010" PRId8, "0%"PRIo8},/*PT_INT8*/
-    [PT_INT16] = {"", "%"PRId16, "0x%"PRIx16, "%010" PRId16, "0%"PRIo16},/*PT_INT16*/
-    [PT_INT32] = {"", "%"PRId32, "0x%"PRIx32, "%010" PRId32, "0%"PRIo32},/*PT_INT32*/
-    [PT_INT64] = {"", "%"PRId64, "0x%"PRIx64, "%010" PRId64, "0%"PRIo64},/*PT_INT64*/
-    [PT_UINT8] = {"", "%"PRIu8, "0x%"PRIx8, "%010" PRId8, "0%"PRIo8},/*PT_UINT8*/
-    [PT_UINT16] = {"", "%"PRIu16, "0x%"PRIx16, "%010" PRIu16, "0%"PRIo16},/*PT_UINT16*/
-    [PT_UINT32] = {"", "%"PRIu32, "0x%"PRIx32, "%010" PRIu32, "0%"PRIo32},/*PT_UINT32*/
-    [PT_UINT64] = {"", "%"PRIu64, "0x%"PRIx64, "%010" PRIu64, "0%"PRIo64}/*PT_UINT64*/
+struct record_writer rw = {
+    .mode = -1,
 };
+
+static const char *__print_format[PT_UINT64 + 1][PF_OCT + 1] = {
+    [PT_NONE] = {"", "", "", "", ""},                                         /*empty*/
+    [PT_INT8] = {"", "%" PRId8, "0x%" PRIx8, "%010" PRId8, "0%" PRIo8},       /*PT_INT8*/
+    [PT_INT16] = {"", "%" PRId16, "0x%" PRIx16, "%010" PRId16, "0%" PRIo16},  /*PT_INT16*/
+    [PT_INT32] = {"", "%" PRId32, "0x%" PRIx32, "%010" PRId32, "0%" PRIo32},  /*PT_INT32*/
+    [PT_INT64] = {"", "%" PRId64, "0x%" PRIx64, "%010" PRId64, "0%" PRIo64},  /*PT_INT64*/
+    [PT_UINT8] = {"", "%" PRIu8, "0x%" PRIx8, "%010" PRId8, "0%" PRIo8},      /*PT_UINT8*/
+    [PT_UINT16] = {"", "%" PRIu16, "0x%" PRIx16, "%010" PRIu16, "0%" PRIo16}, /*PT_UINT16*/
+    [PT_UINT32] = {"", "%" PRIu32, "0x%" PRIx32, "%010" PRIu32, "0%" PRIo32}, /*PT_UINT32*/
+    [PT_UINT64] = {"", "%" PRIu64, "0x%" PRIx64, "%010" PRIu64, "0%" PRIo64}  /*PT_UINT64*/
+};
+
 
 static int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer, void *__data)
 {
@@ -42,14 +46,17 @@ static int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer, void *__da
     info = &g_event_info[hdr->type];
     args = (uint16_t *)buffer;
     data = (char *)(args + info->nparams);
-    
+
     fprintf(out, "%lu %u (%u): %s(", hdr->ts, hdr->tid, hdr->cpuid, info->name);
 
-    for (i = 0; i < info->nparams; ++i) {
+    for (i = 0; i < info->nparams; ++i)
+    {
         param = &info->params[i];
-        if (i > 0)  fprintf(out, ", ");
+        if (i > 0)
+            fprintf(out, ", ");
         fprintf(out, "%s=", param->name);
-        switch(param->type) {
+        switch (param->type)
+        {
         case PT_CHARBUF:
         case PT_FSPATH:
         case PT_FSRELPATH:
@@ -62,13 +69,13 @@ static int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer, void *__da
         case PT_SIGTYPE:
             fprintf(out, __print_format[PT_UINT8][param->fmt], *(uint8_t *)data);
             break;
-        
+
         case PT_FLAGS16:
         case PT_UINT16:
         case PT_SYSCALLID:
             fprintf(out, __print_format[PT_UINT16][param->fmt], *(uint16_t *)data);
             break;
-        
+
         case PT_FLAGS32:
         case PT_UINT32:
         case PT_MODE:
@@ -77,7 +84,7 @@ static int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer, void *__da
         case PT_SIGSET:
             fprintf(out, __print_format[PT_UINT32][param->fmt], *(uint32_t *)data);
             break;
-        
+
         case PT_RELTIME:
         case PT_ABSTIME:
         case PT_UINT64:
@@ -91,7 +98,7 @@ static int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer, void *__da
         case PT_INT16:
             fprintf(out, __print_format[PT_INT16][param->fmt], *(int16_t *)data);
             break;
-        
+
         case PT_INT32:
             fprintf(out, __print_format[PT_INT32][param->fmt], *(int32_t *)data);
             break;
@@ -115,33 +122,36 @@ static int _parse(FILE *out, struct nod_event_hdr *hdr, char *buffer, void *__da
     return 0;
 }
 
-void nod_monitor_init(int argc, char *argv[], char *env[]) {
+void nod_monitor_init(int argc, char *argv[], char *env[])
+{
     gettimeofday(&tv, NULL);
     tid = (unsigned int)syscall(SYS_gettid);
-    sprintf((char *)path, PATH_FMT, tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
+    set_record_path(tv, tid);
+    set_log_path(tv, tid);
+    lua_runtime_init();
 }
 
-int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info) {
+int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info, struct nod_lua_state *global_state, int record_flag)
+{
+    lua_run_script(global_state);
+
     char *ptr, *buffer_end;
     struct nod_event_hdr *hdr;
-    FILE *file;
-
-    if(!(file = fopen((const char *)path, "wb+"))) { // TEMP
-        perror("Cannot open log file");
-        return 0;
-    }
-
+    struct lua_event evt;
+    new_record_writer(&rw, record_flag);
     ptr = buffer;
     buffer_end = ptr + buffer_info->tail;
-    while (ptr < buffer_end) {
+    while (ptr < buffer_end)
+    {
         hdr = (struct nod_event_hdr *)ptr;
         buffer_info->n_solved_evts++;
-        _parse(file, hdr, (char *)(hdr + 1), 0);
-        // fwrite(ptr, hdr->len, 1, file);
+        evt.raw = hdr;
+        lua_on_event(&evt);
+        write_record_writer(&rw, ptr);
         ptr += hdr->len;
     }
 
-    fclose(file);
+    close_record_writer(&rw);
     buffer_info->nevents = buffer_info->tail = 0;
 
     return 0;

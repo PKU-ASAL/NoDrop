@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <stdint.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 
 #include "ioctl.h"
 
@@ -14,10 +15,12 @@ int main(int argc, char *argv[]) {
     unsigned long bufsize;
     struct buffer_count_info cinfo;
     struct fetch_buffer_struct fetch;
-    struct nod_event_statistic stat;
-
+    struct nod_event_statistic nod_stat;
+    struct stat lua_st;
+    struct nod_lua_state lua_state;
+    char lua_path[4096];
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s [clean|fetch|stat|clear-stat|start|stop|count|bufsize (size in KB)]\n", argv[0]);
+        fprintf(stderr, "Usage: %s [clean|fetch|stat|clear-stat|start|stop|count|record|bufsize (size in KB)]\n", argv[0]);
         return 0;
     }
 
@@ -69,8 +72,8 @@ int main(int argc, char *argv[]) {
             printf("event_count=%lu,unflushed_count=%lu,unflushed_len=%lu\n", cinfo.event_count, cinfo.unflushed_count, cinfo.unflushed_len);
         }
     } else if (!strcmp(argv[1], "stat")) {
-      if (!ioctl(fd, NOD_IOCTL_READ_STATISTICS, &stat)) {
-          printf("n_evts\tdrop_evts\tdrop_unsolved\n%ld\t%ld\t%ld\n", stat.n_evts, stat.n_drop_evts, stat.n_drop_evts_unsolved);
+      if (!ioctl(fd, NOD_IOCTL_READ_STATISTICS, &nod_stat)) {
+          printf("n_evts\tdrop_evts\tdrop_unsolved\n%ld\t%ld\t%ld\n", nod_stat.n_evts, nod_stat.n_drop_evts, nod_stat.n_drop_evts_unsolved);
       }
     } else if (!strcmp(argv[1], "clear-stat")) {
       if (!ioctl(fd, NOD_IOCTL_CLEAR_STATISTICS, 0)) {
@@ -81,9 +84,35 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "Stopped\n");
 
     } else if (!strcmp(argv[1], "start")) {
-        if (!ioctl(fd, NOD_IOCTL_START_RECORDING, 0))
-            fprintf(stderr, "Start\n");
-
+        if (argc > 3) {
+            fprintf(stderr, "Usage: %s start <lua_path>\n", argv[0]);
+            return -1;
+        }
+        if (argc == 3) {
+            if (!realpath(argv[2], lua_path)) {
+                fprintf(stderr, "%s : lua path error\n", argv[2]);
+                return -1;
+            }
+            if (strlen(lua_path) + 1 > 256) {
+                fprintf(stderr, "%s : lua path too long\n", lua_path);
+                return -1;
+            }
+            strcpy(lua_state.lua_path, lua_path);
+            if (stat(lua_state.lua_path, &lua_st)) {
+                fprintf(stderr, "%s : lua file error\n", lua_path);
+                return -1;
+            }
+            lua_state.lua_mtime = lua_st.st_mtime;
+        } else {
+            lua_state.lua_path[0] = '\0';
+            lua_state.lua_mtime = 0;
+        }
+        if (!ioctl(fd, NOD_IOCTL_START_RECORDING, 0) && !ioctl(fd, NOD_IOCTL_SET_LUA_STATE, &lua_state)) {
+            if (argc == 3)
+                fprintf(stderr, "Start with lua: %s\n", lua_state.lua_path);
+            else 
+                fprintf(stderr, "Start without lua\n");
+        }
     } else if (!strcmp(argv[1], "bufsize")) {
         if (argc >= 3) {
             bufsize = (unsigned long)atol(argv[2]);
@@ -97,6 +126,27 @@ int main(int argc, char *argv[]) {
             return -1;
         }
         printf("buffer size: %lu\n", bufsize);
+    } else if (!strcmp(argv[1], "record")) {
+        if (argc > 3) {
+            fprintf(stderr, "Usage: %s record [normal, compress, none] (default normal)\n", argv[0]);
+            return -1;
+        }
+        int record_flag = NOD_RECORD_MODE_START;
+        if (argc == 3) {
+            if (!strcmp(argv[2], "none"))
+                record_flag = NOD_RECORD_MODE_STOP;
+            else if (!strcmp(argv[2], "normal"))
+                record_flag = NOD_RECORD_MODE_START;
+            else if (!strcmp(argv[2], "compress"))
+                record_flag = NOD_RECORD_MODE_COMPRESS;
+            else {
+                fprintf(stderr, "Usage: %s record [normal, compress, none] (default normal)\n", argv[0]);
+                return -1;
+            }
+        }
+        if (!ioctl(fd, NOD_IOCTL_SET_RECORD_FLAG, &record_flag)) {
+            fprintf(stderr, "Record set %s\n", record_flag==0 ? "none": record_flag == 1 ? "normal" : "compress");
+        }
     } else {
         fprintf(stderr, "Unknown cmd %s\n", argv[1]);
     }
