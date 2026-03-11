@@ -12,6 +12,7 @@ NoDrop contains 2 major components: the kernel module and the monitor.
 * **the monitor**: codes under `monitor/`. 
 NoDrop is tested on Ubuntu 18.04 with unmodified Linux kernel 4.15.0-171.
 
+See the [example of a quick start](./docs/quick_start(cn).md) for more detail.
 ### How to Install Nodrop 
 #### Environment requirements
 * make
@@ -24,6 +25,14 @@ NoDrop is tested on Ubuntu 18.04 with unmodified Linux kernel 4.15.0-171.
  * To get musl libc, just run the following command
 ```shell
  ./scripts/getmusl.sh <absolute-path-to-Nodrop>
+```
+ * To get lua, just run the following command
+```shell
+ ./scripts/getlua.sh
+```
+ * To get zlib, just run the following command
+```shell
+ ./scripts/getzlib.sh
 ```
 
 #### Installation Instructions
