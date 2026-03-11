@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
+#include <sys/stat.h>
 
 #include "events.h"
 #include "common.h"
@@ -35,7 +36,7 @@ struct nod_monitor_info __info = {.fsbase = 0};
 static char mmheap_pool[NOD_MONITOR_MEM_SIZE];
 
 // declarations of processing logic
-int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info);
+int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info, struct nod_lua_state *global_state, int record_flag);
 weak void nod_monitor_init(int argc, char *argv[], char *env[]) {};
 weak void nod_monitor_exit(long code) {};
 
@@ -168,7 +169,32 @@ nod_start_main(int argc, char **argv, char **env) {
 
     // int len = sprintf(strbuf, "ts:%lu tail:%u\n", ts, p->buffer_info->tail);
     // write(fileno(stdout), strbuf, len);
-    nod_monitor_main(p->buffer, p->buffer_info);
+    struct nod_lua_state kstate;
+    if (ioctl(p->ioctl_fd, NOD_IOCTL_GET_LUA_STATE, &kstate)) {
+
+        // get lua state error
+        kstate.lua_path[0] = '\0';
+        kstate.lua_mtime = 0;
+    }
+    if (kstate.lua_mtime) {
+        struct stat lua_st;
+        if (!stat(kstate.lua_path, &lua_st))
+        {
+            if (lua_st.st_mtime != kstate.lua_mtime)
+            {
+                kstate.lua_mtime = lua_st.st_mtime;
+                if (ioctl(p->ioctl_fd, NOD_IOCTL_SET_LUA_STATE, &kstate) != 0)
+                {
+                    return;
+                }
+            }
+        }
+    }
+    int record_flag = 0;
+    if (ioctl(p->ioctl_fd, NOD_IOCTL_GET_RECORD_FLAG, &record_flag)) {
+        record_flag = 0;
+    }
+    nod_monitor_main(p->buffer, p->buffer_info, &kstate, record_flag);
 
 out:
     p->hash = nod_calc_hash(p);

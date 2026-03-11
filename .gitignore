@@ -29,3 +29,6 @@ results*
 postmark.pmrc
 /build/
 /musl/
+
+/lua/
+/zlib/
