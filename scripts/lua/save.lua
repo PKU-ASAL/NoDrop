@@ -3,6 +3,6 @@ function on_init()
 end
 
 function on_event()
-    evt.save("/tmp/nodrop/nodrop.log")
+    evt.save()
     return true
 end

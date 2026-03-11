@@ -44,4 +44,7 @@ void lua_field_set_current_event(struct lua_event *evt);
  */
 void lua_field_register_api(struct lua_State *L);
 
+
+// save log path init
+void set_log_path(struct timeval tv, unsigned int tid);
 #endif /* __NODROP_LUA_FIELD_H__ */

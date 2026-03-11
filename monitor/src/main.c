@@ -127,7 +127,7 @@ void nod_monitor_init(int argc, char *argv[], char *env[])
     gettimeofday(&tv, NULL);
     tid = (unsigned int)syscall(SYS_gettid);
     set_record_path(tv, tid);
-
+    set_log_path(tv, tid);
     lua_runtime_init();
 }
 

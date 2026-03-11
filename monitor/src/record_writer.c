@@ -3,15 +3,11 @@
 #include "ioctl.h"
 #include "common.h"
 
-#ifndef PATH_FMT
-#define PATH_FMT CONFIG_STORE_PATH "/%u-%ld.buf"
-#endif
-
 static char record_path[100];
 static char gz_record_path[100];
 void set_record_path(struct timeval tv, unsigned int tid) {
-    sprintf((char *)record_path, PATH_FMT, tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
-    sprintf((char *)gz_record_path, PATH_FMT".gz", tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
+    sprintf((char *)record_path, CONFIG_STORE_PATH"/%u-%ld.buf", tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
+    sprintf((char *)gz_record_path, CONFIG_STORE_PATH"/%u-%ld.buf.gz", tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
 }
 
 void new_record_writer(struct record_writer* rw, int mode) {

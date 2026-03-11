@@ -9,11 +9,18 @@
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
+#include "config.h"
+#include "common.h"
 
 static struct nod_field_desc g_fields[NOD_MAX_FIELDS];
 static int g_nr_fields = 0;
 
 static struct lua_event *g_current_evt = NULL;
+
+static char save_log_path[100];
+void set_log_path(struct timeval tv, unsigned int tid) {
+    sprintf((char *)save_log_path, CONFIG_STORE_PATH"/%u-%ld.log", tid, tv.tv_sec * SECOND_IN_US + tv.tv_usec);
+}
 
 void lua_field_set_current_event(struct lua_event *evt)
 {
@@ -353,11 +360,10 @@ static int lua_evt_send(lua_State *L)
 }
 
 /* ============================================================
- * Lua API: evt.save(filename)
+ * Lua API: evt.save()
  * ============================================================ */
 static int lua_evt_save(lua_State *L)
 {
-    const char *filename;
 
     const struct nod_event_hdr *hdr;
 
@@ -365,8 +371,6 @@ static int lua_evt_save(lua_State *L)
     int off = 0;
 
     FILE *fp;
-
-    filename = luaL_checkstring(L, 1);
 
     if (!g_current_evt || !g_current_evt->raw)
         return 0;
@@ -378,7 +382,7 @@ static int lua_evt_save(lua_State *L)
 
     off = get_whole_event(hdr, out, sizeof(out));
     
-    fp = fopen(filename, "a");
+    fp = fopen(save_log_path, "a");
     
     if (!fp) {
         return 0;
@@ -409,7 +413,7 @@ void lua_field_register_api(lua_State *L)
     /* evt.send(ip, port)*/
     lua_pushcfunction(L, lua_evt_send);
     lua_setfield(L, -2, "send");
-    /* evt.save(filename)*/
+    /* evt.save()*/
     lua_pushcfunction(L, lua_evt_save);
     lua_setfield(L, -2, "save");
     lua_setglobal(L, "evt");
