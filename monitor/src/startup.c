@@ -155,7 +155,7 @@ nod_start_main(int argc, char **argv, char **env) {
                 });
 #ifdef NOD_PKEY_SUPPORT
         if (p->pkey != -1) {
-            ASSERT_OUT(likely(pkey_mprotect(p->buffer, 1*1024*1024, PROT_READ, p->pkey) != -1),
+            ASSERT_OUT(likely(pkey_mprotect(p->buffer, 4*1024, PROT_READ, p->pkey) != -1),
                     "pkey_mprotect for buffer failed", 
                     {
                         if (p->buffer)  munmap(p->buffer, p->buffer_info->buffer_size);
