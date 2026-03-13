@@ -7,8 +7,8 @@
 #include <linux/delay.h>
 #include <linux/hashtable.h>
 #include <linux/pkeys.h>
-#include <linux/rcupdate.h>
 #include <linux/version.h>
+
 #include "nodrop.h"
 #include "procinfo.h"
 #include "ioctl.h"
@@ -16,36 +16,49 @@
 static struct kmem_cache *proc_info_cachep = NULL;
 
 static DEFINE_READ_MOSTLY_HASHTABLE(proc_info_hl_head, 10);
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
 static DEFINE_MUTEX(nod_proc_info_mutex);
+#endif
 
 static inline struct nod_proc_info *
 __find_proc_info(struct task_struct *task)
 {
     struct nod_proc_info *p;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    mutex_lock(&nod_proc_info_mutex);
+    hash_for_each_possible(proc_info_hl_head, p, rcu, task->pid) {
+        if (p->pid == task->pid) {
+            mutex_unlock(&nod_proc_info_mutex);
+            return p;
+        }
+    }
+    mutex_unlock(&nod_proc_info_mutex);
+#else
     rcu_read_lock();
-// #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-//     hash_for_each_possible_rcu(proc_info_hl_head, p, hnode, task->pid) {
-// #else
     hash_for_each_possible_rcu(proc_info_hl_head, p, rcu, task->pid) {
-// #endif
         if (p->pid == task->pid) {
             rcu_read_unlock();
             return p;
         }
     }
     rcu_read_unlock();
+#endif
+
     return NULL;
 }
 
 static inline int
 __insert_proc_info(struct nod_proc_info *p)
 {
-// #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-//     hash_add_rcu(proc_info_hl_head, &p->hnode, p->pid);
-// #else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    mutex_lock(&nod_proc_info_mutex);
+    hash_add(proc_info_hl_head, &p->rcu, p->pid);
+    mutex_unlock(&nod_proc_info_mutex);
+#else
     hash_add_rcu(proc_info_hl_head, &p->rcu, p->pid);
-// #endif
+#endif
 
     return true;
 }
@@ -53,20 +66,14 @@ __insert_proc_info(struct nod_proc_info *p)
 static void
 __remove_proc_info(struct nod_proc_info *p)
 {
-// #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-//     hash_del_rcu(&p->hnode);
-//     call_rcu(&p->rcu, nod_free_procinfo_rcu);
-// #else
-# if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
     mutex_lock(&nod_proc_info_mutex);
-    hash_del_rcu(&p->rcu);
-    // synchronize_rcu();
+    hash_del(&p->rcu);
     mutex_unlock(&nod_proc_info_mutex);
 #else
     hash_del_rcu(&p->rcu);
     synchronize_rcu();
 #endif
-// #endif
 }
 
 void
@@ -119,20 +126,12 @@ nod_free_procinfo(struct nod_proc_info *p)
     free_buffer(&p->buffer);
     kmem_cache_free(proc_info_cachep, p);
 }
-// #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-// static void nod_free_procinfo_rcu(struct rcu_head *rcu)
-// {
-//     struct nod_proc_info *p = container_of(rcu, struct nod_proc_info, rcu);
-
-//     nod_free_procinfo(p);
-// }
-// #endif
 
 struct nod_proc_info *
-nod_proc_acquire(enum nod_proc_status status, 
-            enum nod_proc_status *pre,
-            int ioctl_fd, 
-            struct task_struct *task)
+nod_proc_acquire(enum nod_proc_status status,
+                 enum nod_proc_status *pre,
+                 int ioctl_fd,
+                 struct task_struct *task)
 {
     struct nod_proc_info *p;
     // nanoseconds start, end;
@@ -177,9 +176,7 @@ nod_proc_release(struct task_struct *task)
     per_cpu(g_stat, smp_processor_id()).n_drop_evts_unsolved += p->buffer.info->nevents;
 
     __remove_proc_info(p);
-// #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
     nod_free_procinfo(p);
-// #endif
 
     return retval;
 }
@@ -189,7 +186,7 @@ nod_copy_procinfo(struct task_struct *task, struct nod_proc_info *p)
 {
     struct nod_proc_info *parent;
 
-    if (!task->real_parent) 
+    if (!task->real_parent)
         return NOD_SUCCESS;
 
     parent = __find_proc_info(task->group_leader);
@@ -198,8 +195,8 @@ nod_copy_procinfo(struct task_struct *task, struct nod_proc_info *p)
         p->entry_addr = parent->entry_addr;
         memcpy(&p->stack_info, &parent->stack_info, sizeof(struct nod_stack_info));
     }
-    
-    return NOD_SUCCESS;    
+
+    return NOD_SUCCESS;
 }
 
 int
@@ -207,7 +204,7 @@ nod_share_procinfo(struct task_struct *task, struct nod_proc_info *p)
 {
     struct nod_proc_info *parent;
 
-    if (!task->real_parent) 
+    if (!task->real_parent)
         return NOD_SUCCESS;
 
     parent = __find_proc_info(task->group_leader);
@@ -216,14 +213,14 @@ nod_share_procinfo(struct task_struct *task, struct nod_proc_info *p)
          * Pkey is previously allocated when acquiring nod_proc_info
          * Now the process is inherited from parent, including pkey
          * Free the original pkey here.
-         */ 
+         */
         if (p->stack_info.pkey != parent->stack_info.pkey) {
             if (p->stack_info.pkey > 0) mm_pkey_free(p->mm, p->stack_info.pkey);
             p->stack_info.pkey = parent->stack_info.pkey;
         }
     }
-    
-    return NOD_SUCCESS;    
+
+    return NOD_SUCCESS;
 }
 
 int
@@ -233,7 +230,7 @@ nod_event_from(struct nod_proc_info **p)
 
     n = __find_proc_info(current);
 
-    if (p)  *p = n;    
+    if (p)  *p = n;
     return n ? n->status : NOD_OUT;
 }
 
@@ -243,29 +240,43 @@ nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned long *, va_list),
     int fb, bkt;
     unsigned long ret;
     va_list args;
-    struct nod_proc_info *p; 
+    struct nod_proc_info *p;
     ret = 0;
-    
-    rcu_read_lock();
-// #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-//     hash_for_each_rcu(proc_info_hl_head, bkt, p, hnode) {
-// #else
-    hash_for_each_rcu(proc_info_hl_head, bkt, p, rcu) {
-// #endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    mutex_lock(&nod_proc_info_mutex);
+    hash_for_each(proc_info_hl_head, bkt, p, rcu) {
         va_start(args, func);
         fb = func(p, &ret, args);
         va_end(args);
-        switch(fb) {
+        switch (fb) {
         case NOD_PROC_TRAVERSE_BREAK:
-            goto out;
-            break;
+            goto out_unlock;
         default:
             break;
         }
     }
 
-out:
+out_unlock:
+    mutex_unlock(&nod_proc_info_mutex);
+#else
+    rcu_read_lock();
+    hash_for_each_rcu(proc_info_hl_head, bkt, p, rcu) {
+        va_start(args, func);
+        fb = func(p, &ret, args);
+        va_end(args);
+        switch(fb) {
+        case NOD_PROC_TRAVERSE_BREAK:
+            goto out_rcu;
+        default:
+            break;
+        }
+    }
+
+out_rcu:
     rcu_read_unlock();
+#endif
+
     return ret;
 }
 
@@ -291,30 +302,33 @@ procinfo_destroy(void)
     int bkt;
     struct nod_proc_info *this;
     struct hlist_node *tmp;
-// #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-//     if(proc_info_cachep) {
-//         hash_for_each_safe(proc_info_hl_head, bkt, tmp, this, hnode) {
-//             while(this->status == NOD_IN) {
-//                 pr_info("wait for exiting monitor (pid %d status %d)\n", this->pid, this->status);
-//                 msleep(5);
-//             }
-//             hash_del_rcu(&this->hnode);
-//             call_rcu(&this->rcu, nod_free_procinfo_rcu);
-//         }
-//         kmem_cache_destroy(proc_info_cachep);
-//     }
-// #else
-    if(proc_info_cachep) {
-        // rcu_read_lock();
-        hash_for_each_safe(proc_info_hl_head, bkt, tmp, this, rcu) {
-            while(this->status == NOD_IN) {
-                pr_info("wait for exiting monitor (pid %d status %d)\n", this->pid, this->status);
-                msleep(5);
-            }
-            nod_free_procinfo(this);
+
+    if (!proc_info_cachep) return;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    mutex_lock(&nod_proc_info_mutex);
+    hash_for_each_safe(proc_info_hl_head, bkt, tmp, this, rcu) {
+        while(this->status == NOD_IN) {
+            pr_info("wait for exiting monitor (pid %d status %d)\n",
+                    this->pid, this->status);
+            msleep(5);
         }
-        // rcu_read_unlock();
-        kmem_cache_destroy(proc_info_cachep);
+        hash_del(&this->rcu);
+        nod_free_procinfo(this);
     }
-// #endif
+    mutex_unlock(&nod_proc_info_mutex);
+#else
+    rcu_read_lock();
+    hash_for_each_safe(proc_info_hl_head, bkt, tmp, this, rcu) {
+        while(this->status == NOD_IN) {
+            pr_info("wait for exiting monitor (pid %d status %d)\n",
+                    this->pid, this->status);
+            msleep(5);
+        }
+        nod_free_procinfo(this);
+    }
+    rcu_read_unlock();
+#endif
+
+    kmem_cache_destroy(proc_info_cachep);
 }
