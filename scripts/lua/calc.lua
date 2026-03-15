@@ -1,5 +1,13 @@
+description = "Count number of occurrences of each syscall"
+short_description = "syscall counter"
+category = "Example"
+
+args = {}
+
+-- table to store counts
 syscall_counts = {}
 
+-- request fields from sysdig
 function on_init()
     f_type = chisel.request_field("evt.type")
     return true
@@ -19,4 +27,12 @@ function on_event()
     end
 
     return true
+end
+
+function on_capture_end()
+    print("========== Syscall Statistics ==========")
+
+    for k,v in pairs(syscall_counts) do
+        print(string.format("%-20s %d", k, v))
+    end
 end
