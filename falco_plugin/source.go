@@ -41,10 +41,6 @@ func (p *Plugin) OpenReader(r io.ReadCloser) (source.Instance, error) {
 				continue
 			}
 
-			// IMPORTANT:
-			// - Do NOT parse JSON here
-			// - Push raw JSON
-			// - json plugin will extract fields
 			evtC <- source.PushEvent{
 				Data: line,
 			}
