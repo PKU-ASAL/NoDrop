@@ -1,0 +1,6 @@
+- rule: Read Sensitive File /etc/shadow
+  desc: Detects any attempt to read the password shadow file
+  condition: fd.name == "/etc/shadow" and evt.type in (open, openat)
+  output: "Sensitive file opened for reading (user=%user.name command=%proc.cmdline file=%fd.name)"
+  priority: WARNING
+  source: syscall
