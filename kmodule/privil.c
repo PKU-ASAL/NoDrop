@@ -190,7 +190,7 @@ void
 nod_restore_security(struct nod_proc_info *p)
 {
     if (p->ioctl_fd >= 0) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
         close_fd(p->ioctl_fd);
 #else
         sys_close(p->ioctl_fd);
