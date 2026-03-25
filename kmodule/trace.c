@@ -207,9 +207,17 @@ TRACEPOINT_PROBE(syscall_procexit_probe, struct task_struct *tsk)
 {
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 20)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
     if (unlikely(tsk->flags & PF_KTHREAD))
 #else
+    if (unlikely(current->flags & PF_KTHREAD))
+#endif
+#else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
     if (unlikely(tsk->flags & PF_BORROWED_MM))
+#else
+    if (unlikely(current->flags & PF_BORROWED_MM))
+#endif
 #endif
     {
         // We are not interested in kernel threads
@@ -222,9 +230,13 @@ TRACEPOINT_PROBE(syscall_procexit_probe, struct task_struct *tsk)
     }
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
     if (nod_proc_release(tsk) == NOD_UNKNOWN) {
         vpr_dbg("proc exit without procinfo entry (pid %d comm %s)\n", tsk->pid, tsk->comm);
     }
+#else
+    nod_proc_release(tsk);
+#endif
 }
 
 static int

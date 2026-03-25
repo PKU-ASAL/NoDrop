@@ -6,10 +6,12 @@
 #include <linux/random.h>
 #include <linux/delay.h>
 #include <linux/hashtable.h>
+#include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
 #include <linux/pid.h>
 #include <linux/sched/signal.h>
+#endif
 #include <linux/pkeys.h>
-#include <linux/version.h>
 
 #include "nodrop.h"
 #include "procinfo.h"
@@ -51,6 +53,7 @@ __find_proc_info(struct task_struct *task)
     return NULL;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
 static bool
 __pid_alive(pid_t pid)
 {
@@ -64,6 +67,7 @@ __pid_alive(pid_t pid)
 
     return alive;
 }
+#endif
 
 static inline int
 __insert_proc_info(struct nod_proc_info *p)
@@ -342,11 +346,6 @@ procinfo_destroy(void)
     rcu_read_lock();
     hash_for_each_safe(proc_info_hl_head, bkt, tmp, this, rcu) {
         while(this->status == NOD_IN) {
-            if (!__pid_alive(this->pid)) {
-                pr_warn("force release stale procinfo (pid %d status %d)\n",
-                        this->pid, this->status);
-                break;
-            }
             pr_info("wait for exiting monitor (pid %d status %d)\n",
                     this->pid, this->status);
             msleep(5);
