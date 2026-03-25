@@ -6,6 +6,8 @@
 #include <linux/random.h>
 #include <linux/delay.h>
 #include <linux/hashtable.h>
+#include <linux/pid.h>
+#include <linux/sched/signal.h>
 #include <linux/pkeys.h>
 #include <linux/version.h>
 
@@ -49,13 +51,27 @@ __find_proc_info(struct task_struct *task)
     return NULL;
 }
 
+static bool
+__pid_alive(pid_t pid)
+{
+    struct task_struct *task;
+    bool alive;
+
+    rcu_read_lock();
+    task = pid_task(find_vpid(pid), PIDTYPE_PID);
+    alive = task && !(task->flags & PF_EXITING);
+    rcu_read_unlock();
+
+    return alive;
+}
+
 static inline int
 __insert_proc_info(struct nod_proc_info *p)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-    mutex_lock(&nod_proc_info_mutex);
+    // mutex_lock(&nod_proc_info_mutex);
     hash_add(proc_info_hl_head, &p->rcu, p->pid);
-    mutex_unlock(&nod_proc_info_mutex);
+    // mutex_unlock(&nod_proc_info_mutex);
 #else
     hash_add_rcu(proc_info_hl_head, &p->rcu, p->pid);
 #endif
@@ -309,6 +325,11 @@ procinfo_destroy(void)
     mutex_lock(&nod_proc_info_mutex);
     hash_for_each_safe(proc_info_hl_head, bkt, tmp, this, rcu) {
         while(this->status == NOD_IN) {
+            if (!__pid_alive(this->pid)) {
+                pr_warn("force release stale procinfo (pid %d status %d)\n",
+                        this->pid, this->status);
+                break;
+            }
             pr_info("wait for exiting monitor (pid %d status %d)\n",
                     this->pid, this->status);
             msleep(5);
@@ -321,10 +342,16 @@ procinfo_destroy(void)
     rcu_read_lock();
     hash_for_each_safe(proc_info_hl_head, bkt, tmp, this, rcu) {
         while(this->status == NOD_IN) {
+            if (!__pid_alive(this->pid)) {
+                pr_warn("force release stale procinfo (pid %d status %d)\n",
+                        this->pid, this->status);
+                break;
+            }
             pr_info("wait for exiting monitor (pid %d status %d)\n",
                     this->pid, this->status);
             msleep(5);
         }
+        hash_del_rcu(&this->rcu);
         nod_free_procinfo(this);
     }
     rcu_read_unlock();
