@@ -73,9 +73,9 @@ static inline int
 __insert_proc_info(struct nod_proc_info *p)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-    // mutex_lock(&nod_proc_info_mutex);
+    mutex_lock(&nod_proc_info_mutex);
     hash_add(proc_info_hl_head, &p->rcu, p->pid);
-    // mutex_unlock(&nod_proc_info_mutex);
+    mutex_unlock(&nod_proc_info_mutex);
 #else
     hash_add_rcu(proc_info_hl_head, &p->rcu, p->pid);
 #endif
