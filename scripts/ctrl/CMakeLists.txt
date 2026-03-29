@@ -5,3 +5,8 @@ set(CTRL_SOURCES
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
 add_executable(${CTRL} EXCLUDE_FROM_ALL ${CTRL_SOURCES})
+
+install(PROGRAMS
+        ${CMAKE_CURRENT_BINARY_DIR}/${CTRL}
+        DESTINATION bin
+        RENAME nodrop)
