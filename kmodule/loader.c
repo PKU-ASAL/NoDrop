@@ -167,7 +167,7 @@ create_stack_with_red_zone(unsigned long addr, unsigned long size)
     vm_munmap(addr, size);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6,0,0)
     addr = vm_mmap(NULL, addr, size, PROT_READ | PROT_WRITE,
-                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0);
+                   MAP_PRIVATE | MAP_ANONYMOUS, 0);
 #else
     addr = vm_mmap(NULL, addr, size, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK | MAP_FIXED, 0);

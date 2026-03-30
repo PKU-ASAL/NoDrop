@@ -319,7 +319,12 @@ elf_load_binary(struct elfhdr *elf_ex,
         elf_ex->e_type != ET_DYN)
         goto out;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,0,0)
+    total_size = total_mapping_size(elf_phdrs, elf_ex->e_phnum);
+    if (!total_size) {
+#else
     if (!total_mapping_size(elf_phdrs, elf_ex->e_phnum)) {
+#endif
         error = -EINVAL;
         goto out;
     }
