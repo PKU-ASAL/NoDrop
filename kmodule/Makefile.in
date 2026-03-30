@@ -1,6 +1,7 @@
 
 @PROBE_NAME@-y := \
 	nod_main.o \
+	daemon.o \
 	loader.o \
 	trace.o \
 	proc.o \

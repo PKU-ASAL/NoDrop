@@ -25,6 +25,50 @@ static DEFINE_READ_MOSTLY_HASHTABLE(proc_info_hl_head, 10);
 static DEFINE_MUTEX(nod_proc_info_mutex);
 #endif
 
+static void nod_proc_merge_overflow(struct nod_proc_info *p)
+{
+    struct nod_buffer *buf;
+    struct nod_buffer_info *info;
+    struct nod_event_hdr *hdr;
+    uint32_t ev_len;
+
+    if (!p)
+        return;
+
+    buf = &p->buffer;
+    info = buf->info;
+    if (!info || !buf->buffer || !buf->overflow.addr || !buf->overflow.filled)
+        return;
+
+    hdr = (struct nod_event_hdr *)buf->overflow.addr;
+    ev_len = hdr->len;
+    if (ev_len < sizeof(*hdr) || ev_len > PAGE_SIZE) {
+        vpr_warn("invalid overflow event length %u for pid %d\n", ev_len, p->pid);
+        buf->overflow.filled = 0;
+        return;
+    }
+
+    if (info->tail == 0) {
+        if (ev_len <= info->buffer_size) {
+            memmove(buf->buffer, buf->overflow.addr, ev_len);
+            info->tail = ev_len;
+            info->nevents++;
+        } else {
+            vpr_warn("overflow event too large for buffer (%u > %lu), pid %d\n",
+                     ev_len, info->buffer_size, p->pid);
+        }
+    } else if (info->tail + ev_len <= info->buffer_size) {
+        memmove(buf->buffer + info->tail, buf->overflow.addr, ev_len);
+        info->tail += ev_len;
+        info->nevents++;
+    } else {
+        vpr_warn("buffer has no room for overflow event, pid %d tail=%u len=%u\n",
+                 p->pid, info->tail, ev_len);
+    }
+
+    buf->overflow.filled = 0;
+}
+
 static inline struct nod_proc_info *
 __find_proc_info(struct task_struct *task)
 {
@@ -126,6 +170,7 @@ nod_alloc_procinfo(void)
     }
 
     memset(p, 0, sizeof(struct nod_proc_info));
+    INIT_LIST_HEAD(&p->daemon_node);
 
     if(init_buffer(&p->buffer)) {
         vpr_err("allocate kernel buffer for nod_proc_info failed\n");
@@ -184,7 +229,7 @@ out:
 enum nod_proc_status
 nod_proc_release(struct task_struct *task)
 {
-    int retval;
+    int retval, ret;
     struct nod_proc_info *p;
 
     p = __find_proc_info(task);
@@ -193,9 +238,18 @@ nod_proc_release(struct task_struct *task)
     }
 
     retval = p->status;
+    nod_proc_merge_overflow(p);
     per_cpu(g_stat, smp_processor_id()).n_drop_evts_unsolved += p->buffer.info->nevents;
 
     __remove_proc_info(p);
+
+    if (p->buffer.info->tail > 0) {
+        ret = nod_daemon_submit_proc(p);
+        if (!ret) {
+            return retval;
+        }
+        vpr_warn("daemon queue failed (%d), drop residual logs for pid %d\n", ret, p->pid);
+    }
     nod_free_procinfo(p);
 
     return retval;

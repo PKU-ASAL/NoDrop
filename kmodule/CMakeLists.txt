@@ -27,6 +27,7 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/../include/config.h.in
 
 set(KMODULE_SOURCES
         nod_main.c
+        daemon.c
         nodrop.h
         loader.c
         trace.c

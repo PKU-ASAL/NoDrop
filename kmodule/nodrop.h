@@ -55,6 +55,12 @@ void trace_register_destory(void);
 // proc.c
 int  proc_init(void);
 void proc_destroy(void);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
+// daemon.c
+int nod_daemon_init(void);
+void nod_daemon_destroy(void);
+int nod_daemon_submit_proc(struct nod_proc_info *p);
+#endif
 
 // privil.c
 unsigned int nod_get_seccomp(void);
@@ -82,6 +88,7 @@ int nod_share_procinfo(struct task_struct *task, struct nod_proc_info *p);
 int nod_event_from(struct nod_proc_info **p);
 int nod_proc_check_mm(struct nod_proc_info *p, unsigned long addr, unsigned long length);
 unsigned long nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned long *, va_list), ...);
+void nod_free_procinfo(struct nod_proc_info *p);
 // #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
 // static void nod_free_procinfo_rcu(struct rcu_head *rcu);
 // #endif
@@ -89,7 +96,11 @@ unsigned long nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned lon
 int loader_init(void);
 void loader_destory(void);
 int nod_load_monitor(struct nod_proc_info *p);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+int nod_mmap_check(struct nod_proc_info *p, unsigned long addr, unsigned long length);
+#else
 int nod_mmap_check(unsigned long addr, unsigned long length);
+#endif
 
 // event.c
 DECLARE_PER_CPU(struct nod_event_statistic, g_stat);

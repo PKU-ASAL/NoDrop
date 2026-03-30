@@ -44,6 +44,7 @@ struct nod_proc_info {
 //     struct rcu_head rcu;  
 // #else
 	struct hlist_node rcu;
+	struct list_head daemon_node;
 // #endif
 	pid_t pid;
 	struct mm_struct *mm;
