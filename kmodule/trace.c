@@ -410,12 +410,12 @@ int trace_syscall(void) {
         goto err_sched_procexit;
     }
 
-    hook_syscall(__NR_exit, exit_filter);
-    hook_syscall(__NR_exit_group, exit_filter);
-    hook_syscall(__NR_munmap, mm_range_filter);
-    hook_syscall(__NR_mprotect, mm_range_filter);
-    hook_syscall(__NR_mremap, mm_range_filter);
-    
+    // hook_syscall(__NR_exit, exit_filter);
+    // hook_syscall(__NR_exit_group, exit_filter);
+    // hook_syscall(__NR_munmap, mm_range_filter);
+    // hook_syscall(__NR_mprotect, mm_range_filter);
+    // hook_syscall(__NR_mremap, mm_range_filter);
+
     tracepoint_registered = 1;
     return 0;
 
@@ -434,11 +434,11 @@ void untrace_syscall(void) {
     if (tracepoint_registered == 0)
         return;
 
-    unhook_syscall(__NR_exit);
-    unhook_syscall(__NR_exit_group);
-    unhook_syscall(__NR_munmap);
-    unhook_syscall(__NR_mprotect);
-    unhook_syscall(__NR_mremap);
+    // unhook_syscall(__NR_exit);
+    // unhook_syscall(__NR_exit_group);
+    // unhook_syscall(__NR_munmap);
+    // unhook_syscall(__NR_mprotect);
+    // unhook_syscall(__NR_mremap);
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 20)
     compat_unregister_trace(syscall_exit_probe, "sys_exit", tp_sys_exit);
