@@ -126,12 +126,6 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
         return;
     }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-    if (unlikely(STR_EQU(current->comm, "snap"))) {
-        return;
-    }
-#endif
-
 #ifdef NOD_TEST
     NOD_TEST(current) {
         return;
@@ -319,12 +313,6 @@ hook_general(SYSCALL_DEF) {
         // We are not interested in kernel threads
         return syscall_filters[id].oldsyscall(SYSCALL_ARGS);
     }
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-    if (unlikely(STR_EQU(current->comm, "snap"))) {
-        return syscall_filters[id].oldsyscall(SYSCALL_ARGS);
-    }
-#endif
 
 #ifdef NOD_TEST
     NOD_TEST(current) {

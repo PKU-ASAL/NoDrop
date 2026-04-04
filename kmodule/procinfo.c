@@ -147,6 +147,10 @@ nod_init_procinfo(struct task_struct *task, struct nod_proc_info *p)
     p->mm = task->mm;
 
     p->ioctl_fd = -1;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    p->load_addr = 0;
+    p->interp_load_addr = 0;
+#endif
     p->entry_addr = 0;
 
     if (p->stack_info.pkey > 0) mm_pkey_free(p->mm, p->stack_info.pkey);
@@ -266,6 +270,10 @@ nod_copy_procinfo(struct task_struct *task, struct nod_proc_info *p)
     parent = __find_proc_info(task->group_leader);
 
     if (parent) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+        p->load_addr = parent->load_addr;
+        p->interp_load_addr = parent->interp_load_addr;
+#endif
         p->entry_addr = parent->entry_addr;
         memcpy(&p->stack_info, &parent->stack_info, sizeof(struct nod_stack_info));
     }

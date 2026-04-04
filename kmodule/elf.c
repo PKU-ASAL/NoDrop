@@ -109,25 +109,41 @@ elf_map(struct file *filep, unsigned long addr,
     unsigned long map_addr;
     unsigned long size = eppnt->p_filesz + ELF_PAGEOFFSET(eppnt->p_vaddr);
     unsigned long off = eppnt->p_offset - ELF_PAGEOFFSET(eppnt->p_vaddr);
+    addr = ELF_PAGESTART(addr);
+    size = ELF_PAGEALIGN(size);
+
+    /* mmap() may reject size=0 but zero-sized PT_LOAD filesz is valid. */
+    if (!size)
+        return addr;
+
+    if (total_size) {
+        total_size = ELF_PAGEALIGN(total_size);
+        map_addr = vm_mmap(filep, addr, total_size, prot, type, off);
+        if (!BAD_ADDR(map_addr))
+            vm_munmap(map_addr+size, total_size-size);
+    } else {
+        map_addr = vm_mmap(filep, addr, size, prot, type, off);
+    }
+
+    return map_addr;
+#endif
+}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,0,0)
+/*
+ * Load one PT_LOAD segment and materialize trailing zero pages/bss in the
+ * same way as Linux 6.8 binfmt_elf does.
+ */
+static unsigned long
+elf_load(struct file *filep, unsigned long addr,
+         struct elf_phdr *eppnt, int prot, int type,
+         unsigned long total_size)
+{
+    unsigned long map_addr;
     unsigned long zero_start, zero_end;
 
     if (eppnt->p_filesz) {
-        addr = ELF_PAGESTART(addr);
-        size = ELF_PAGEALIGN(size);
-
-        /* mmap() may reject size=0 but zero-sized PT_LOAD filesz is valid. */
-        if (!size)
-            return addr;
-
-        if (total_size) {
-            total_size = ELF_PAGEALIGN(total_size);
-            map_addr = vm_mmap(filep, addr, total_size, prot, type, off);
-            if (!BAD_ADDR(map_addr))
-                vm_munmap(map_addr+size, total_size-size);
-        } else {
-            map_addr = vm_mmap(filep, addr, size, prot, type, off);
-        }
-
+        map_addr = elf_map(filep, addr, eppnt, prot, type, total_size);
         if (BAD_ADDR(map_addr))
             return map_addr;
 
@@ -135,7 +151,10 @@ elf_map(struct file *filep, unsigned long addr,
             zero_start = map_addr + ELF_PAGEOFFSET(eppnt->p_vaddr) + eppnt->p_filesz;
             zero_end = map_addr + ELF_PAGEOFFSET(eppnt->p_vaddr) + eppnt->p_memsz;
 
-            /* Ignore clear failure for non-writable segments, like upstream. */
+            /*
+             * Zero the end of the last file-backed page. Keep compatibility
+             * with non-writable segments where this may legitimately fail.
+             */
             if (padzero(zero_start) && (prot & PROT_WRITE))
                 return -EFAULT;
         }
@@ -156,9 +175,9 @@ elf_map(struct file *filep, unsigned long addr,
             map_addr = err;
     }
 
-    return(map_addr);
-#endif
+    return map_addr;
 }
+#endif
 
 int
 elf_load_phdrs(struct elfhdr *elf_ex,
@@ -321,10 +340,11 @@ elf_load_binary(struct elfhdr *elf_ex,
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6,0,0)
     total_size = total_mapping_size(elf_phdrs, elf_ex->e_phnum);
-    if (!total_size) {
+    if (!total_size)
 #else
-    if (!total_mapping_size(elf_phdrs, elf_ex->e_phnum)) {
+    if (!total_mapping_size(elf_phdrs, elf_ex->e_phnum))
 #endif
+    {
         error = -EINVAL;
         goto out;
     }
@@ -358,40 +378,39 @@ elf_load_binary(struct elfhdr *elf_ex,
                 }
 
                 /*
-                 * Unlike execve(), monitor injection happens in an existing
-                 * mm. For ET_DYN we must let the first mapping pick a free
-                 * area to avoid -EEXIST collisions with current VMAs.
+                 * The monitor is injected into an already-populated mm, not
+                 * created through execve(). For ET_DYN on 6.8+, letting the
+                 * first mapping choose a free area avoids -EEXIST collisions
+                 * against existing VMAs when a fixed ELF_ET_DYN_BASE is busy.
                  */
                 load_bias = 0;
             }
 
-            _addr = elf_map(binary, load_bias + vaddr,
-                    eppnt, elf_prot, elf_type, total_size);
+            _addr = elf_load(binary, load_bias + vaddr,
+                             eppnt, elf_prot, elf_type,
+                             first_pt_load ? total_size : 0);
             total_size = 0;
             error = _addr;
+            if (!*map_addr)
+                *map_addr = _addr;
             if (BAD_ADDR(_addr)) {
-                vpr_dbg("map segment at %llx failed (%d)\n", load_bias + vaddr, _addr);
+                vpr_dbg("map segment at %llx failed (%ld)\n", load_bias + vaddr, _addr);
                 goto out;
             }
 
             if (first_pt_load) {
                 first_pt_load = 0;
-                if (elf_ex->e_type == ET_DYN)
+                if (elf_ex->e_type == ET_DYN) {
                     load_bias += _addr - ELF_PAGESTART(load_bias + vaddr);
-                if (!*map_addr)
-                    *map_addr = _addr;
+                }
             }
-
-            /* Keep map_addr as the first mapped segment base for diagnostics. */
-            if (!*map_addr)
-                *map_addr = _addr;
 
             k = load_bias + eppnt->p_vaddr;
             if (BAD_ADDR(k) ||
                 eppnt->p_filesz > eppnt->p_memsz ||
                 eppnt->p_memsz > TASK_SIZE ||
                 TASK_SIZE - eppnt->p_memsz < k) {
-                error = -ENOMEM;
+                error = -EINVAL;
                 goto out;
             }
 #else

@@ -89,9 +89,7 @@ int nod_event_from(struct nod_proc_info **p);
 int nod_proc_check_mm(struct nod_proc_info *p, unsigned long addr, unsigned long length);
 unsigned long nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned long *, va_list), ...);
 void nod_free_procinfo(struct nod_proc_info *p);
-// #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-// static void nod_free_procinfo_rcu(struct rcu_head *rcu);
-// #endif
+
 // loader.c
 int loader_init(void);
 void loader_destory(void);

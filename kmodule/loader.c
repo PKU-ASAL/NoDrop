@@ -48,6 +48,25 @@ calc_phdr_addr(const struct elfhdr *exec,
     return load_addr + exec->e_phoff;
 }
 
+static bool
+nod_can_create_separated_stack_now(void)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
+    return true;
+#else
+    if (!current->mm)
+        return false;
+
+    if (in_interrupt() || irqs_disabled())
+        return false;
+
+    if (in_atomic() || preempt_count())
+        return false;
+
+    return true;
+#endif
+}
+
 #define MAPPING_OK          0 
 #define MAPPING_NEXT        1
 #define MAPPING_FINISH      2
@@ -121,20 +140,8 @@ out:
 int
 nod_mmap_check(struct nod_proc_info *p, unsigned long addr, unsigned long length)
 {
-    unsigned long end = addr + length;
     unsigned long arg[2] = {addr, length};
-
-    if (end < addr) {
-        end = ~0UL;
-    }
-
-    if (p && p->stack_info.stack_start && p->stack_info.stack_end) {
-        if (MAX(addr, (unsigned long)p->stack_info.stack_start) <
-            MIN(end, (unsigned long)p->stack_info.stack_end)) {
-            return 1;
-        }
-    }
-
+    (void)p;
     return check_mapping(get_monitor_addr, (void *)arg) == MAPPING_OK ? 1 : 0;
 }
 
@@ -165,13 +172,9 @@ create_stack_with_red_zone(unsigned long addr, unsigned long size)
 
     addr = stack_begin + PAGE_SIZE;
     vm_munmap(addr, size);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6,0,0)
+    
     addr = vm_mmap(NULL, addr, size, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANONYMOUS, 0);
-#else
-    addr = vm_mmap(NULL, addr, size, PROT_READ | PROT_WRITE,
-                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK | MAP_FIXED, 0);
-#endif
     return addr;
 }
 
@@ -179,7 +182,6 @@ create_stack_with_red_zone(unsigned long addr, unsigned long size)
 static int
 create_elf_tbls(struct elfhdr *exec,
                 uint64_t load_addr,
-                uint64_t phdr_addr,
                 uint64_t interp_load_addr,
                 struct nod_stack_info *stack_info,
                 uint64_t *stack_info_addr,
@@ -192,9 +194,6 @@ create_elf_tbls(struct elfhdr *exec,
 #define STACK_ALLOC(sp, len)    ({(sp) -= (len); sp;})
 
     int i, envc, elf_info_idx, items;
-    unsigned long prefault_addr;
-    unsigned long prefault_size;
-    unsigned long prefault_ret;
     uint64_t p, arg_start, env_start;
     unsigned char k_rand_bytes[16];
 
@@ -209,24 +208,6 @@ create_elf_tbls(struct elfhdr *exec,
     stack_info->stack_start = p;
     stack_info->stack_end = p + CONFIG_MONITOR_STACK_SIZE;
     p = stack_info->stack_end - sizeof(void *);
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,0,0)
-    /*
-     * In some trace/hook contexts, copy_to_user cannot fault in missing pages.
-     * Populate only a small stack-top window that we are about to write.
-     */
-    prefault_size = PAGE_SIZE * 16;
-    if (prefault_size > CONFIG_MONITOR_STACK_SIZE)
-        prefault_size = CONFIG_MONITOR_STACK_SIZE;
-    prefault_addr = stack_info->stack_end - prefault_size;
-    prefault_ret = vm_mmap(NULL, prefault_addr, prefault_size,
-                           PROT_READ | PROT_WRITE,
-                           MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK |
-                           MAP_FIXED | MAP_POPULATE,
-                           0);
-    if (prefault_ret != prefault_addr)
-        goto err;
-#endif
 
     // generate random bytes
     get_random_bytes(k_rand_bytes, sizeof(k_rand_bytes));
@@ -265,7 +246,7 @@ create_elf_tbls(struct elfhdr *exec,
     INSERT_AUX_ENT(AT_HWCAP, ELF_HWCAP);
     INSERT_AUX_ENT(AT_PAGESZ, ELF_EXEC_PAGESIZE);
     INSERT_AUX_ENT(AT_CLKTCK, CLOCKS_PER_SEC);
-    INSERT_AUX_ENT(AT_PHDR, phdr_addr);
+    INSERT_AUX_ENT(AT_PHDR, load_addr + exec->e_phoff);
     INSERT_AUX_ENT(AT_PHENT, sizeof(struct elf_phdr));
     INSERT_AUX_ENT(AT_PHNUM, exec->e_phnum);
     INSERT_AUX_ENT(AT_BASE, interp_load_addr);
@@ -374,15 +355,14 @@ err:
 static int
 update_stack_info(const struct nod_stack_info *stack_info, uint64_t stack_info_addr)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6,0,0)
     return copy_to_user((char __user *)stack_info_addr, stack_info, sizeof(*stack_info));
-#else
-    return copy_to_user((char __user *)stack_info_addr, stack_info, sizeof(*stack_info)) ? -EFAULT : 0;
-#endif
 }
 
 static int
-do_load_monitor(struct nod_proc_info *p, int argc, const char *argv[])
+load_monitor_image(uint64_t *entry,
+                   uint64_t *load,
+                   uint64_t *phdr_addr,
+                   uint64_t *interp_load)
 {
     int retval;
     uint64_t load_addr = 0;
@@ -390,7 +370,7 @@ do_load_monitor(struct nod_proc_info *p, int argc, const char *argv[])
     uint64_t interp_map_addr = 0;
     uint64_t load_entry;
     uint64_t monitor_map_addr;
-    uint64_t phdr_addr;
+    uint64_t monitor_phdr_addr;
 
     if (filp_interpreter) {
         interp_load_addr = elf_load_binary(&interp_elf_ex, filp_interpreter, &interp_map_addr,
@@ -411,14 +391,7 @@ do_load_monitor(struct nod_proc_info *p, int argc, const char *argv[])
         goto out;
     }
 
-    phdr_addr = calc_phdr_addr(&monitor_elf_ex, monitor_elf_phdata, load_addr);
-
-    retval = create_elf_tbls(&monitor_elf_ex, load_addr, phdr_addr,
-                             interp_load_addr,
-                             &p->stack_info, &p->stack_info_addr, &p->stack_addr, argc, argv);
-    if (retval) {
-        goto out;
-    }
+    monitor_phdr_addr = calc_phdr_addr(&monitor_elf_ex, monitor_elf_phdata, load_addr);
 
     load_entry = filp_interpreter ? 
                 interp_load_addr + interp_elf_ex.e_entry : 
@@ -428,7 +401,14 @@ do_load_monitor(struct nod_proc_info *p, int argc, const char *argv[])
             "load interp at %llx\n"
             "entry = %llx\n", load_addr, interp_load_addr, load_entry);
 
-    p->entry_addr = load_entry;
+    if (entry)
+        *entry = load_entry;
+    if (load)
+        *load = load_addr;
+    if (phdr_addr)
+        *phdr_addr = monitor_phdr_addr;
+    if (interp_load)
+        *interp_load = interp_load_addr;
     retval = NOD_SUCCESS;
 
 out:
@@ -439,8 +419,16 @@ int
 nod_load_monitor(struct nod_proc_info *p)
 {
     int retval;
-    int retried = 0;
     struct pt_regs *regs;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    uint64_t phdr_addr = 0;
+    bool use_separated_stack;
+#else
+    uint64_t entry;
+    uint64_t load_addr = 0;
+    uint64_t interp_load_addr = 0;
+    uint64_t phdr_addr = 0;
+#endif
 
     const int argc = 1;
     const char *argv[] = { CONFIG_MONITOR_PATH, NULL };
@@ -458,35 +446,70 @@ nod_load_monitor(struct nod_proc_info *p)
         break;
     }
 
-retry_load:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    use_separated_stack = nod_can_create_separated_stack_now();
 
     if (!p->entry_addr) {
-        retval = do_load_monitor(p, argc, argv);
-        if (retval != NOD_SUCCESS) {
-            if (!retried && (retval == -EEXIST || retval == -EFAULT)) {
-                retried = 1;
-                goto retry_load;
-            }
+        retval = load_monitor_image(&p->entry_addr, &p->load_addr,
+                                    &phdr_addr, &p->interp_load_addr);
+        if (retval != NOD_SUCCESS)
             goto out;
+
+        if (!use_separated_stack) {
+            vpr_dbg("monitor image loaded for pid %d; defer separated-stack activation\n",
+                    current->pid);
+            return NOD_SUCCESS;
         }
-        vpr_dbg("monitor: entry 0x%llx stack [0x%llx-0x%llx] stack_info_addr 0x%llx\n", 
-                 p->entry_addr, p->stack_info.stack_start,
-                 p->stack_info.stack_end, p->stack_info_addr);
+    }
+
+    if (!(p->stack_info.stack_start && p->stack_info.stack_end)) {
+        if (!use_separated_stack)
+            return NOD_SUCCESS;
+
+        phdr_addr = calc_phdr_addr(&monitor_elf_ex, monitor_elf_phdata, p->load_addr);
+        retval = create_elf_tbls(&monitor_elf_ex, p->load_addr,
+                                 p->interp_load_addr, &p->stack_info,
+                                 &p->stack_info_addr, &p->stack_addr,
+                                 argc, argv);
+        if (retval != NOD_SUCCESS)
+            goto out;
+
+        vpr_dbg("monitor: entry 0x%llx stack [0x%llx-0x%llx] stack_info_addr 0x%llx\n",
+                p->entry_addr, p->stack_info.stack_start,
+                p->stack_info.stack_end, p->stack_info_addr);
     }
 
     p->stack_info.syscall_nr = syscall_get_nr(current, regs);
-    // store exit_code from the rdi register for exit-family syscalls
     syscall_get_arguments_deprecated(current, regs, 0, 1, &p->stack_info.exit_code);
     retval = update_stack_info(&p->stack_info, p->stack_info_addr);
-    if (retval != 0) {
-        if (!retried && retval == -EFAULT) {
-            retried = 1;
-            p->entry_addr = 0;
-            p->stack_info_addr = 0;
-            goto retry_load;
-        }
+    if (retval != 0)
         goto out;
+#else
+    if (!p->entry_addr) {
+        retval = load_monitor_image(&entry, &load_addr,
+                                    &phdr_addr, &interp_load_addr);
+        if (retval != NOD_SUCCESS)
+            goto out;
+
+        retval = create_elf_tbls(&monitor_elf_ex, load_addr,
+                                 interp_load_addr, &p->stack_info,
+                                 &p->stack_info_addr, &p->stack_addr,
+                                 argc, argv);
+        if (retval != NOD_SUCCESS)
+            goto out;
+
+        p->entry_addr = entry;
+        vpr_dbg("monitor: entry 0x%llx stack [0x%llx-0x%llx] stack_info_addr 0x%llx\n",
+                p->entry_addr, p->stack_info.stack_start,
+                p->stack_info.stack_end, p->stack_info_addr);
     }
+
+    p->stack_info.syscall_nr = syscall_get_nr(current, regs);
+    syscall_get_arguments_deprecated(current, regs, 0, 1, &p->stack_info.exit_code);
+    retval = update_stack_info(&p->stack_info, p->stack_info_addr);
+    if (retval != 0)
+        goto out;
+#endif
 
     nod_proc_set_in(p);
 
