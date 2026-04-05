@@ -48,25 +48,6 @@ calc_phdr_addr(const struct elfhdr *exec,
     return load_addr + exec->e_phoff;
 }
 
-static bool
-nod_can_create_separated_stack_now(void)
-{
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
-    return true;
-#else
-    if (!current->mm)
-        return false;
-
-    if (in_interrupt() || irqs_disabled())
-        return false;
-
-    if (in_atomic() || preempt_count())
-        return false;
-
-    return true;
-#endif
-}
-
 #define MAPPING_OK          0 
 #define MAPPING_NEXT        1
 #define MAPPING_FINISH      2
@@ -178,6 +159,182 @@ create_stack_with_red_zone(unsigned long addr, unsigned long size)
     return addr;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+static int
+count_current_envc(void)
+{
+    int envc = 0;
+    uint64_t env_start = current->mm->env_start;
+
+    while (env_start < current->mm->env_end) {
+        size_t len = strnlen_user((void __user *)env_start, MAX_ARG_STRLEN);
+
+        if (!len || len > MAX_ARG_STRLEN)
+            return -EFAULT;
+
+        env_start += len;
+        envc++;
+    }
+
+    return envc;
+}
+
+static int
+plan_separated_stack(struct nod_stack_info *stack_info,
+                     uint64_t *stack_info_addr,
+                     uint64_t *target_sp,
+                     int argc,
+                     const char *argv[])
+{
+#define STACK_ROUND_LOCAL(sp, items)  ((elf_addr_t __user *)(((uint64_t)((sp) - (items))) & ~15UL))
+#define STACK_ADD_LOCAL(sp, items)    ((elf_addr_t __user *)(sp) - (items))
+#define STACK_ALLOC_LOCAL(sp, len)    ({ (sp) -= (len); sp; })
+    const int aux_items = 11 * 2;
+    int envc, i, items;
+    uint64_t p;
+
+    p = create_stack_with_red_zone(0, CONFIG_MONITOR_STACK_SIZE);
+    if (BAD_ADDR(p))
+        return (int)p;
+
+    stack_info->stack_start = p;
+    stack_info->stack_end = p + CONFIG_MONITOR_STACK_SIZE;
+    p = stack_info->stack_end - sizeof(void *);
+
+    p = STACK_ALLOC_LOCAL(p, 16);
+    *stack_info_addr = p = STACK_ALLOC_LOCAL(p, sizeof(*stack_info));
+
+    for (i = argc - 1; i >= 0; --i)
+        p = STACK_ALLOC_LOCAL(p, strlen(argv[i]) + 1);
+
+    envc = count_current_envc();
+    if (envc < 0)
+        return envc;
+
+    items = (argc + 1) + (envc + 1) + 1 + 1;
+    *target_sp = (uint64_t)STACK_ROUND_LOCAL(STACK_ADD_LOCAL(p, aux_items), items);
+    return 0;
+}
+
+static int
+create_bootstrap_tbls(struct elfhdr *exec,
+                      uint64_t load_addr,
+                      uint64_t phdr_addr,
+                      uint64_t interp_load_addr,
+                      const struct pt_regs *regs,
+                      const struct nod_stack_info *stack_info,
+                      uint64_t *bootstrap_stack_info_addr,
+                      uint64_t *target_sp,
+                      int argc,
+                      const char *argv[])
+{
+#define STACK_ROUND_BOOT(sp, items)  ((elf_addr_t __user *)(((uint64_t)((sp) - (items))) & ~15UL))
+#define STACK_ADD_BOOT(sp, items)    ((elf_addr_t __user *)(sp) - (items))
+#define STACK_ALLOC_BOOT(sp, len)    ({ (sp) -= (len); sp; })
+    int i, envc, elf_info_idx, items;
+    uint64_t p, arg_start, env_start, original_rsp;
+    unsigned char k_rand_bytes[16];
+    elf_addr_t __user *sp;
+    elf_addr_t __user *u_rand_bytes;
+    elf_addr_t *elf_info = NULL;
+
+    p = original_rsp = regs->sp;
+
+    get_random_bytes(k_rand_bytes, sizeof(k_rand_bytes));
+    u_rand_bytes = (elf_addr_t __user *)STACK_ALLOC_BOOT(p, sizeof(k_rand_bytes));
+    if (copy_to_user(u_rand_bytes, k_rand_bytes, sizeof(k_rand_bytes)))
+        goto err;
+
+    *bootstrap_stack_info_addr = p = STACK_ALLOC_BOOT(p, sizeof(*stack_info));
+    if (copy_to_user((char __user *)p, stack_info, sizeof(*stack_info)))
+        goto err;
+
+    for (i = argc - 1; i >= 0; --i) {
+        int len = strlen(argv[i]) + 1;
+        p = STACK_ALLOC_BOOT(p, len);
+        if (copy_to_user((char __user *)p, argv[i], len))
+            goto err;
+    }
+    arg_start = p;
+
+#define INSERT_BOOT_AUX(id, val) \
+    do { \
+        elf_info[elf_info_idx++] = id; \
+        elf_info[elf_info_idx++] = val; \
+    } while (0)
+
+    elf_info_idx = 0;
+    elf_info = vmalloc(sizeof(elf_addr_t) * 11 * 2);
+    if (!elf_info)
+        goto err;
+    INSERT_BOOT_AUX(AT_HWCAP, ELF_HWCAP);
+    INSERT_BOOT_AUX(AT_PAGESZ, ELF_EXEC_PAGESIZE);
+    INSERT_BOOT_AUX(AT_CLKTCK, CLOCKS_PER_SEC);
+    INSERT_BOOT_AUX(AT_PHDR, phdr_addr);
+    INSERT_BOOT_AUX(AT_PHENT, sizeof(struct elf_phdr));
+    INSERT_BOOT_AUX(AT_PHNUM, exec->e_phnum);
+    INSERT_BOOT_AUX(AT_BASE, interp_load_addr);
+    INSERT_BOOT_AUX(AT_FLAGS, 0);
+    INSERT_BOOT_AUX(AT_ENTRY, load_addr + exec->e_entry);
+    INSERT_BOOT_AUX(AT_RANDOM, (elf_addr_t)(unsigned long)u_rand_bytes);
+    INSERT_BOOT_AUX(AT_NULL, 0);
+
+#define INSERT_BOOT_ENV(start, sp) \
+    ({ \
+        size_t len; \
+        if (put_user((elf_addr_t)(start), (elf_addr_t *)(sp)++)) \
+            goto err; \
+        len = strnlen_user((void __user *)(start), MAX_ARG_STRLEN); \
+        if (!len || len > MAX_ARG_STRLEN) \
+            goto err; \
+        len; \
+    })
+
+    envc = count_current_envc();
+    if (envc < 0)
+        goto err;
+
+    items = (argc + 1) + (envc + 1) + 1 + 1;
+    sp = STACK_ADD_BOOT(p, elf_info_idx);
+    sp = STACK_ROUND_BOOT(sp, items);
+    *target_sp = (unsigned long)sp;
+
+    if (__put_user(argc + 1, sp++))
+        goto err;
+
+    for (i = 0; i < argc; ++i) {
+        if (put_user((elf_addr_t)arg_start, sp++))
+            goto err;
+        arg_start += strlen(argv[i]) + 1;
+    }
+
+    if (put_user((elf_addr_t)*bootstrap_stack_info_addr, sp++))
+        goto err;
+
+    if (put_user(0, sp++))
+        goto err;
+
+    env_start = current->mm->env_start;
+    while (env_start < current->mm->env_end)
+        env_start += INSERT_BOOT_ENV(env_start, sp);
+
+    if (__put_user(0, sp++))
+        goto err;
+
+    if (copy_to_user(sp, elf_info, elf_info_idx * sizeof(elf_addr_t)))
+        goto err;
+
+    vfree(elf_info);
+    return NOD_SUCCESS;
+
+err:
+    *target_sp = original_rsp;
+    if (elf_info)
+        vfree(elf_info);
+    return -EFAULT;
+}
+#endif
+
 
 static int
 create_elf_tbls(struct elfhdr *exec,
@@ -242,7 +399,8 @@ create_elf_tbls(struct elfhdr *exec,
     */
     elf_info_idx = 0;
     elf_info = vmalloc(sizeof(elf_addr_t) * 12 * 2);
-    if (!elf_info) goto err;
+    if (!elf_info)
+        goto err;
     INSERT_AUX_ENT(AT_HWCAP, ELF_HWCAP);
     INSERT_AUX_ENT(AT_PAGESZ, ELF_EXEC_PAGESIZE);
     INSERT_AUX_ENT(AT_CLKTCK, CLOCKS_PER_SEC);
@@ -422,7 +580,8 @@ nod_load_monitor(struct nod_proc_info *p)
     struct pt_regs *regs;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
     uint64_t phdr_addr = 0;
-    bool use_separated_stack;
+    uint64_t active_sp;
+    uint64_t active_stack_info_addr;
 #else
     uint64_t entry;
     uint64_t load_addr = 0;
@@ -447,43 +606,42 @@ nod_load_monitor(struct nod_proc_info *p)
     }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-    use_separated_stack = nod_can_create_separated_stack_now();
-
     if (!p->entry_addr) {
         retval = load_monitor_image(&p->entry_addr, &p->load_addr,
                                     &phdr_addr, &p->interp_load_addr);
         if (retval != NOD_SUCCESS)
             goto out;
-
-        if (!use_separated_stack) {
-            vpr_dbg("monitor image loaded for pid %d; defer separated-stack activation\n",
-                    current->pid);
-            return NOD_SUCCESS;
-        }
     }
 
-    if (!(p->stack_info.stack_start && p->stack_info.stack_end)) {
-        if (!use_separated_stack)
-            return NOD_SUCCESS;
-
-        phdr_addr = calc_phdr_addr(&monitor_elf_ex, monitor_elf_phdata, p->load_addr);
-        retval = create_elf_tbls(&monitor_elf_ex, p->load_addr,
-                                 p->interp_load_addr, &p->stack_info,
-                                 &p->stack_info_addr, &p->stack_addr,
-                                 argc, argv);
-        if (retval != NOD_SUCCESS)
-            goto out;
-
-        vpr_dbg("monitor: entry 0x%llx stack [0x%llx-0x%llx] stack_info_addr 0x%llx\n",
-                p->entry_addr, p->stack_info.stack_start,
-                p->stack_info.stack_end, p->stack_info_addr);
-    }
-
+    phdr_addr = calc_phdr_addr(&monitor_elf_ex, monitor_elf_phdata, p->load_addr);
     p->stack_info.syscall_nr = syscall_get_nr(current, regs);
     syscall_get_arguments_deprecated(current, regs, 0, 1, &p->stack_info.exit_code);
-    retval = update_stack_info(&p->stack_info, p->stack_info_addr);
-    if (retval != 0)
-        goto out;
+
+    if (!p->stack_addr || !p->stack_info_addr || !p->stack_info.fsbase) {
+        if (!(p->stack_info.stack_start && p->stack_info.stack_end)) {
+            retval = plan_separated_stack(&p->stack_info, &p->stack_info_addr,
+                                          &p->stack_addr, argc, argv);
+            if (retval != NOD_SUCCESS)
+                goto out;
+        }
+        p->stack_info.stack_addr = p->stack_addr;
+        p->stack_info.stack_info_addr = p->stack_info_addr;
+
+        retval = create_bootstrap_tbls(&monitor_elf_ex, p->load_addr, phdr_addr,
+                                       p->interp_load_addr, regs, &p->stack_info,
+                                       &active_stack_info_addr, &active_sp,
+                                       argc, argv);
+        if (retval != NOD_SUCCESS)
+            goto out;
+    } else {
+        active_sp = p->stack_addr;
+        active_stack_info_addr = p->stack_info_addr;
+        p->stack_info.stack_addr = p->stack_addr;
+        p->stack_info.stack_info_addr = p->stack_info_addr;
+        retval = update_stack_info(&p->stack_info, active_stack_info_addr);
+        if (retval != 0)
+            goto out;
+    }
 #else
     if (!p->entry_addr) {
         retval = load_monitor_image(&entry, &load_addr,
@@ -517,7 +675,11 @@ nod_load_monitor(struct nod_proc_info *p)
     nod_prepare_context(p, regs);
 
     elf_reg_init(&current->thread, regs, 0);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    regs->sp = active_sp;
+#else
     regs->sp = p->stack_addr;
+#endif
     regs->cx = regs->ip = p->entry_addr;
 
     return NOD_SUCCESS_LOAD;

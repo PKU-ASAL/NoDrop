@@ -41,7 +41,9 @@ struct nod_proc_security {
 struct nod_proc_info {
 	struct hlist_node rcu;
 	struct list_head daemon_node;
-// #endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+	struct rcu_head rcu_head;
+#endif
 	pid_t pid;
 	struct mm_struct *mm;
 	struct nod_buffer buffer;

@@ -198,6 +198,10 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         }
 
         memcpy(&p->stack_info, &stack, sizeof(stack));
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+        p->stack_addr = stack.stack_addr;
+        p->stack_info_addr = stack.stack_info_addr;
+#endif
 
         if(cmd == NOD_IOCTL_RESTORE_CONTEXT) 
             nod_proc_set_context(p, p->stack_info.ioctl_fd);

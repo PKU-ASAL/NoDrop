@@ -6,6 +6,7 @@
 #include <linux/random.h>
 #include <linux/delay.h>
 #include <linux/hashtable.h>
+#include <linux/rcupdate.h>
 #include <linux/version.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
 #include <linux/pid.h>
@@ -22,7 +23,7 @@ static struct kmem_cache *proc_info_cachep = NULL;
 static DEFINE_READ_MOSTLY_HASHTABLE(proc_info_hl_head, 10);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-static DEFINE_MUTEX(nod_proc_info_mutex);
+static void __nod_free_procinfo_rcu(struct rcu_head *rcu);
 #endif
 
 static void nod_proc_merge_overflow(struct nod_proc_info *p)
@@ -74,16 +75,6 @@ __find_proc_info(struct task_struct *task)
 {
     struct nod_proc_info *p;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-    mutex_lock(&nod_proc_info_mutex);
-    hash_for_each_possible(proc_info_hl_head, p, rcu, task->pid) {
-        if (p->pid == task->pid) {
-            mutex_unlock(&nod_proc_info_mutex);
-            return p;
-        }
-    }
-    mutex_unlock(&nod_proc_info_mutex);
-#else
     rcu_read_lock();
     hash_for_each_possible_rcu(proc_info_hl_head, p, rcu, task->pid) {
         if (p->pid == task->pid) {
@@ -92,7 +83,6 @@ __find_proc_info(struct task_struct *task)
         }
     }
     rcu_read_unlock();
-#endif
 
     return NULL;
 }
@@ -116,13 +106,7 @@ __pid_alive(pid_t pid)
 static inline int
 __insert_proc_info(struct nod_proc_info *p)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-    mutex_lock(&nod_proc_info_mutex);
-    hash_add(proc_info_hl_head, &p->rcu, p->pid);
-    mutex_unlock(&nod_proc_info_mutex);
-#else
     hash_add_rcu(proc_info_hl_head, &p->rcu, p->pid);
-#endif
 
     return true;
 }
@@ -130,12 +114,8 @@ __insert_proc_info(struct nod_proc_info *p)
 static void
 __remove_proc_info(struct nod_proc_info *p)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-    mutex_lock(&nod_proc_info_mutex);
-    hash_del(&p->rcu);
-    mutex_unlock(&nod_proc_info_mutex);
-#else
     hash_del_rcu(&p->rcu);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
     synchronize_rcu();
 #endif
 }
@@ -196,6 +176,16 @@ nod_free_procinfo(struct nod_proc_info *p)
     kmem_cache_free(proc_info_cachep, p);
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+static void
+__nod_free_procinfo_rcu(struct rcu_head *rcu)
+{
+    struct nod_proc_info *p = container_of(rcu, struct nod_proc_info, rcu_head);
+
+    nod_free_procinfo(p);
+}
+#endif
+
 struct nod_proc_info *
 nod_proc_acquire(enum nod_proc_status status,
                  enum nod_proc_status *pre,
@@ -254,7 +244,11 @@ nod_proc_release(struct task_struct *task)
         }
         vpr_warn("daemon queue failed (%d), drop residual logs for pid %d\n", ret, p->pid);
     }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    call_rcu(&p->rcu_head, __nod_free_procinfo_rcu);
+#else
     nod_free_procinfo(p);
+#endif
 
     return retval;
 }
@@ -273,6 +267,8 @@ nod_copy_procinfo(struct task_struct *task, struct nod_proc_info *p)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
         p->load_addr = parent->load_addr;
         p->interp_load_addr = parent->interp_load_addr;
+        p->stack_addr = parent->stack_addr;
+        p->stack_info_addr = parent->stack_info_addr;
 #endif
         p->entry_addr = parent->entry_addr;
         memcpy(&p->stack_info, &parent->stack_info, sizeof(struct nod_stack_info));
@@ -325,23 +321,6 @@ nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned long *, va_list),
     struct nod_proc_info *p;
     ret = 0;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-    mutex_lock(&nod_proc_info_mutex);
-    hash_for_each(proc_info_hl_head, bkt, p, rcu) {
-        va_start(args, func);
-        fb = func(p, &ret, args);
-        va_end(args);
-        switch (fb) {
-        case NOD_PROC_TRAVERSE_BREAK:
-            goto out_unlock;
-        default:
-            break;
-        }
-    }
-
-out_unlock:
-    mutex_unlock(&nod_proc_info_mutex);
-#else
     rcu_read_lock();
     hash_for_each_rcu(proc_info_hl_head, bkt, p, rcu) {
         va_start(args, func);
@@ -357,7 +336,6 @@ out_unlock:
 
 out_rcu:
     rcu_read_unlock();
-#endif
 
     return ret;
 }
@@ -381,14 +359,21 @@ out:
 void
 procinfo_destroy(void)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    int bkt;
+    struct nod_proc_info *next;
+    struct nod_proc_info *this;
+    struct hlist_node *tmp;
+    LIST_HEAD(free_list);
+#else
     int bkt;
     struct nod_proc_info *this;
     struct hlist_node *tmp;
+#endif
 
     if (!proc_info_cachep) return;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-    mutex_lock(&nod_proc_info_mutex);
     hash_for_each_safe(proc_info_hl_head, bkt, tmp, this, rcu) {
         while(this->status == NOD_IN) {
             if (!__pid_alive(this->pid)) {
@@ -400,10 +385,15 @@ procinfo_destroy(void)
                     this->pid, this->status);
             msleep(5);
         }
-        hash_del(&this->rcu);
+        hash_del_rcu(&this->rcu);
+        list_add(&this->daemon_node, &free_list);
+    }
+    synchronize_rcu();
+
+    list_for_each_entry_safe(this, next, &free_list, daemon_node) {
+        list_del(&this->daemon_node);
         nod_free_procinfo(this);
     }
-    mutex_unlock(&nod_proc_info_mutex);
 #else
     rcu_read_lock();
     hash_for_each_safe(proc_info_hl_head, bkt, tmp, this, rcu) {
