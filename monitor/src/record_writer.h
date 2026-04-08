@@ -15,4 +15,4 @@ void write_record_writer(struct record_writer* rw, char * ptr);
 void close_record_writer(struct record_writer* rw);
 void set_record_path(struct timeval tv, unsigned int tid);
 
-#endif // NODROP_LUA_RUNTIME_H
+#endif // NODROP_RECORD_WRITER_H

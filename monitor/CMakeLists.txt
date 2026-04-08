@@ -63,6 +63,8 @@ set(MONITOR_SOURCES
         src/startup.c
         src/lua_runtime.c
         src/lua_runtime.h
+        src/parser.c
+        src/parser.h
         src/record_writer.c
         src/record_writer.h
         src/lua_field.c

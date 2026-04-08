@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <string.h>
-#include <inttypes.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -10,6 +9,7 @@
 #include "lauxlib.h"
 #include "lualib.h"
 #include "config.h"
+#include "parser.h"
 #include "common.h"
 
 static struct nod_field_desc g_fields[NOD_MAX_FIELDS];
@@ -87,99 +87,6 @@ static int lua_request_field(lua_State *L)
  * Helper: extract evt.arg by name 
  * ============================================================ */
 
-static const char *__print_format[PT_UINT64 + 1][PF_OCT + 1] = {
-    [PT_NONE] = {"", "", "", "", ""},                                         /*empty*/
-    [PT_INT8] = {"", "%" PRId8, "0x%" PRIx8, "%010" PRId8, "0%" PRIo8},       /*PT_INT8*/
-    [PT_INT16] = {"", "%" PRId16, "0x%" PRIx16, "%010" PRId16, "0%" PRIo16},  /*PT_INT16*/
-    [PT_INT32] = {"", "%" PRId32, "0x%" PRIx32, "%010" PRId32, "0%" PRIo32},  /*PT_INT32*/
-    [PT_INT64] = {"", "%" PRId64, "0x%" PRIx64, "%010" PRId64, "0%" PRIo64},  /*PT_INT64*/
-    [PT_UINT8] = {"", "%" PRIu8, "0x%" PRIx8, "%010" PRId8, "0%" PRIo8},      /*PT_UINT8*/
-    [PT_UINT16] = {"", "%" PRIu16, "0x%" PRIx16, "%010" PRIu16, "0%" PRIo16}, /*PT_UINT16*/
-    [PT_UINT32] = {"", "%" PRIu32, "0x%" PRIx32, "%010" PRIu32, "0%" PRIo32}, /*PT_UINT32*/
-    [PT_UINT64] = {"", "%" PRIu64, "0x%" PRIx64, "%010" PRIu64, "0%" PRIo64}  /*PT_UINT64*/
-};
-
-int evt_arg_to_string(const struct nod_param_info *param, const void *data, uint16_t len,
-                      char *buf, size_t bufsz)
-{
-    if (!param || !buf || bufsz == 0)
-        return -1;
-
-    switch (param->type)
-    {
-    case PT_FSPATH:
-    case PT_FSRELPATH:
-    case PT_CHARBUF:
-    case PT_BYTEBUF:
-    {
-        size_t n = len < bufsz - 1 ? len : bufsz - 1;
-        memcpy(buf, data, n);
-        buf[n] = '\0';
-        return (int)n;
-    }
-    /*
-    case PT_BYTEBUF:
-        // TO-DO raw buffer is not suitable for printing, may transfer into hex code
-        return snprintf(buf, bufsz, "<binary:%u>", len);
-    */
-    case PT_FLAGS8:
-    case PT_UINT8:
-    case PT_SIGTYPE:
-        return snprintf(buf, bufsz,
-                        __print_format[PT_UINT8][param->fmt],
-                        *(uint8_t *)data);
-
-    case PT_FLAGS16:
-    case PT_UINT16:
-    case PT_SYSCALLID:
-        return snprintf(buf, bufsz,
-                        __print_format[PT_UINT16][param->fmt],
-                        *(uint16_t *)data);
-
-    case PT_FLAGS32:
-    case PT_UINT32:
-    case PT_MODE:
-    case PT_UID:
-    case PT_GID:
-    case PT_SIGSET:
-        return snprintf(buf, bufsz,
-                        __print_format[PT_UINT32][param->fmt],
-                        *(uint32_t *)data);
-
-    case PT_RELTIME:
-    case PT_ABSTIME:
-    case PT_UINT64:
-        return snprintf(buf, bufsz,
-                        __print_format[PT_UINT64][param->fmt],
-                        *(uint64_t *)data);
-
-    case PT_INT8:
-        return snprintf(buf, bufsz,
-                        __print_format[PT_INT8][param->fmt],
-                        *(int8_t *)data);
-
-    case PT_INT16:
-        return snprintf(buf, bufsz,
-                        __print_format[PT_INT16][param->fmt],
-                        *(int16_t *)data);
-
-    case PT_INT32:
-        return snprintf(buf, bufsz,
-                        __print_format[PT_INT32][param->fmt],
-                        *(int32_t *)data);
-
-    case PT_INT64:
-    case PT_ERRNO:
-    case PT_FD:
-    case PT_PID:
-        return snprintf(buf, bufsz,
-                        __print_format[PT_INT64][param->fmt],
-                        *(int64_t *)data);
-
-    default:
-        return snprintf(buf, bufsz, "<unknown>");
-    }
-}
 void push_arg_as_string(lua_State *L, const struct nod_event_hdr *hdr, const char *arg_name)
 {
     static char buf[256];
@@ -264,51 +171,6 @@ static int lua_evt_field(lua_State *L)
     }
 }
 
-static int get_whole_event(const struct nod_event_hdr *hdr, char *out, int mx_size) {
-    int off = 0;
-    const struct nod_event_info *info;
-    const struct nod_param_info *param;
-    uint16_t *args;
-    char *data;
-    char tmp[256];
-    info = &g_event_info[hdr->type];
-    off += snprintf(out + off, mx_size - off,
-                "%lu %u (%u): %s(",
-                hdr->ts,
-                hdr->tid,
-                hdr->cpuid,
-                info->name);
-    args = (uint16_t *)(hdr + 1);
-    data = (char *)(args + info->nparams);
-
-    for (size_t i = 0; i < info->nparams; ++i)
-    {
-        param = &info->params[i];
-
-        if (i > 0)
-            off += snprintf(out + off, mx_size - off, ", ");
-
-        /* param name */
-        off += snprintf(out + off, mx_size - off,
-                        "%s=", param->name);
-
-        /* param value */
-        evt_arg_to_string(param, data, args[i],
-                          tmp, sizeof(tmp));
-
-        off += snprintf(out + off, mx_size - off,
-                        "%s", tmp);
-
-        data += args[i];
-
-        if (off >= (int)mx_size)
-            break;
-    }
-
-    /* closing */
-    off += snprintf(out + off, mx_size - off, ")\n");
-    return off;
-}
 
 /* ============================================================
  * Lua API: evt.send(ip, port)
@@ -367,7 +229,7 @@ static int lua_evt_save(lua_State *L)
 
     const struct nod_event_hdr *hdr;
 
-    char out[2048];
+    char out[MAX_EVENT_STR];
     int off = 0;
 
     FILE *fp;
