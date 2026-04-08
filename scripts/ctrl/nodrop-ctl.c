@@ -7,6 +7,8 @@
 #include <sys/stat.h>
 
 #include "ioctl.h"
+#include "parser.h"
+
 
 int main(int argc, char *argv[]) {
     int fd;
@@ -20,7 +22,7 @@ int main(int argc, char *argv[]) {
     struct nod_lua_state lua_state;
     char lua_path[4096];
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s [clean|fetch|stat|clear-stat|start|stop|count|record|bufsize (size in KB)]\n", argv[0]);
+        fprintf(stderr, "Usage: %s [clean|fetch|stat|clear-stat|start|stop|count|record|parse|bufsize (size in KB)]\n", argv[0]);
         return 0;
     }
 
@@ -128,7 +130,7 @@ int main(int argc, char *argv[]) {
         printf("buffer size: %lu\n", bufsize);
     } else if (!strcmp(argv[1], "record")) {
         if (argc > 3) {
-            fprintf(stderr, "Usage: %s record [normal, compress, none] (default normal)\n", argv[0]);
+            fprintf(stderr, "Usage: %s record [normal, compress, none] (default none)\n", argv[0]);
             return -1;
         }
         int record_flag = NOD_RECORD_MODE_START;
@@ -140,13 +142,23 @@ int main(int argc, char *argv[]) {
             else if (!strcmp(argv[2], "compress"))
                 record_flag = NOD_RECORD_MODE_COMPRESS;
             else {
-                fprintf(stderr, "Usage: %s record [normal, compress, none] (default normal)\n", argv[0]);
+                fprintf(stderr, "Usage: %s record [normal, compress, none] (default none)\n", argv[0]);
                 return -1;
             }
         }
         if (!ioctl(fd, NOD_IOCTL_SET_RECORD_FLAG, &record_flag)) {
             fprintf(stderr, "Record set %s\n", record_flag==0 ? "none": record_flag == 1 ? "normal" : "compress");
         }
+    } else if (!strcmp(argv[1], "parse")) {
+        if (argc != 3 && argc != 4) {
+            fprintf(stderr, "Usage: %s parse <filename.buf> [output.log]\n", argv[0]);
+            return -1;
+        }
+        if (argc == 3)
+            return parse_buf_file(argv[2], NULL);
+        else
+            return parse_buf_file(argv[2], argv[3]);
+
     } else {
         fprintf(stderr, "Unknown cmd %s\n", argv[1]);
     }
