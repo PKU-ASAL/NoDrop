@@ -678,9 +678,33 @@ static __always_inline u8 sockopt_optname_to_scap(int level, int optname)
 		case SO_RCVTIMEO:
 			return NOD_SOCKOPT_SO_RCVTIMEO;
 #endif
+#if LINUX_VERSION_CODE > KERNEL_VERSION(6, 0, 0)
+#if(defined(SO_RCVTIMEO_OLD) && !defined(SO_RCVTIMEO)) || \
+	(defined(SO_RCVTIMEO_OLD) && (SO_RCVTIMEO_OLD != SO_RCVTIMEO))
+		case SO_RCVTIMEO_OLD:
+			return NOD_SOCKOPT_SO_RCVTIMEO;
+#endif
+#if(defined(SO_RCVTIMEO_NEW) && !defined(SO_RCVTIMEO)) || \
+	(defined(SO_RCVTIMEO_NEW) && (SO_RCVTIMEO_NEW != SO_RCVTIMEO))
+		case SO_RCVTIMEO_NEW:
+			return NOD_SOCKOPT_SO_RCVTIMEO;
+#endif
+#endif
 #ifdef SO_SNDTIMEO
 		case SO_SNDTIMEO:
 			return NOD_SOCKOPT_SO_SNDTIMEO;
+#endif
+#if LINUX_VERSION_CODE > KERNEL_VERSION(6, 0, 0)
+#if(defined(SO_SNDTIMEO_OLD) && !defined(SO_SNDTIMEO)) || \
+	(defined(SO_SNDTIMEO_OLD) && (SO_SNDTIMEO_OLD != SO_SNDTIMEO))
+		case SO_SNDTIMEO_OLD:
+			return NOD_SOCKOPT_SO_SNDTIMEO;
+#endif
+#if(defined(SO_SNDTIMEO_NEW) && !defined(SO_SNDTIMEO)) || \
+	(defined(SO_SNDTIMEO_NEW) && (SO_SNDTIMEO_NEW != SO_SNDTIMEO))
+		case SO_SNDTIMEO_NEW:
+			return NOD_SOCKOPT_SO_SNDTIMEO;
+#endif
 #endif
 #ifdef SO_SECURITY_AUTHENTICATION
 		case SO_SECURITY_AUTHENTICATION:
@@ -714,6 +738,18 @@ static __always_inline u8 sockopt_optname_to_scap(int level, int optname)
 		case SO_TIMESTAMP:
 			return NOD_SOCKOPT_SO_TIMESTAMP;
 #endif
+#if LINUX_VERSION_CODE > KERNEL_VERSION(6, 0, 0)
+#if(defined(SO_TIMESTAMP_OLD) && !defined(SO_TIMESTAMP)) || \
+	(defined(SO_TIMESTAMP_OLD) && (SO_TIMESTAMP_OLD != SO_TIMESTAMP))
+		case SO_TIMESTAMP_OLD:
+			return NOD_SOCKOPT_SO_TIMESTAMP;
+#endif
+#if(defined(SO_TIMESTAMP_NEW) && !defined(SO_TIMESTAMP)) || \
+	(defined(SO_TIMESTAMP_NEW) && (SO_TIMESTAMP_NEW != SO_TIMESTAMP))
+		case SO_TIMESTAMP_NEW:
+			return NOD_SOCKOPT_SO_TIMESTAMP;
+#endif
+#endif
 #ifdef SO_ACCEPTCONN
 		case SO_ACCEPTCONN:
 			return NOD_SOCKOPT_SO_ACCEPTCONN;
@@ -730,6 +766,18 @@ static __always_inline u8 sockopt_optname_to_scap(int level, int optname)
 		case SO_TIMESTAMPNS:
 			return NOD_SOCKOPT_SO_TIMESTAMPNS;
 #endif
+#if LINUX_VERSION_CODE > KERNEL_VERSION(6, 0, 0)
+#if(defined(SO_TIMESTAMPNS_OLD) && !defined(SO_TIMESTAMPNS)) || \
+	(defined(SO_TIMESTAMPNS_OLD) && (SO_TIMESTAMPNS_OLD != SO_TIMESTAMPNS))
+		case SO_TIMESTAMPNS_OLD:
+			return NOD_SOCKOPT_SO_TIMESTAMPNS;
+#endif
+#if(defined(SO_TIMESTAMPNS_NEW) && !defined(SO_TIMESTAMPNS)) || \
+	(defined(SO_TIMESTAMPNS_NEW) && (SO_TIMESTAMPNS_NEW != SO_TIMESTAMPNS))
+		case SO_TIMESTAMPNS_NEW:
+			return NOD_SOCKOPT_SO_TIMESTAMPNS;
+#endif
+#endif
 #ifdef SO_MARK
 		case SO_MARK:
 			return NOD_SOCKOPT_SO_MARK;
@@ -737,6 +785,18 @@ static __always_inline u8 sockopt_optname_to_scap(int level, int optname)
 #ifdef SO_TIMESTAMPING
 		case SO_TIMESTAMPING:
 			return NOD_SOCKOPT_SO_TIMESTAMPING;
+#endif
+#if LINUX_VERSION_CODE > KERNEL_VERSION(6, 0, 0)
+#if(defined(SO_TIMESTAMPING_OLD) && !defined(SO_TIMESTAMPING)) || \
+	(defined(SO_TIMESTAMPING_OLD) && (SO_TIMESTAMPING_OLD != SO_TIMESTAMPING))
+		case SO_TIMESTAMPING_OLD:
+			return NOD_SOCKOPT_SO_TIMESTAMPING;
+#endif
+#if(defined(SO_TIMESTAMPING_NEW) && !defined(SO_TIMESTAMPING)) || \
+	(defined(SO_TIMESTAMPING_NEW) && (SO_TIMESTAMPING_NEW != SO_TIMESTAMPING))
+		case SO_TIMESTAMPING_NEW:
+			return NOD_SOCKOPT_SO_TIMESTAMPING;
+#endif
 #endif
 #ifdef SO_PROTOCOL
 		case SO_PROTOCOL:
