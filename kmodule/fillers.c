@@ -1031,8 +1031,28 @@ static int parse_sockopt(struct event_filler_arguments *args, int level, int opt
 #ifdef SO_RCVTIMEO
             case SO_RCVTIMEO:
 #endif
+#if LINUX_VERSION_CODE > KERNEL_VERSION(6, 0, 0)
+#if(defined(SO_RCVTIMEO_OLD) && !defined(SO_RCVTIMEO)) || \
+			(defined(SO_RCVTIMEO_OLD) && (SO_RCVTIMEO_OLD != SO_RCVTIMEO))
+			case SO_RCVTIMEO_OLD:
+#endif
+#if(defined(SO_RCVTIMEO_NEW) && !defined(SO_RCVTIMEO)) || \
+			(defined(SO_RCVTIMEO_NEW) && (SO_RCVTIMEO_NEW != SO_RCVTIMEO))
+			case SO_RCVTIMEO_NEW:
+#endif
+#endif
 #ifdef SO_SNDTIMEO
             case SO_SNDTIMEO:
+#endif
+#if LINUX_VERSION_CODE > KERNEL_VERSION(6, 0, 0)
+#if(defined(SO_SNDTIMEO_OLD) && !defined(SO_SNDTIMEO)) || \
+			(defined(SO_SNDTIMEO_OLD) && (SO_SNDTIMEO_OLD != SO_SNDTIMEO))
+			case SO_SNDTIMEO_OLD:
+#endif
+#if(defined(SO_SNDTIMEO_NEW) && !defined(SO_SNDTIMEO)) || \
+			(defined(SO_SNDTIMEO_NEW) && (SO_SNDTIMEO_NEW != SO_SNDTIMEO))
+			case SO_SNDTIMEO_NEW:
+#endif
 #endif
                 if (unlikely(nod_copy_from_user(&u.tv, optval, sizeof(u.tv))))
                     return NOD_FAILURE_INVALID_USER_MEMORY;
@@ -1118,6 +1138,16 @@ static int parse_sockopt(struct event_filler_arguments *args, int level, int opt
 #ifdef SO_TIMESTAMP
             case SO_TIMESTAMP:
 #endif
+#if LINUX_VERSION_CODE > KERNEL_VERSION(6, 0, 0)
+#if(defined(SO_TIMESTAMP_OLD) && !defined(SO_TIMESTAMP)) || \
+			(defined(SO_TIMESTAMP_OLD) && (SO_TIMESTAMP_OLD != SO_TIMESTAMP))
+			case SO_TIMESTAMP_OLD:
+#endif
+#if(defined(SO_TIMESTAMP_NEW) && !defined(SO_TIMESTAMP)) || \
+			(defined(SO_TIMESTAMP_NEW) && (SO_TIMESTAMP_NEW != SO_TIMESTAMP))
+			case SO_TIMESTAMP_NEW:
+#endif
+#endif
 #ifdef SO_ACCEPTCONN
             case SO_ACCEPTCONN:
 #endif
@@ -1130,11 +1160,31 @@ static int parse_sockopt(struct event_filler_arguments *args, int level, int opt
 #ifdef SO_TIMESTAMPNS
             case SO_TIMESTAMPNS:
 #endif
+#if LINUX_VERSION_CODE > KERNEL_VERSION(6, 0, 0)
+#if(defined(SO_TIMESTAMPNS_OLD) && !defined(SO_TIMESTAMPNS)) || \
+			(defined(SO_TIMESTAMPNS_OLD) && (SO_TIMESTAMPNS_OLD != SO_TIMESTAMPNS))
+			case SO_TIMESTAMPNS_OLD:
+#endif
+#if(defined(SO_TIMESTAMPNS_NEW) && !defined(SO_TIMESTAMPNS)) || \
+			(defined(SO_TIMESTAMPNS_NEW) && (SO_TIMESTAMPNS_NEW != SO_TIMESTAMPNS))
+			case SO_TIMESTAMPNS_NEW:
+#endif
+#endif
 #ifdef SO_MARK
             case SO_MARK:
 #endif
 #ifdef SO_TIMESTAMPING
             case SO_TIMESTAMPING:
+#endif
+#if LINUX_VERSION_CODE > KERNEL_VERSION(6, 0, 0)
+#if(defined(SO_TIMESTAMPING_OLD) && !defined(SO_TIMESTAMPING)) || \
+			(defined(SO_TIMESTAMPING_OLD) && (SO_TIMESTAMPING_OLD != SO_TIMESTAMPING))
+			case SO_TIMESTAMPING_OLD:
+#endif
+#if(defined(SO_TIMESTAMPING_NEW) && !defined(SO_TIMESTAMPING)) || \
+			(defined(SO_TIMESTAMPING_NEW) && (SO_TIMESTAMPING_NEW != SO_TIMESTAMPING))
+			case SO_TIMESTAMPING_NEW:
+#endif
 #endif
 #ifdef SO_PROTOCOL
             case SO_PROTOCOL:
