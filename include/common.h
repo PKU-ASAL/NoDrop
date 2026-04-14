@@ -5,14 +5,20 @@
 #include "events.h"
 
 #ifdef __KERNEL__
+#include <linux/version.h>
 #include <linux/syscalls.h>
 #include <linux/signal.h>
 #include <linux/ptrace.h>
 #include <linux/capability.h>
 #include <linux/limits.h>
 #else
+#include "config.h"
 #include <sys/resource.h>
 #include <stdint.h>
+
+#ifndef KERNEL_VERSION
+#define KERNEL_VERSION(a, b, c) (((a) << 16) + ((b) << 8) + (c))
+#endif
 
 #define weak __attribute__((__weak__))
 #define hidden __attribute__((__visibility__("hidden")))
@@ -40,8 +46,19 @@ struct nod_stack_info {
 	long exit_code;
 	unsigned long fsbase;
 	unsigned long hash;
-  uint64_t stack_start;
-  uint64_t stack_end;
+	uint64_t stack_start;
+	uint64_t stack_end;
+#ifdef __KERNEL__
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+	uint64_t stack_addr;
+	uint64_t stack_info_addr;
+#endif
+#else
+#if CONFIG_LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+	uint64_t stack_addr;
+	uint64_t stack_info_addr;
+#endif
+#endif
 	char *buffer;
 	struct nod_buffer_info *buffer_info;
 };
@@ -54,8 +71,29 @@ __attribute__((unused))
 static unsigned long 
 nod_calc_hash(struct nod_stack_info *stack)
 {
+#ifdef __KERNEL__
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+	return stack->fsbase ^ (stack->ioctl_fd + 42) ^ (stack->pkey - 42) ^ 
+		(unsigned long)stack->buffer ^ (unsigned long)stack->buffer_info ^
+		(unsigned long)stack->stack_start ^ (unsigned long)stack->stack_end
+		^ (unsigned long)stack->stack_addr ^ (unsigned long)stack->stack_info_addr
+		;
+#else
 	return stack->fsbase ^ (stack->ioctl_fd + 42) ^ (stack->pkey - 42) ^ 
 		(unsigned long)stack->buffer ^ (unsigned long)stack->buffer_info;
+#endif
+#else
+#if CONFIG_LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+	return stack->fsbase ^ (stack->ioctl_fd + 42) ^ (stack->pkey - 42) ^ 
+		(unsigned long)stack->buffer ^ (unsigned long)stack->buffer_info ^
+		(unsigned long)stack->stack_start ^ (unsigned long)stack->stack_end
+		^ (unsigned long)stack->stack_addr ^ (unsigned long)stack->stack_info_addr
+		;
+#else
+	return stack->fsbase ^ (stack->ioctl_fd + 42) ^ (stack->pkey - 42) ^ 
+		(unsigned long)stack->buffer ^ (unsigned long)stack->buffer_info;
+#endif
+#endif
 }
 
 #endif //_COMMON_H_

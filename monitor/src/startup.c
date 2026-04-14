@@ -3,11 +3,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/stat.h>
 
 #include "events.h"
+#include "config.h"
 #include "common.h"
 #include "ioctl.h"
 
@@ -43,6 +45,9 @@ weak void nod_monitor_exit(long code) {};
 // declarations of startup
 static void nod_start_main(int, char **, char **);
 static void nod_restore_context(struct nod_stack_info *p);
+#if CONFIG_LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+static size_t *nod_prepare_separated_stack(int argc, char **argv, char **env, size_t aux[AUX_CNT], struct nod_stack_info *p);
+#endif
 
 weak void init();
 weak void _fini();
@@ -105,6 +110,84 @@ nod_initialize(struct nod_stack_info *p) {
     }
     nod_mmheap_init(mmheap_pool, sizeof(mmheap_pool));
 }
+
+#if CONFIG_LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+static size_t *
+nod_prepare_separated_stack(int argc, char **argv, char **env, size_t aux[AUX_CNT], struct nod_stack_info *p)
+{
+#define STACK_ROUND_USER(sp, items)  ((size_t *)(((size_t)((sp) - (items))) & ~15UL))
+#define STACK_ADD_USER(sp, items)    ((size_t *)(sp) - (items))
+#define STACK_ALLOC_USER(sp, len)    ({ (sp) -= (len); sp; })
+#define INSERT_AUX_ENT_USER(id, val) \
+    do { \
+        aux_info[aux_idx++] = (id); \
+        aux_info[aux_idx++] = (val); \
+    } while (0)
+    size_t aux_info[11 * 2];
+    size_t arg_addrs[8];
+    size_t rand_addr, cur, expected_sp;
+    size_t i;
+    int envc = 0;
+    int aux_idx = 0;
+    int items;
+
+    if (argc < 1)
+        return NULL;
+
+    if (!p->stack_start || !p->stack_end)
+        return NULL;
+
+    rand_addr = p->stack_end - sizeof(void *) - 16;
+    p->stack_info_addr = rand_addr - sizeof(*p);
+    cur = p->stack_info_addr;
+
+    for (i = argc - 1; i-- > 0;) {
+        size_t len = strlen(argv[i]) + 1;
+        cur = STACK_ALLOC_USER(cur, len);
+        arg_addrs[i] = cur;
+        memcpy((void *)cur, argv[i], len);
+    }
+
+    for (envc = 0; env[envc]; ++envc)
+        ;
+
+    items = argc + envc + 3;
+    expected_sp = (size_t)STACK_ROUND_USER(STACK_ADD_USER(cur, 11 * 2), items);
+    p->stack_addr = expected_sp;
+
+    if (aux[AT_RANDOM])
+        memcpy((void *)rand_addr, (void *)aux[AT_RANDOM], 16);
+
+    memcpy((void *)p->stack_info_addr, p, sizeof(*p));
+
+    {
+        size_t *new_sp = (size_t *)p->stack_addr;
+        *new_sp++ = argc;
+        for (i = 0; i < (size_t)argc - 1; ++i)
+            *new_sp++ = arg_addrs[i];
+        *new_sp++ = p->stack_info_addr;
+        *new_sp++ = 0;
+        for (i = 0; env[i]; ++i)
+            *new_sp++ = (size_t)env[i];
+        *new_sp++ = 0;
+
+        INSERT_AUX_ENT_USER(AT_HWCAP, aux[AT_HWCAP]);
+        INSERT_AUX_ENT_USER(AT_PAGESZ, aux[AT_PAGESZ]);
+        INSERT_AUX_ENT_USER(AT_CLKTCK, aux[AT_CLKTCK]);
+        INSERT_AUX_ENT_USER(AT_PHDR, aux[AT_PHDR]);
+        INSERT_AUX_ENT_USER(AT_PHENT, aux[AT_PHENT]);
+        INSERT_AUX_ENT_USER(AT_PHNUM, aux[AT_PHNUM]);
+        INSERT_AUX_ENT_USER(AT_BASE, aux[AT_BASE]);
+        INSERT_AUX_ENT_USER(AT_FLAGS, aux[AT_FLAGS]);
+        INSERT_AUX_ENT_USER(AT_ENTRY, aux[AT_ENTRY]);
+        INSERT_AUX_ENT_USER(AT_RANDOM, rand_addr);
+        INSERT_AUX_ENT_USER(AT_NULL, 0);
+        memcpy(new_sp, aux_info, aux_idx * sizeof(size_t));
+    }
+
+    return (size_t *)p->stack_addr;
+}
+#endif
 
 static void
 nod_start_main(int argc, char **argv, char **env) {
@@ -267,6 +350,23 @@ hidden void _start_c(size_t *sp, size_t *dynv) {
         size_t *rel_addr = (void *) (base + rel[0]);
         *rel_addr = base + rel[2];
     }
+
+#if CONFIG_LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    {
+        struct nod_stack_info *stack = (struct nod_stack_info *)argv[argc - 1];
+        size_t current_sp = (size_t)sp;
+
+        if (stack && stack->stack_start && stack->stack_end &&
+            (current_sp < stack->stack_start || current_sp >= stack->stack_end)) {
+            size_t *new_sp = nod_prepare_separated_stack(argc, argv, argv + argc + 1, aux, stack);
+            if (new_sp) {
+                sp = new_sp;
+                argc = *sp;
+                argv = (void *)(sp + 1);
+            }
+        }
+    }
+#endif
 
     __libc_start_main((int (*)()) nod_start_main, *sp, (void *) (sp + 1), init, _fini, 0);
 }

@@ -18,7 +18,7 @@ static int nodrop_init(void)
         pr_err("procinfo initialization failed (%d)\n", err);
         goto out_procinfo;
     }
-
+    
     if((err = tracepoint_init())) {
         pr_err("hook syscall_table failed (%d)\n", err);
         goto out_trace;

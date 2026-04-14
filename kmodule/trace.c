@@ -286,7 +286,11 @@ mm_range_filter(struct nod_proc_info *p, struct pt_regs *regs)
     default:
         syscall_get_arguments_deprecated(current, regs, 0, 1, &addr);
         syscall_get_arguments_deprecated(current, regs, 1, 1, &length);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+        if (nod_mmap_check(p, addr, length)) {
+#else
         if (nod_mmap_check(addr, length)) {
+#endif
             vpr_warn("is trying to manipulate monitor memory %lx len %ld\n", addr, length);
             return -EINVAL;
         }
@@ -396,11 +400,11 @@ int trace_syscall(void) {
         goto err_sched_procexit;
     }
 
-    hook_syscall(__NR_exit, exit_filter);
-    hook_syscall(__NR_exit_group, exit_filter);
-    hook_syscall(__NR_munmap, mm_range_filter);
-    hook_syscall(__NR_mprotect, mm_range_filter);
-    hook_syscall(__NR_mremap, mm_range_filter);
+    // hook_syscall(__NR_exit, exit_filter);
+    // hook_syscall(__NR_exit_group, exit_filter);
+    // hook_syscall(__NR_munmap, mm_range_filter);
+    // hook_syscall(__NR_mprotect, mm_range_filter);
+    // hook_syscall(__NR_mremap, mm_range_filter);
 
     tracepoint_registered = 1;
     return 0;
@@ -420,11 +424,11 @@ void untrace_syscall(void) {
     if (tracepoint_registered == 0)
         return;
 
-    unhook_syscall(__NR_exit);
-    unhook_syscall(__NR_exit_group);
-    unhook_syscall(__NR_munmap);
-    unhook_syscall(__NR_mprotect);
-    unhook_syscall(__NR_mremap);
+    // unhook_syscall(__NR_exit);
+    // unhook_syscall(__NR_exit_group);
+    // unhook_syscall(__NR_munmap);
+    // unhook_syscall(__NR_mprotect);
+    // unhook_syscall(__NR_mremap);
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 20)
     compat_unregister_trace(syscall_exit_probe, "sys_exit", tp_sys_exit);

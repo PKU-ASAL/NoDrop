@@ -4,10 +4,6 @@
 #define Kib 1024
 #define Mib 1024 * Kib
 
-#ifndef KERNEL_VERSION
-#define KERNEL_VERSION(a, b, c) (((a) << 16) + ((b) << 8) + (c))
-#endif
-
 #define CONFIG_BUFFER_SIZE ${BUFFER_SIZE}
 #define CONFIG_MONITOR_PATH "${MONITOR_PATH}"
 #define CONFIG_STORE_PATH "${STORE_PATH}"
