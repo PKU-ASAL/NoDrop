@@ -48,6 +48,25 @@ calc_phdr_addr(const struct elfhdr *exec,
     return load_addr + exec->e_phoff;
 }
 
+static bool
+nod_can_create_separated_stack_now(void)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
+    return true;
+#else
+    if (!current->mm)
+        return false;
+
+    if (in_interrupt() || irqs_disabled())
+        return false;
+
+    if (in_atomic() || preempt_count())
+        return false;
+
+    return true;
+#endif
+}
+
 #define MAPPING_OK          0 
 #define MAPPING_NEXT        1
 #define MAPPING_FINISH      2
@@ -580,8 +599,7 @@ nod_load_monitor(struct nod_proc_info *p)
     struct pt_regs *regs;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
     uint64_t phdr_addr = 0;
-    uint64_t active_sp;
-    uint64_t active_stack_info_addr;
+    bool use_separated_stack;
 #else
     uint64_t entry;
     uint64_t load_addr = 0;
@@ -606,42 +624,43 @@ nod_load_monitor(struct nod_proc_info *p)
     }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    use_separated_stack = nod_can_create_separated_stack_now();
+
     if (!p->entry_addr) {
         retval = load_monitor_image(&p->entry_addr, &p->load_addr,
                                     &phdr_addr, &p->interp_load_addr);
         if (retval != NOD_SUCCESS)
             goto out;
+
+        if (!use_separated_stack) {
+            vpr_dbg("monitor image loaded for pid %d; defer separated-stack activation\n",
+                    current->pid);
+            return NOD_SUCCESS;
+        }
     }
 
-    phdr_addr = calc_phdr_addr(&monitor_elf_ex, monitor_elf_phdata, p->load_addr);
-    p->stack_info.syscall_nr = syscall_get_nr(current, regs);
-    syscall_get_arguments_deprecated(current, regs, 0, 1, &p->stack_info.exit_code);
+    if (!(p->stack_info.stack_start && p->stack_info.stack_end)) {
+        if (!use_separated_stack)
+            return NOD_SUCCESS;
 
-    if (!p->stack_addr || !p->stack_info_addr || !p->stack_info.fsbase) {
-        if (!(p->stack_info.stack_start && p->stack_info.stack_end)) {
-            retval = plan_separated_stack(&p->stack_info, &p->stack_info_addr,
-                                          &p->stack_addr, argc, argv);
-            if (retval != NOD_SUCCESS)
-                goto out;
-        }
-        p->stack_info.stack_addr = p->stack_addr;
-        p->stack_info.stack_info_addr = p->stack_info_addr;
-
-        retval = create_bootstrap_tbls(&monitor_elf_ex, p->load_addr, phdr_addr,
-                                       p->interp_load_addr, regs, &p->stack_info,
-                                       &active_stack_info_addr, &active_sp,
-                                       argc, argv);
+        phdr_addr = calc_phdr_addr(&monitor_elf_ex, monitor_elf_phdata, p->load_addr);
+        retval = create_elf_tbls(&monitor_elf_ex, p->load_addr,
+                                 p->interp_load_addr, &p->stack_info,
+                                 &p->stack_info_addr, &p->stack_addr,
+                                 argc, argv);
         if (retval != NOD_SUCCESS)
             goto out;
-    } else {
-        active_sp = p->stack_addr;
-        active_stack_info_addr = p->stack_info_addr;
-        p->stack_info.stack_addr = p->stack_addr;
-        p->stack_info.stack_info_addr = p->stack_info_addr;
-        retval = update_stack_info(&p->stack_info, active_stack_info_addr);
-        if (retval != 0)
-            goto out;
+
+        vpr_dbg("monitor: entry 0x%llx stack [0x%llx-0x%llx] stack_info_addr 0x%llx\n",
+                p->entry_addr, p->stack_info.stack_start,
+                p->stack_info.stack_end, p->stack_info_addr);
     }
+
+    p->stack_info.syscall_nr = syscall_get_nr(current, regs);
+    syscall_get_arguments_deprecated(current, regs, 0, 1, &p->stack_info.exit_code);
+    retval = update_stack_info(&p->stack_info, p->stack_info_addr);
+    if (retval != 0)
+        goto out;
 #else
     if (!p->entry_addr) {
         retval = load_monitor_image(&entry, &load_addr,
@@ -675,11 +694,7 @@ nod_load_monitor(struct nod_proc_info *p)
     nod_prepare_context(p, regs);
 
     elf_reg_init(&current->thread, regs, 0);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-    regs->sp = active_sp;
-#else
     regs->sp = p->stack_addr;
-#endif
     regs->cx = regs->ip = p->entry_addr;
 
     return NOD_SUCCESS_LOAD;
