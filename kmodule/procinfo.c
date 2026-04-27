@@ -392,5 +392,10 @@ procinfo_destroy(void)
     rcu_read_unlock();
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    rcu_barrier();
+#endif
+
     kmem_cache_destroy(proc_info_cachep);
+    proc_info_cachep = NULL;
 }
