@@ -48,25 +48,6 @@ calc_phdr_addr(const struct elfhdr *exec,
     return load_addr + exec->e_phoff;
 }
 
-static bool
-nod_can_create_separated_stack_now(void)
-{
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
-    return true;
-#else
-    if (!current->mm)
-        return false;
-
-    if (in_interrupt() || irqs_disabled())
-        return false;
-
-    if (in_atomic() || preempt_count())
-        return false;
-
-    return true;
-#endif
-}
-
 #define MAPPING_OK          0 
 #define MAPPING_NEXT        1
 #define MAPPING_FINISH      2
@@ -251,7 +232,7 @@ create_bootstrap_tbls(struct elfhdr *exec,
 #define STACK_ADD_BOOT(sp, items)    ((elf_addr_t __user *)(sp) - (items))
 #define STACK_ALLOC_BOOT(sp, len)    ({ (sp) -= (len); sp; })
     int i, envc, elf_info_idx, items;
-    uint64_t p, arg_start, env_start, original_rsp;
+    uint64_t p, arg_start, original_rsp;
     unsigned char k_rand_bytes[16];
     elf_addr_t __user *sp;
     elf_addr_t __user *u_rand_bytes;
@@ -298,20 +279,14 @@ create_bootstrap_tbls(struct elfhdr *exec,
     INSERT_BOOT_AUX(AT_RANDOM, (elf_addr_t)(unsigned long)u_rand_bytes);
     INSERT_BOOT_AUX(AT_NULL, 0);
 
-#define INSERT_BOOT_ENV(start, sp) \
-    ({ \
-        size_t len; \
-        if (put_user((elf_addr_t)(start), (elf_addr_t *)(sp)++)) \
-            goto err; \
-        len = strnlen_user((void __user *)(start), MAX_ARG_STRLEN); \
-        if (!len || len > MAX_ARG_STRLEN) \
-            goto err; \
-        len; \
-    })
-
-    envc = count_current_envc();
-    if (envc < 0)
-        goto err;
+    /*
+     * This bootstrap frame only has to carry the monitor argv and the
+     * nod_stack_info pointer.  Rebuilding the traced task's original
+     * environment from mm->env_start/env_end is fragile: programs such as
+     * redis rewrite argv/environ for setproctitle(), leaving that range full
+     * of NUL bytes and making the computed frame far larger than intended.
+     */
+    envc = 0;
 
     items = (argc + 1) + (envc + 1) + 1 + 1;
     sp = STACK_ADD_BOOT(p, elf_info_idx);
@@ -332,10 +307,6 @@ create_bootstrap_tbls(struct elfhdr *exec,
 
     if (put_user(0, sp++))
         goto err;
-
-    env_start = current->mm->env_start;
-    while (env_start < current->mm->env_end)
-        env_start += INSERT_BOOT_ENV(env_start, sp);
 
     if (__put_user(0, sp++))
         goto err;
@@ -599,7 +570,8 @@ nod_load_monitor(struct nod_proc_info *p)
     struct pt_regs *regs;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
     uint64_t phdr_addr = 0;
-    bool use_separated_stack;
+    uint64_t active_sp;
+    uint64_t active_stack_info_addr;
 #else
     uint64_t entry;
     uint64_t load_addr = 0;
@@ -624,43 +596,42 @@ nod_load_monitor(struct nod_proc_info *p)
     }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-    use_separated_stack = nod_can_create_separated_stack_now();
-
     if (!p->entry_addr) {
         retval = load_monitor_image(&p->entry_addr, &p->load_addr,
                                     &phdr_addr, &p->interp_load_addr);
         if (retval != NOD_SUCCESS)
             goto out;
-
-        if (!use_separated_stack) {
-            vpr_dbg("monitor image loaded for pid %d; defer separated-stack activation\n",
-                    current->pid);
-            return NOD_SUCCESS;
-        }
     }
 
-    if (!(p->stack_info.stack_start && p->stack_info.stack_end)) {
-        if (!use_separated_stack)
-            return NOD_SUCCESS;
-
-        phdr_addr = calc_phdr_addr(&monitor_elf_ex, monitor_elf_phdata, p->load_addr);
-        retval = create_elf_tbls(&monitor_elf_ex, p->load_addr,
-                                 p->interp_load_addr, &p->stack_info,
-                                 &p->stack_info_addr, &p->stack_addr,
-                                 argc, argv);
-        if (retval != NOD_SUCCESS)
-            goto out;
-
-        vpr_dbg("monitor: entry 0x%llx stack [0x%llx-0x%llx] stack_info_addr 0x%llx\n",
-                p->entry_addr, p->stack_info.stack_start,
-                p->stack_info.stack_end, p->stack_info_addr);
-    }
-
+    phdr_addr = calc_phdr_addr(&monitor_elf_ex, monitor_elf_phdata, p->load_addr);
     p->stack_info.syscall_nr = syscall_get_nr(current, regs);
     syscall_get_arguments_deprecated(current, regs, 0, 1, &p->stack_info.exit_code);
-    retval = update_stack_info(&p->stack_info, p->stack_info_addr);
-    if (retval != 0)
-        goto out;
+
+    if (!p->stack_addr || !p->stack_info_addr || !p->stack_info.fsbase) {
+        if (!(p->stack_info.stack_start && p->stack_info.stack_end)) {
+            retval = plan_separated_stack(&p->stack_info, &p->stack_info_addr,
+                                          &p->stack_addr, argc, argv);
+            if (retval != NOD_SUCCESS)
+                goto out;
+        }
+        p->stack_info.stack_addr = p->stack_addr;
+        p->stack_info.stack_info_addr = p->stack_info_addr;
+
+        retval = create_bootstrap_tbls(&monitor_elf_ex, p->load_addr, phdr_addr,
+                                       p->interp_load_addr, regs, &p->stack_info,
+                                       &active_stack_info_addr, &active_sp,
+                                       argc, argv);
+        if (retval != NOD_SUCCESS)
+            goto out;
+    } else {
+        active_sp = p->stack_addr;
+        active_stack_info_addr = p->stack_info_addr;
+        p->stack_info.stack_addr = p->stack_addr;
+        p->stack_info.stack_info_addr = p->stack_info_addr;
+        retval = update_stack_info(&p->stack_info, active_stack_info_addr);
+        if (retval != 0)
+            goto out;
+    }
 #else
     if (!p->entry_addr) {
         retval = load_monitor_image(&entry, &load_addr,
@@ -694,7 +665,11 @@ nod_load_monitor(struct nod_proc_info *p)
     nod_prepare_context(p, regs);
 
     elf_reg_init(&current->thread, regs, 0);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    regs->sp = active_sp;
+#else
     regs->sp = p->stack_addr;
+#endif
     regs->cx = regs->ip = p->entry_addr;
 
     return NOD_SUCCESS_LOAD;
