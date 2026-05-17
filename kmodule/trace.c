@@ -61,7 +61,11 @@ static inline struct pt_regs *nod_ftrace_get_regs(struct ftrace_regs *fregs)
 
 static inline void nod_ftrace_set_ip(struct ftrace_regs *fregs, unsigned long ip)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
     ftrace_regs_set_instruction_pointer(fregs, ip);
+#else
+    ftrace_instruction_pointer_set(fregs, ip);
+#endif
 }
 #else
 #define NOD_FTRACE_REGS_TYPE struct pt_regs
