@@ -9,6 +9,7 @@
 
 void lua_on_event(struct lua_event *evt);
 void lua_on_init();
+void lua_on_capture_end();
 
 void lua_runtime_init(void);
 

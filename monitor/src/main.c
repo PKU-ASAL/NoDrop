@@ -131,7 +131,7 @@ void nod_monitor_init(int argc, char *argv[], char *env[])
     lua_runtime_init();
 }
 
-int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info, struct nod_lua_state *global_state, int record_flag)
+int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info, struct nod_lua_state *global_state, int record_flag, int is_last)
 {
     lua_run_script(global_state);
 
@@ -150,6 +150,9 @@ int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info, struct n
         write_record_writer(&rw, ptr);
         ptr += hdr->len;
     }
+
+    if (is_last)
+        lua_on_capture_end();
 
     close_record_writer(&rw);
     buffer_info->nevents = buffer_info->tail = 0;

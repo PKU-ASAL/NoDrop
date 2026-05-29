@@ -95,6 +95,25 @@ void lua_on_init()
     }
 }
 
+void lua_on_capture_end()
+{
+    if (!g_L || !run_state.lua_mtime)
+        return;
+
+    lua_getglobal(g_L, "on_capture_end");
+    if (!lua_isfunction(g_L, -1))
+    {
+        lua_pop(g_L, 1);
+        return;
+    }
+
+    if (lua_pcall(g_L, 0, 0, 0) != LUA_OK)
+    {
+        printf("[lua] on_capture_end error: %s\n", lua_tostring(g_L, -1));
+        lua_pop(g_L, 1);
+    }
+}
+
 static int lua_run_code(const char *code)
 {
 
