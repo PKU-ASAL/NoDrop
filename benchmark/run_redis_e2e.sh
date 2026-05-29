@@ -424,6 +424,100 @@ add_artifact_totals() {
   TOTAL_EVENT_COUNT=$((TOTAL_EVENT_COUNT + event_count))
 }
 
+count_syscall_stats_events() {
+  local file="$1"
+
+  # Count the LAST "Syscall Statistics" block in the file.
+  # Expected lines:
+  #   write                1000000
+  #   epoll_wait           11002
+  # Output:
+  #   integer event count, or NA if no statistics block is found.
+  awk '
+    BEGIN {
+      in_stats = 0
+      seen = 0
+      current = 0
+    }
+
+    /^=+ Syscall Statistics =+$/ {
+      in_stats = 1
+      seen = 1
+      current = 0
+      next
+    }
+
+    in_stats == 1 {
+      if ($1 ~ /^[A-Za-z0-9_]+$/ && $2 ~ /^[0-9]+$/) {
+        current += $2
+      }
+    }
+
+    END {
+      if (seen) {
+        print current
+      } else {
+        print "NA"
+      }
+    }
+  ' "${file}"
+}
+
+collect_sysdig_count_stats() {
+  local out_path="${RUN_DIR}/sysdig_count.out"
+  local artifact_index=1
+  local event_count="0"
+  local kept="yes"
+  local status="missing"
+
+  if [[ ! -f "${out_path}" ]]; then
+    append_artifact_stat "sysdig_count" "${artifact_index}" 0 0 0 "${kept}" "${status}"
+    return 0
+  fi
+
+  event_count=$(count_syscall_stats_events "${out_path}")
+  if [[ "${event_count}" == "NA" ]]; then
+    append_artifact_stat "sysdig_count" "${artifact_index}" 0 0 0 "${kept}" "no_stats"
+    return 0
+  fi
+
+  status="ok"
+  add_artifact_totals 0 0 "${event_count}"
+  append_artifact_stat "sysdig_count" "${artifact_index}" 0 0 "${event_count}" "${kept}" "${status}"
+}
+
+collect_nodrop_count_stats() {
+  local artifact_index=0
+  local found_log=0
+  local found_stats=0
+
+  # NoDrop count statistics are printed at the tail of each redis_${id}.log.
+  # Each Redis instance may have one log, so we aggregate all redis_*.log files.
+  for log_path in "${RUN_DIR}"/redis_*.log; do
+    [[ -e "${log_path}" ]] || continue
+    found_log=1
+    artifact_index=$((artifact_index + 1))
+
+    local event_count
+    event_count=$(count_syscall_stats_events "${log_path}")
+
+    if [[ "${event_count}" == "NA" ]]; then
+      append_artifact_stat "nodrop_count" "${artifact_index}" 0 0 0 "yes" "no_stats"
+      continue
+    fi
+
+    found_stats=1
+    add_artifact_totals 0 0 "${event_count}"
+    append_artifact_stat "nodrop_count" "${artifact_index}" 0 0 "${event_count}" "yes" "ok"
+  done
+
+  if (( found_log == 0 )); then
+    append_artifact_stat "nodrop_count" 0 0 0 0 "yes" "missing"
+  elif (( found_stats == 0 )); then
+    log "[WARN] nodrop_count: redis logs found, but no Syscall Statistics block was parsed."
+  fi
+}
+
 snapshot_nodrop_outputs_before() {
   mkdir -p "${NODROP_STORE_DIR}"
 
@@ -570,6 +664,12 @@ collect_nodrop_compress_stats() {
 
 collect_artifact_stats() {
   case "${MODE}" in
+    sysdig_count)
+      collect_sysdig_count_stats
+      ;;
+    nodrop_count)
+      collect_nodrop_count_stats
+      ;;
     sysdig_compress)
       collect_sysdig_compress_stats
       ;;
@@ -771,8 +871,9 @@ do_single_run() {
   local total_rps
   total_rps=$(run_benchmarks_and_collect_total)
 
-  stop_monitor
   stop_redis_instances
+
+  stop_monitor
 
   collect_artifact_stats
 
@@ -785,7 +886,7 @@ do_single_run() {
     >> "${RESULT_CSV}"
 
   log "Run ${run_id} total throughput = ${total_rps} req/s"
-  if [[ "${MODE}" == "sysdig_compress" || "${MODE}" == "nodrop_compress" ]]; then
+  if [[ "${MODE}" == "sysdig_count" || "${MODE}" == "nodrop_count" || "${MODE}" == "sysdig_compress" || "${MODE}" == "nodrop_compress" ]]; then
     log "Run ${run_id} artifacts: files=${ARTIFACT_FILE_COUNT}, events=${TOTAL_EVENT_COUNT}, compressed=${TOTAL_COMPRESSED_BYTES}, uncompressed=${TOTAL_UNCOMPRESSED_BYTES}"
   fi
 }
