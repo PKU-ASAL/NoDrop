@@ -4,6 +4,9 @@
 #include <linux/ptrace.h>
 #include <linux/unistd.h>
 #include <linux/mm.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+#include <linux/sched.h>
+#endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
 #include <linux/ftrace.h>
 #include <linux/module.h>
@@ -42,6 +45,23 @@ static int tracepoint_registered;
 static sys_call_ptr_t *syscall_table;
 static struct nod_syscall_filter syscall_filters[SYSCALL_TABLE_SIZE];
 static uint64_t nod_lookup_name(const char *name);
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+#ifdef __NR_clone3
+static int nod_clone3_flags(struct pt_regs *regs, unsigned long *flags)
+{
+    unsigned long uargs;
+    struct clone_args args;
+
+    syscall_get_arguments_deprecated(current, regs, 0, 1, &uargs);
+    if (nod_copy_from_user(&args, (void __user *)uargs, sizeof(args)))
+        return -EFAULT;
+
+    *flags = args.flags;
+    return 0;
+}
+#endif
+#endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
 typedef long (*nod_x64_sys_call_t)(const struct pt_regs *, unsigned int);
@@ -220,6 +240,29 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
                 if (!nod_proc_acquire(NOD_CLONE, NULL, -1, current))
                     vpr_err("acquire NOD_CLONE for childed process failed\n");
             }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+#ifdef __NR_clone3
+        } else if (id == __NR_clone3 && ret == 0) {
+            unsigned long clone_flags = 0;
+
+            if (nod_clone3_flags(regs, &clone_flags)) {
+                vpr_err("read clone3 flags for childed process failed\n");
+                break;
+            }
+
+            if (clone_flags & CLONE_VM) {
+                if (!nod_proc_acquire(NOD_SHARE, NULL, -1, current))
+                    vpr_err("acquire NOD_SHARE for clone3 childed process failed\n");
+            } else {
+                /*
+                 * If the child process has its own address space, it should
+                 * inherit parent's procinfo lazily, same as clone().
+                 */
+                if (!nod_proc_acquire(NOD_CLONE, NULL, -1, current))
+                    vpr_err("acquire NOD_CLONE for clone3 childed process failed\n");
+            }
+#endif
+#endif
         } else {
             if (id == __NR_execve || id == __NR_execveat) {
                 /*

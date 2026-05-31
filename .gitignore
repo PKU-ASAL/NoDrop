@@ -32,3 +32,6 @@ postmark.pmrc
 
 /lua/
 /zlib/
+NODROP.pdf
+*.csv
+scripts/StressTest/__*
