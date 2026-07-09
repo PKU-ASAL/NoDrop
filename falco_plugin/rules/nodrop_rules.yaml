@@ -1,6 +1,9 @@
-- rule: Read Sensitive File /etc/shadow
-  desc: Detects any attempt to read the password shadow file
-  condition: fd.name == "/etc/shadow" and evt.type in (open, openat)
-  output: "Sensitive file opened for reading (user=%user.name command=%proc.cmdline file=%fd.name)"
+- rule: Simulated NODROP Shadow Access
+  desc: detect shadow
+  condition: >
+    jevt.value[/evt.type] in (open, openat)
+    and jevt.value[/evt.dir] == "<"
+    and jevt.value[/fd.name] == "/etc/shadow"
+  output: "[NODROP-SIM] Real-time syscall detected via Plugin: (user=%jevt.val>
   priority: WARNING
-  source: syscall
+  source: nodrop
