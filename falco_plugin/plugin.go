@@ -1,34 +1,64 @@
 package main
 
 import (
-	"github.com/falcosecurity/plugin-sdk-go/pkg/sdk/plugins"
+	"bufio"
+	"io"
+	"os"
+	"strings"
 	"github.com/falcosecurity/plugin-sdk-go/pkg/sdk/plugins/source"
 )
 
-type Plugin struct {
-	plugins.BasePlugin
-}
-
-func (k *Plugin) Info() *plugins.Info {
-	return &plugins.Info{
-		ID:          999,
-		Name:        "nodrop",
-		Description: "NoDrop FIFO JSON source",
-		EventSource: "nodrop",
-		Version:     "0.1.0",
+// Open opens a FIFO and returns a push-based source.Instance.
+// params: path to FIFO, default "/tmp/nodrop.fifo"
+func (p *Plugin) Open(params string) (source.Instance, error) {
+	fifo := strings.TrimSpace(params)
+	if fifo == "" {
+		fifo = "/tmp/nodrop.fifo"
 	}
+
+	f, err := os.OpenFile(fifo, os.O_RDONLY, os.ModeNamedPipe)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.OpenReader(f)
 }
 
-func (k *Plugin) Init(config string) error {
-	return nil
-}
+// OpenReader reads JSONL events from r and pushes them to Falco as raw events.
+// Each line is expected to be a single JSON object.
+func (p *Plugin) OpenReader(r io.ReadCloser) (source.Instance, error) {
+	evtC := make(chan source.PushEvent)
 
-func main() {}
+	go func() {
+		defer close(evtC)
 
-func init() {
-	plugins.SetFactory(func() plugins.Plugin {
-		p := &Plugin{}
-		source.Register(p)
-		return p
-	})
+		scanner := bufio.NewScanner(r)
+		scanner.Split(bufio.ScanLines)
+
+		const maxLineSize = 8 * 1024 * 1024
+		buf := make([]byte, maxLineSize)
+		scanner.Buffer(buf, maxLineSize)
+
+		for scanner.Scan() {
+			line := scanner.Bytes()
+			if len(line) == 0 {
+				continue
+			}
+
+			evtC <- source.PushEvent{
+				Data: line,
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			evtC <- source.PushEvent{Err: err}
+		}
+	}()
+
+	return source.NewPushInstance(
+		evtC,
+		source.WithInstanceClose(func() {
+			r.Close()
+		}),
+	)
 }
