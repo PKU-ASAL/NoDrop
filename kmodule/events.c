@@ -143,7 +143,23 @@ restart:
     }
 
     if (force) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+        /*
+         * event_datap->force == 0 means the trigger came from the sys_exit
+         * tracepoint (atomic context): only mark the task for a deferred first
+         * load and let the ftrace-redirected x64_sys_call return path do the
+         * mapping/frame build. An already loaded task, or a trigger coming from
+         * exit_filter (force == 1, non-atomic), refreshes in place right here.
+         */
+        if (event_datap->force == 0 &&
+            (!p->entry_addr || !p->stack_addr || !p->stack_info.stack_start)) {
+            p->need_load = 1;
+        } else {
+            cbret = nod_load_monitor(p);
+        }
+#else
         cbret = nod_load_monitor(p);
+#endif
     }
 
     return cbret; 

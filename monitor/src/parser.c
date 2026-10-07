@@ -1,4 +1,5 @@
 #include <inttypes.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -97,49 +98,129 @@ int evt_arg_to_string(const struct nod_param_info *param, const void *data, uint
     }
 }
 
+static int nod_left(int mx_size, int off)
+{
+    return off < mx_size ? mx_size - off : 0;
+}
+
+static void nod_append(char *out, int mx_size, int *off, const char *fmt, ...)
+{
+    va_list ap;
+    int left = nod_left(mx_size, *off);
+    int n;
+
+    if (left <= 0)
+        return;
+
+    va_start(ap, fmt);
+    n = vsnprintf(out + *off, (size_t)left, fmt, ap);
+    va_end(ap);
+
+    if (n > 0)
+        *off += n;
+    if (*off > mx_size)
+        *off = mx_size;
+}
+
+static size_t nod_param_min_size(int type)
+{
+    switch (type)
+    {
+    case PT_FLAGS8:
+    case PT_UINT8:
+    case PT_SIGTYPE:
+    case PT_INT8:
+        return 1;
+    case PT_FLAGS16:
+    case PT_UINT16:
+    case PT_SYSCALLID:
+    case PT_INT16:
+        return 2;
+    case PT_FLAGS32:
+    case PT_UINT32:
+    case PT_MODE:
+    case PT_UID:
+    case PT_GID:
+    case PT_SIGSET:
+    case PT_INT32:
+        return 4;
+    case PT_RELTIME:
+    case PT_ABSTIME:
+    case PT_UINT64:
+    case PT_INT64:
+    case PT_ERRNO:
+    case PT_FD:
+    case PT_PID:
+        return 8;
+    default:
+        return 0;
+    }
+}
+
 int get_whole_event(const struct nod_event_hdr *hdr, char *out, int mx_size) {
     int off = 0;
     const struct nod_event_info *info;
     const struct nod_param_info *param;
-    uint16_t *args;
-    char *data;
+    const uint16_t *args;
+    const char *data, *ev_end;
     char tmp[256];
+
+    if (mx_size <= 0)
+        return 0;
+    out[0] = '\0';
+
+    if (!hdr || hdr->type >= NODE_EVENT_MAX)
+        return 0;
+
     info = &g_event_info[hdr->type];
-    off += snprintf(out + off, mx_size - off,
-                "%lu %u (%u): %s(",
-                hdr->ts,
-                hdr->tid,
-                hdr->cpuid,
-                info->name);
-    args = (uint16_t *)(hdr + 1);
-    data = (char *)(args + info->nparams);
+
+    args = (const uint16_t *)(hdr + 1);
+    data = (const char *)(args + info->nparams);
+    ev_end = (const char *)hdr + hdr->len;
+    if (hdr->len < sizeof(*hdr) + info->nparams * sizeof(uint16_t) ||
+        data > ev_end)
+        return 0;
+
+    nod_append(out, mx_size, &off,
+               "%lu %u (%u): %s(",
+               hdr->ts,
+               hdr->tid,
+               hdr->cpuid,
+               info->name);
 
     for (size_t i = 0; i < info->nparams; ++i)
     {
+        size_t avail, need;
+        uint16_t alen;
+
+        if (nod_left(mx_size, off) <= 0)
+            break;
+
         param = &info->params[i];
+        avail = (size_t)(ev_end - data);
 
         if (i > 0)
-            off += snprintf(out + off, mx_size - off, ", ");
+            nod_append(out, mx_size, &off, ", ");
 
         /* param name */
-        off += snprintf(out + off, mx_size - off,
-                        "%s=", param->name);
+        nod_append(out, mx_size, &off, "%s=", param->name);
 
-        /* param value */
-        evt_arg_to_string(param, data, args[i],
-                          tmp, sizeof(tmp));
-
-        off += snprintf(out + off, mx_size - off,
-                        "%s", tmp);
-
-        data += args[i];
-
-        if (off >= (int)mx_size)
+        alen = args[i];
+        if ((size_t)alen > avail)
+            alen = (uint16_t)avail;
+        need = nod_param_min_size(param->type);
+        if (need > avail || (need == 0 && (size_t)args[i] > avail)) {
+            nod_append(out, mx_size, &off, "<oob>");
             break;
+        }
+
+        evt_arg_to_string(param, data, alen, tmp, sizeof(tmp));
+        nod_append(out, mx_size, &off, "%s", tmp);
+
+        data += alen;
     }
 
-    /* closing */
-    off += snprintf(out + off, mx_size - off, ")\n");
+    nod_append(out, mx_size, &off, ")\n");
     return off;
 }
 

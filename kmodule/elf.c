@@ -367,7 +367,11 @@ elf_load_binary(struct elfhdr *elf_ex,
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,0,0)
             if (!first_pt_load) {
+#if defined(MAP_FIXED_NOREPLACE)
+                elf_type |= MAP_FIXED_NOREPLACE;
+#else
                 elf_type |= MAP_FIXED;
+#endif
             } else if (elf_ex->e_type == ET_EXEC) {
                 elf_type |= MAP_FIXED_NOREPLACE;
             } else if (elf_ex->e_type == ET_DYN) {

@@ -48,7 +48,7 @@ static uint64_t nod_lookup_name(const char *name);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
 #ifdef __NR_clone3
-static int nod_clone3_flags(struct pt_regs *regs, unsigned long *flags)
+static int __maybe_unused nod_clone3_flags(struct pt_regs *regs, unsigned long *flags)
 {
     unsigned long uargs;
     struct clone_args args;
@@ -225,7 +225,18 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
     case NOD_CLONE:
     case NOD_SHARE:
         if (id == __NR_clone && ret == 0) {
-            // forked child process
+            // child task
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+#if 0
+            unsigned long clone_flags;
+            syscall_get_arguments_deprecated(current, regs, 1, 1, &clone_flags);
+            evt_from = (clone_flags & CLONE_VM) ? NOD_SHARE : NOD_CLONE;
+#else
+            evt_from = NOD_SHARE;
+#endif
+            if (!nod_proc_acquire(evt_from, NULL, -1, current))
+                vpr_err("acquire %d for childed process failed\n", evt_from);
+#else
             unsigned long clone_flags;
             syscall_get_arguments_deprecated(current, regs, 1, 1, &clone_flags);
             if (clone_flags & CLONE_VM) {
@@ -240,9 +251,12 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
                 if (!nod_proc_acquire(NOD_CLONE, NULL, -1, current))
                     vpr_err("acquire NOD_CLONE for childed process failed\n");
             }
+#endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
 #ifdef __NR_clone3
         } else if (id == __NR_clone3 && ret == 0) {
+            // child task (same rule as clone, see above)
+#if 0
             unsigned long clone_flags = 0;
 
             if (nod_clone3_flags(regs, &clone_flags)) {
@@ -250,17 +264,12 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
                 break;
             }
 
-            if (clone_flags & CLONE_VM) {
-                if (!nod_proc_acquire(NOD_SHARE, NULL, -1, current))
-                    vpr_err("acquire NOD_SHARE for clone3 childed process failed\n");
-            } else {
-                /*
-                 * If the child process has its own address space, it should
-                 * inherit parent's procinfo lazily, same as clone().
-                 */
-                if (!nod_proc_acquire(NOD_CLONE, NULL, -1, current))
-                    vpr_err("acquire NOD_CLONE for clone3 childed process failed\n");
-            }
+            evt_from = (clone_flags & CLONE_VM) ? NOD_SHARE : NOD_CLONE;
+#else
+            evt_from = NOD_SHARE;
+#endif
+            if (!nod_proc_acquire(evt_from, NULL, -1, current))
+                vpr_err("acquire %d for clone3 childed process failed\n", evt_from);
 #endif
 #endif
         } else {
@@ -509,26 +518,50 @@ nod_skip_current_task(void)
     return false;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+static void
+nod_run_deferred_load(long retval)
+{
+    struct nod_proc_info *p = NULL;
+
+    nod_event_from(&p);
+    if (p && p->need_load) {
+        struct pt_regs *regs = current_pt_regs();
+
+        if (regs)
+            regs->ax = retval;
+
+        p->need_load = 0;
+        nod_load_monitor(p);
+    }
+}
+#else
+static inline void nod_run_deferred_load(long retval) { (void)retval; }
+#endif
+
 static long notrace
 nod_x64_sys_call_hook(const struct pt_regs *regs, unsigned int nr)
 {
-    int ret;
+    long ret;
     struct nod_proc_info *p;
 
     if (unlikely(!nod_old_x64_sys_call))
         return -ENOSYS;
 
     if (unlikely(nr >= SYSCALL_TABLE_SIZE))
-        return nod_old_x64_sys_call(regs, nr);
-    if (unlikely(!syscall_filters[nr].hooked || !syscall_filters[nr].filter))
-        return nod_old_x64_sys_call(regs, nr);
+        ret = nod_old_x64_sys_call(regs, nr);
+    else if (unlikely(!syscall_filters[nr].hooked || !syscall_filters[nr].filter))
+        ret = nod_old_x64_sys_call(regs, nr);
+    else {
+        nod_event_from(&p);
+        ret = syscall_filters[nr].filter(p, (struct pt_regs *)regs);
+        if (!ret)
+            ret = nod_old_x64_sys_call(regs, nr);
+    }
 
-    nod_event_from(&p);
-    ret = syscall_filters[nr].filter(p, (struct pt_regs *)regs);
-    if (ret)
-        return ret;
+    nod_run_deferred_load(ret);
 
-    return nod_old_x64_sys_call(regs, nr);
+    return ret;
 }
 
 static void notrace

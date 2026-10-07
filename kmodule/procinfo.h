@@ -50,6 +50,7 @@ struct nod_proc_info {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
 	uint64_t load_addr;
 	uint64_t interp_load_addr;
+	int need_load;
 #endif
 	uint64_t entry_addr;
 	uint64_t stack_addr;

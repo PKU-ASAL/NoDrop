@@ -144,6 +144,11 @@ int nod_monitor_main(char *buffer, struct nod_buffer_info *buffer_info, struct n
     while (ptr < buffer_end)
     {
         hdr = (struct nod_event_hdr *)ptr;
+
+        if (hdr->len < sizeof(*hdr) ||
+            (char *)hdr + hdr->len > buffer_end)
+            break;
+
         buffer_info->n_solved_evts++;
         evt.raw = hdr;
         lua_on_event(&evt);

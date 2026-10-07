@@ -252,6 +252,12 @@ nod_copy_procinfo(struct task_struct *task, struct nod_proc_info *p)
     if (!task->real_parent)
         return NOD_SUCCESS;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    if (task->tgid != task->pid ||
+        (task->mm && task->mm == task->real_parent->mm))
+        return NOD_SUCCESS;
+#endif
+
     parent = __find_proc_info(task->group_leader);
 
     if (parent) {
