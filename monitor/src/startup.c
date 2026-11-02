@@ -259,6 +259,7 @@ nod_start_main(int argc, char **argv, char **env) {
         kstate.lua_path[0] = '\0';
         kstate.lua_mtime = 0;
     }
+    kstate.lua_path[sizeof(kstate.lua_path) - 1] = '\0';
     if (kstate.lua_mtime) {
         struct stat lua_st;
         if (!stat(kstate.lua_path, &lua_st))
@@ -297,6 +298,19 @@ hidden void _start_c(size_t *sp, size_t *dynv) {
     // start = read_time();
 
     if (likely(__info.fsbase != 0)) {
+        /*
+         * elf_reg_init() drops MSR_FS_BASE on every entry. The first
+         * entry installs the monitor TLS; later entries must put it
+         * back before any libc call. A raw syscall is required because
+         * the libc wrapper itself reads %fs.
+         */
+        __asm__ volatile (
+            "syscall"
+            :
+            : "a"((unsigned long)__NR_arch_prctl),
+              "D"((unsigned long)ARCH_SET_FS),
+              "S"(__info.fsbase)
+            : "rcx", "r11", "memory");
         nod_start_main(argc, argv, argv + argc + 1);
         return;
     }

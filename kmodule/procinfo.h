@@ -47,11 +47,9 @@ struct nod_proc_info {
 	struct mm_struct *mm;
 	struct nod_buffer buffer;
 	int ioctl_fd;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
 	uint64_t load_addr;
 	uint64_t interp_load_addr;
-	int need_load;
-#endif
+	int event_recorded;
 	uint64_t entry_addr;
 	uint64_t stack_addr;
 	uint64_t stack_info_addr;

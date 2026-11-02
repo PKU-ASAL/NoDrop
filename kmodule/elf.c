@@ -467,7 +467,7 @@ elf_load_binary(struct elfhdr *elf_ex,
     }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6,0,0)
-    if (padzero(elf_bss)) {
+    if (padzero(elf_bss) && (bss_prot & PROT_WRITE)) {
         error = -EFAULT;
         goto out;
     }

@@ -168,11 +168,17 @@ nod_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         break;
 
     case NOD_IOCTL_STOP_RECORDING:
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 5, 0)
+        WRITE_ONCE(nod_recording, false);
+#endif
         untrace_syscall();
 
         pr_info("proc: Stop recording");
         break;
     case NOD_IOCTL_START_RECORDING:
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 5, 0)
+        WRITE_ONCE(nod_recording, true);
+#endif
         trace_syscall();
 
         pr_info("proc: Start recording");

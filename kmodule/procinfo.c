@@ -123,14 +123,13 @@ __remove_proc_info(struct nod_proc_info *p)
 void
 nod_init_procinfo(struct task_struct *task, struct nod_proc_info *p)
 {
+    p->event_recorded = 0;
     p->pid = task->pid;
     p->mm = task->mm;
 
     p->ioctl_fd = -1;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
     p->load_addr = 0;
     p->interp_load_addr = 0;
-#endif
     p->entry_addr = 0;
 
     if (p->stack_info.pkey > 0) mm_pkey_free(p->mm, p->stack_info.pkey);
@@ -139,7 +138,18 @@ nod_init_procinfo(struct task_struct *task, struct nod_proc_info *p)
     memset(&p->sec, 0, sizeof(p->sec));
     memset(&p->stack_info, 0, sizeof(p->stack_info));
 
-    p->stack_info.pkey = mm_pkey_alloc(p->mm);
+    {
+        struct nod_proc_info *leader = NULL;
+
+        if (task->tgid != task->pid)
+            leader = __find_proc_info(task->group_leader);
+        if (leader && leader->stack_info.pkey > 0)
+            p->stack_info.pkey = leader->stack_info.pkey;
+        else
+            p->stack_info.pkey = mm_pkey_alloc(p->mm);
+        if (p->stack_info.pkey <= 0)
+            p->stack_info.pkey = -1;
+    }
 }
 
 struct nod_proc_info *
@@ -252,11 +262,9 @@ nod_copy_procinfo(struct task_struct *task, struct nod_proc_info *p)
     if (!task->real_parent)
         return NOD_SUCCESS;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
     if (task->tgid != task->pid ||
         (task->mm && task->mm == task->real_parent->mm))
         return NOD_SUCCESS;
-#endif
 
     parent = __find_proc_info(task->group_leader);
 
@@ -307,6 +315,38 @@ nod_event_from(struct nod_proc_info **p)
 
     if (p)  *p = n;
     return n ? n->status : NOD_OUT;
+}
+
+int
+nod_consumer_overlap(unsigned long addr, unsigned long len)
+{
+    int bkt, hit = 0;
+    struct nod_proc_info *info;
+    unsigned long end;
+
+    if (!len)
+        return 0;
+    end = addr + len;
+    if (end < addr)
+        return 1;
+
+    rcu_read_lock();
+    hash_for_each_rcu(proc_info_hl_head, bkt, info, rcu) {
+        unsigned long s, e;
+
+        if (!info->mm || info->mm != current->mm)
+            continue;
+        s = info->stack_info.stack_start;
+        e = info->stack_info.stack_end;
+        if (!s || !e)
+            continue;
+        if (addr < e && end > s) {
+            hit = 1;
+            break;
+        }
+    }
+    rcu_read_unlock();
+    return hit;
 }
 
 unsigned long
@@ -370,16 +410,6 @@ procinfo_destroy(void)
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
     hash_for_each_safe(proc_info_hl_head, bkt, tmp, this, rcu) {
-        while(this->status == NOD_IN) {
-            if (!__pid_alive(this->pid)) {
-                pr_warn("force release stale procinfo (pid %d status %d)\n",
-                        this->pid, this->status);
-                break;
-            }
-            pr_info("wait for exiting monitor (pid %d status %d)\n",
-                    this->pid, this->status);
-            msleep(5);
-        }
         hash_del_rcu(&this->rcu);
         synchronize_rcu();
         nod_free_procinfo(this);
@@ -387,11 +417,6 @@ procinfo_destroy(void)
 #else
     rcu_read_lock();
     hash_for_each_safe(proc_info_hl_head, bkt, tmp, this, rcu) {
-        while(this->status == NOD_IN) {
-            pr_info("wait for exiting monitor (pid %d status %d)\n",
-                    this->pid, this->status);
-            msleep(5);
-        }
         hash_del_rcu(&this->rcu);
         nod_free_procinfo(this);
     }

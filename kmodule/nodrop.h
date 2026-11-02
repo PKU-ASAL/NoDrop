@@ -65,6 +65,9 @@ void nod_restore_security(struct nod_proc_info *p);
 
 // trace.c
 int trace_syscall(void);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 5, 0)
+extern bool nod_recording;
+#endif
 void untrace_syscall(void);
 int  tracepoint_init(void);
 void tracepoint_destory(void);
@@ -80,6 +83,7 @@ void nod_init_procinfo(struct task_struct *task, struct nod_proc_info *p);
 int nod_copy_procinfo(struct task_struct *task, struct nod_proc_info *p);
 int nod_share_procinfo(struct task_struct *task, struct nod_proc_info *p);
 int nod_event_from(struct nod_proc_info **p);
+int nod_consumer_overlap(unsigned long addr, unsigned long len);
 int nod_proc_check_mm(struct nod_proc_info *p, unsigned long addr, unsigned long length);
 unsigned long nod_proc_traverse(int (*func)(struct nod_proc_info *, unsigned long *, va_list), ...);
 void nod_free_procinfo(struct nod_proc_info *p);
@@ -89,6 +93,7 @@ int loader_init(void);
 void loader_destory(void);
 int nod_load_monitor(struct nod_proc_info *p);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+int nod_build_consumer(struct nod_proc_info *p);
 int nod_mmap_check(struct nod_proc_info *p, unsigned long addr, unsigned long length);
 #else
 int nod_mmap_check(unsigned long addr, unsigned long length);

@@ -56,14 +56,27 @@ do_record_one_event(struct nod_proc_info *p,
     stat = &per_cpu(g_stat, smp_processor_id());
 
     if (unlikely(buffer->overflow.filled == 1)) {
-        info->tail = ((struct nod_event_hdr *)buffer->overflow.addr)->len;
-        info->nevents++;
-        stat->n_evts++;
+        struct nod_event_hdr *oh = (struct nod_event_hdr *)buffer->overflow.addr;
+        uint32_t ev_len = oh->len;
 
-        memmove(buffer->buffer, buffer->overflow.addr, info->tail);
-        buffer->overflow.filled = 0;
+        if (ev_len < sizeof(*oh) || ev_len > PAGE_SIZE ||
+            ev_len > info->buffer_size) {
+            stat->n_drop_evts++;
+            buffer->overflow.filled = 0;
+        } else {
+            if (unlikely(info->nevents != 0))
+                info->nevents = 0;
+
+            info->tail = ev_len;
+            info->nevents = 1;
+            stat->n_evts++;
+            memmove(buffer->buffer, buffer->overflow.addr, ev_len);
+            buffer->overflow.filled = 0;
+        }
     }
 
+    if (info->tail > info->buffer_size)
+        info->tail = info->buffer_size;
     freespace = info->buffer_size - info->tail;
 
     args.nargs = g_event_info[event_type].nparams;
@@ -107,6 +120,8 @@ restart:
     }
 
     args.curarg = 0;
+    if (unlikely(restart))
+        args.arg_data_offset = args.nargs * sizeof(uint16_t);
     args.arg_data_size = args.buffer_size - args.arg_data_offset;
 
     hdr->ts = ts;
@@ -124,9 +139,13 @@ restart:
             hdr->len = event_size;
 
             if (likely(buffer->overflow.filled == 0)) {
-                info->tail += event_size;
-                info->nevents++;
-                stat->n_evts++;
+                if (info->tail + event_size > info->buffer_size) {
+                    stat->n_drop_evts++;
+                } else {
+                    info->tail += event_size;
+                    info->nevents++;
+                    stat->n_evts++;
+                }
             }
         } else {
             pr_err("corrupted filler for event type %d (added %u args, should have added %u args)\n",
@@ -143,23 +162,7 @@ restart:
     }
 
     if (force) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-        /*
-         * event_datap->force == 0 means the trigger came from the sys_exit
-         * tracepoint (atomic context): only mark the task for a deferred first
-         * load and let the ftrace-redirected x64_sys_call return path do the
-         * mapping/frame build. An already loaded task, or a trigger coming from
-         * exit_filter (force == 1, non-atomic), refreshes in place right here.
-         */
-        if (event_datap->force == 0 &&
-            (!p->entry_addr || !p->stack_addr || !p->stack_info.stack_start)) {
-            p->need_load = 1;
-        } else {
-            cbret = nod_load_monitor(p);
-        }
-#else
         cbret = nod_load_monitor(p);
-#endif
     }
 
     return cbret; 

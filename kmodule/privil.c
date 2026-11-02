@@ -1,3 +1,5 @@
+#include <linux/sched.h>
+#include <linux/thread_info.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/version.h>
@@ -35,7 +37,11 @@ nod_disable_seccomp(void)
         spin_lock_irq(&current->sighand->siglock);
         current->seccomp.mode = SECCOMP_MODE_DISABLED;
         smp_mb__before_atomic();
-        // clear_tsk_thread_flag(current, TIF_SECCOMP);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
+        clear_syscall_work(SECCOMP);
+#else
+        clear_tsk_thread_flag(current, TIF_SECCOMP);
+#endif
         spin_unlock_irq(&current->sighand->siglock);
     }
 }
@@ -53,7 +59,13 @@ nod_enable_seccomp(unsigned int mode)
         spin_lock_irq(&current->sighand->siglock);
         current->seccomp.mode = mode;
         smp_mb__before_atomic();
-        // set_tsk_thread_flag(current, TIF_SECCOMP);
+        if (mode != SECCOMP_MODE_DISABLED) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
+            set_syscall_work(SECCOMP);
+#else
+            set_tsk_thread_flag(current, TIF_SECCOMP);
+#endif
+        }
         spin_unlock_irq(&current->sighand->siglock);
     }
 

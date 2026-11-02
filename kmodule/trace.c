@@ -11,6 +11,10 @@
 #include <linux/ftrace.h>
 #include <linux/module.h>
 #endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0) && \
+    LINUX_VERSION_CODE < KERNEL_VERSION(6, 5, 0)
+#include <asm/ftrace.h>
+#endif
 #include <asm/unistd.h>
 #include <asm/syscall.h>
 
@@ -63,7 +67,7 @@ static int __maybe_unused nod_clone3_flags(struct pt_regs *regs, unsigned long *
 #endif
 #endif
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 5, 0)
 typedef long (*nod_x64_sys_call_t)(const struct pt_regs *, unsigned int);
 
 static struct ftrace_ops nod_x64_sys_call_ops;
@@ -105,6 +109,8 @@ static inline void nod_ftrace_set_ip(struct pt_regs *regs, unsigned long ip)
 static struct tracepoint *tp_sys_exit;
 #endif
 static struct tracepoint *tp_sched_process_exit;
+
+bool nod_recording;
 
 /* compat tracepoint functions */
 static int compat_register_trace(void *func, const char *probename, struct tracepoint *tp)
@@ -202,6 +208,12 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret)
     id = syscall_get_nr(current, regs);
 
     evt_from = nod_event_from(&p);
+
+    if (p && p->event_recorded) {
+        p->event_recorded = 0;
+        return;
+    }
+
     switch(evt_from) {
     case NOD_RESTORE_CONTEXT:
         // start = nod_nsecs();
@@ -382,9 +394,11 @@ mm_range_filter(struct nod_proc_info *p, struct pt_regs *regs)
         syscall_get_arguments_deprecated(current, regs, 0, 1, &addr);
         syscall_get_arguments_deprecated(current, regs, 1, 1, &length);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-        if (nod_mmap_check(p, addr, length)) {
+        if (nod_mmap_check(p, addr, length) ||
+            nod_consumer_overlap(addr, length)) {
 #else
-        if (nod_mmap_check(addr, length)) {
+        if (nod_mmap_check(addr, length) ||
+            nod_consumer_overlap(addr, length)) {
 #endif
             vpr_warn("is trying to manipulate monitor memory %lx len %ld\n", addr, length);
             return -EINVAL;
@@ -475,7 +489,135 @@ unhook_syscall_legacy(int id)
     syscall_filters[id].oldsyscall = 0;
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0) && \
+    LINUX_VERSION_CODE < KERNEL_VERSION(6, 5, 0)
+#define NOD_FTRACE_REGS_TYPE struct ftrace_regs
+static inline struct pt_regs *nod_ftrace_get_regs(struct ftrace_regs *fregs)
+{
+    return ftrace_get_regs(fregs);
+}
+
+static inline void nod_ftrace_set_ip(struct ftrace_regs *fregs, unsigned long ip)
+{
+    ftrace_instruction_pointer_set(fregs, ip);
+}
+
+static struct ftrace_ops nod_exit_ops;
+static unsigned long nod_exit_addr[5];
+static int nod_exit_hooked;
+
+static long notrace
+nod_exit_syscall_hook(const struct pt_regs *regs)
+{
+    struct pt_regs *r = (struct pt_regs *)regs;
+    int nr = (int)syscall_get_nr(current, r);
+    struct nod_proc_info *p = NULL;
+    int ret = 0;
+
+    if (nr < 0 || nr >= SYSCALL_TABLE_SIZE || !syscall_table || !syscall_table[nr])
+        return -ENOSYS;
+    if (!READ_ONCE(nod_recording))
+        return syscall_table[nr](r);
+
+    nod_event_from(&p);
+    if (nr == __NR_exit || nr == __NR_exit_group)
+        ret = exit_filter(p, r);
+    else if (nr == __NR_munmap || nr == __NR_mprotect || nr == __NR_mremap)
+        ret = mm_range_filter(p, r);
+    if (ret)
+        return ret;
+    /*
+     * syscall_table[nr] still has its fentry. Calling that address
+     * re-enters this IPMODIFY hook and the nested trampoline can clear
+     * the user return address, so the syscall returns to ip 0.
+     */
+    return ((long (*)(const struct pt_regs *))
+            ((unsigned long)syscall_table[nr] + MCOUNT_INSN_SIZE))(r);
+}
+
+static void notrace
+nod_exit_thunk(unsigned long ip, unsigned long parent_ip,
+               struct ftrace_ops *ops, NOD_FTRACE_REGS_TYPE *fregs)
+{
+    struct pt_regs *regs;
+
+    (void)ip;
+    (void)ops;
+    if (within_module(parent_ip, THIS_MODULE))
+        return;
+    if (unlikely(current->flags & PF_KTHREAD))
+        return;
+    regs = nod_ftrace_get_regs(fregs);
+    if (!regs)
+        return;
+    nod_ftrace_set_ip(fregs, (unsigned long)nod_exit_syscall_hook);
+}
+
+static const char *nod_exit_syms[] = {
+    "__x64_sys_exit",
+    "__x64_sys_exit_group",
+    "__x64_sys_munmap",
+    "__x64_sys_mprotect",
+    "__x64_sys_mremap",
+};
+
+static int
+hook_exit_ftrace(void)
+{
+    int i, n, ret;
+
+    if (nod_exit_hooked)
+        return 0;
+
+    for (n = 0; n < 5; n++) {
+        nod_exit_addr[n] = nod_lookup_name(nod_exit_syms[n]);
+        if (!nod_exit_addr[n]) {
+            pr_err("nod: cannot find %s\n", nod_exit_syms[n]);
+            return -ENOENT;
+        }
+    }
+
+    memset(&nod_exit_ops, 0, sizeof(nod_exit_ops));
+    nod_exit_ops.func = nod_exit_thunk;
+    nod_exit_ops.flags = FTRACE_OPS_FL_SAVE_REGS | FTRACE_OPS_FL_RECURSION |
+                         FTRACE_OPS_FL_IPMODIFY;
+    for (i = 0; i < 5; i++) {
+        ret = ftrace_set_filter_ip(&nod_exit_ops, nod_exit_addr[i], 0, 0);
+        if (ret) {
+            int j;
+
+            pr_err("nod: filter %d failed (%d)\n", i, ret);
+            for (j = 0; j < i; j++)
+                ftrace_set_filter_ip(&nod_exit_ops, nod_exit_addr[j], 1, 0);
+            return ret;
+        }
+    }
+    ret = register_ftrace_function(&nod_exit_ops);
+    if (ret) {
+        pr_err("nod: exit hook register failed (%d)\n", ret);
+        for (i = 0; i < 5; i++)
+            ftrace_set_filter_ip(&nod_exit_ops, nod_exit_addr[i], 1, 0);
+        return ret;
+    }
+    nod_exit_hooked = 1;
+    return 0;
+}
+
+static void
+unhook_exit_ftrace(void)
+{
+    int i;
+
+    if (!nod_exit_hooked)
+        return;
+    unregister_ftrace_function(&nod_exit_ops);
+    for (i = 0; i < 5; i++)
+        ftrace_set_filter_ip(&nod_exit_ops, nod_exit_addr[i], 1, 0);
+    nod_exit_hooked = 0;
+}
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 5, 0)
 static void
 set_syscall_filter(int id, int (*filter)(struct nod_proc_info *, struct pt_regs *))
 {
@@ -518,26 +660,6 @@ nod_skip_current_task(void)
     return false;
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-static void
-nod_run_deferred_load(long retval)
-{
-    struct nod_proc_info *p = NULL;
-
-    nod_event_from(&p);
-    if (p && p->need_load) {
-        struct pt_regs *regs = current_pt_regs();
-
-        if (regs)
-            regs->ax = retval;
-
-        p->need_load = 0;
-        nod_load_monitor(p);
-    }
-}
-#else
-static inline void nod_run_deferred_load(long retval) { (void)retval; }
-#endif
 
 static long notrace
 nod_x64_sys_call_hook(const struct pt_regs *regs, unsigned int nr)
@@ -554,12 +676,21 @@ nod_x64_sys_call_hook(const struct pt_regs *regs, unsigned int nr)
         ret = nod_old_x64_sys_call(regs, nr);
     else {
         nod_event_from(&p);
+        if (p && p->status == NOD_OUT &&
+            (!p->stack_addr || !p->stack_info.stack_start))
+            nod_build_consumer(p);
         ret = syscall_filters[nr].filter(p, (struct pt_regs *)regs);
         if (!ret)
             ret = nod_old_x64_sys_call(regs, nr);
     }
 
-    nod_run_deferred_load(ret);
+    nod_event_from(&p);
+    if (p && (p->status == NOD_OUT || p->status == NOD_CLONE ||
+              p->status == NOD_SHARE) && !p->event_recorded) {
+        ((struct pt_regs *)regs)->ax = ret;
+        syscall_probe(p, (struct pt_regs *)regs, nr, 0);
+        p->event_recorded = 1;
+    }
 
     return ret;
 }
@@ -688,7 +819,7 @@ int trace_syscall(void) {
         goto err_sched_procexit;
     }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 5, 0)
     set_syscall_filter(__NR_exit, exit_filter);
     set_syscall_filter(__NR_exit_group, exit_filter);
     set_syscall_filter(__NR_munmap, mm_range_filter);
@@ -698,6 +829,10 @@ int trace_syscall(void) {
     ret = hook_syscall_dispatch();
     if (ret)
         goto err_hook;
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+    ret = hook_exit_ftrace();
+    if (ret)
+        pr_err("nod: exit hook unavailable (%d)\n", ret);
 #else
     hook_syscall_legacy(__NR_exit, exit_filter);
     hook_syscall_legacy(__NR_exit_group, exit_filter);
@@ -709,7 +844,7 @@ int trace_syscall(void) {
     tracepoint_registered = 1;
     return 0;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 5, 0)
 err_hook:
     clear_syscall_filter(__NR_mremap);
     clear_syscall_filter(__NR_mprotect);
@@ -734,13 +869,15 @@ void untrace_syscall(void) {
     if (tracepoint_registered == 0)
         return;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 5, 0)
     unhook_syscall_dispatch();
     clear_syscall_filter(__NR_mremap);
     clear_syscall_filter(__NR_mprotect);
     clear_syscall_filter(__NR_munmap);
     clear_syscall_filter(__NR_exit_group);
     clear_syscall_filter(__NR_exit);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+    unhook_exit_ftrace();
 #else
     unhook_syscall_legacy(__NR_mremap);
     unhook_syscall_legacy(__NR_mprotect);
@@ -811,7 +948,7 @@ int tracepoint_init(void) {
     tracepoint_registered = 0;
 
     syscall_table = (sys_call_ptr_t *)nod_lookup_name("sys_call_table");
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 5, 0)
     if (syscall_table == 0) {
         ret = -EINVAL;
         goto out;

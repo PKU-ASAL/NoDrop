@@ -9,12 +9,11 @@
 #include <linux/delay.h>
 #include <linux/mman.h>
 #include <linux/vmalloc.h>
+#include <linux/sched/signal.h>
 #include <linux/version.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
 #include <linux/preempt.h>
 #include <linux/hardirq.h>
 #include <linux/irqflags.h>
-#endif
 
 #include "nodrop.h"
 #include "syscall.h"
@@ -29,6 +28,8 @@ static struct elfhdr   monitor_elf_ex, interp_elf_ex;
 static struct file *filp_monitor, *filp_interpreter;
 
 static unsigned long monitor_info_off;
+
+static DEFINE_MUTEX(nod_load_mutex);
 
 static uint64_t
 calc_phdr_addr(const struct elfhdr *exec,
@@ -147,20 +148,27 @@ static unsigned long
 create_stack_with_red_zone(unsigned long addr, unsigned long size)
 {
     unsigned long stack_begin;
-    unsigned long prefer_addr = addr;
-    if (prefer_addr > PAGE_SIZE) {
-        prefer_addr -= PAGE_SIZE;
-    }
-    stack_begin = vm_mmap(NULL, prefer_addr, size + PAGE_SIZE + PAGE_SIZE, 0, MAP_PRIVATE | MAP_ANONYMOUS, 0);
+    (void)addr;
+    stack_begin = vm_mmap(NULL, 0, size + PAGE_SIZE + PAGE_SIZE, 0,
+                          MAP_PRIVATE | MAP_ANONYMOUS, 0);
     if (BAD_ADDR(stack_begin)) {
         return stack_begin;
     }
 
     addr = stack_begin + PAGE_SIZE;
     vm_munmap(addr, size);
-    
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
     addr = vm_mmap(NULL, addr, size, PROT_READ | PROT_WRITE,
-                   MAP_PRIVATE | MAP_ANONYMOUS, 0);
+                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK | MAP_FIXED, 0);
+#else
+    addr = vm_mmap(NULL, addr, size, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0);
+#endif
+    if (BAD_ADDR(addr)) {
+        vm_munmap(stack_begin, PAGE_SIZE);
+        vm_munmap(stack_begin + PAGE_SIZE + size, PAGE_SIZE);
+        return addr;
+    }
     return addr;
 }
 
@@ -341,7 +349,14 @@ err:
 static int
 update_stack_info(const struct nod_stack_info *stack_info, uint64_t stack_info_addr)
 {
-    return copy_to_user((char __user *)stack_info_addr, stack_info, sizeof(*stack_info));
+    struct nod_stack_info tmp = *stack_info;
+    struct nod_stack_info __user *u = (struct nod_stack_info __user *)stack_info_addr;
+
+    if (tmp.buffer || tmp.buffer_info) {
+        (void)get_user(tmp.buffer, &u->buffer);
+        (void)get_user(tmp.buffer_info, &u->buffer_info);
+    }
+    return copy_to_user((char __user *)stack_info_addr, &tmp, sizeof(tmp));
 }
 
 static int
@@ -401,28 +416,87 @@ out:
     return retval;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+int
+nod_build_consumer(struct nod_proc_info *p)
+{
+    int retval, attempt;
+    uint64_t phdr_addr = 0;
+    uint64_t target_sp, target_stack_info_addr;
+    const int argc = 1;
+    const char *argv[] = { CONFIG_MONITOR_PATH, NULL };
+
+    if (p->entry_addr && p->stack_addr && p->stack_info.stack_start)
+        return NOD_SUCCESS;
+
+    if (!p->entry_addr) {
+        for (attempt = 0; ; attempt++) {
+            retval = load_monitor_image(&p->entry_addr, &p->load_addr,
+                                        &phdr_addr, &p->interp_load_addr);
+            if (retval == NOD_SUCCESS)
+                break;
+            if (retval != -EEXIST || attempt >= 2)
+                return retval;
+        }
+    }
+
+    if (!p->stack_addr || !p->stack_info.stack_start) {
+        retval = create_elf_tbls(&monitor_elf_ex, p->load_addr,
+                                 p->interp_load_addr, &p->stack_info,
+                                 &target_stack_info_addr, &target_sp,
+                                 argc, argv);
+        if (retval != NOD_SUCCESS)
+            return retval;
+
+        p->stack_addr = target_sp;
+        p->stack_info_addr = target_stack_info_addr;
+        p->stack_info.stack_addr = target_sp;
+        p->stack_info.stack_info_addr = target_stack_info_addr;
+
+        vpr_dbg("monitor: entry 0x%llx stack [0x%llx-0x%llx] stack_info_addr 0x%llx\n",
+                p->entry_addr, p->stack_info.stack_start,
+                p->stack_info.stack_end, p->stack_info_addr);
+    }
+
+    return NOD_SUCCESS;
+}
+#endif
+
 int
 nod_load_monitor(struct nod_proc_info *p)
 {
     int retval;
+
+    if (fatal_signal_pending(current))
+        return -EINTR;
+
+    mutex_lock(&nod_load_mutex);
     struct pt_regs *regs;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-    uint64_t phdr_addr = 0;
-#else
+    int relaxed = 0;
+    unsigned int prem = 0;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
     uint64_t entry;
     uint64_t load_addr = 0;
     uint64_t interp_load_addr = 0;
     uint64_t phdr_addr = 0;
-#endif
-
+    int need_build;
     const int argc = 1;
     const char *argv[] = { CONFIG_MONITOR_PATH, NULL };
+#endif
 
     regs = current_pt_regs();
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-    p->need_load = 0;
-#endif
+    /*
+     * The ftrace IPMODIFY return path, including the 5.15 per-syscall
+     * hook, leaves preempt_count == 1. A fresh consumer stack is not
+     * resident, and copy_to_user then fails with -EFAULT. Balance that
+     * one count across the transfer.
+     */
+    prem = preempt_count();
+    if (prem && !irqs_disabled() && !in_interrupt()) {
+        preempt_enable();
+        relaxed = 1;
+    }
 
     switch(p->status) {
     case NOD_CLONE:
@@ -436,43 +510,8 @@ nod_load_monitor(struct nod_proc_info *p)
     }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-    if (!p->entry_addr) {
-        int attempt;
-
-        for (attempt = 0; ; attempt++) {
-            retval = load_monitor_image(&p->entry_addr, &p->load_addr,
-                                        &phdr_addr, &p->interp_load_addr);
-            if (retval == NOD_SUCCESS)
-                break;
-            if (retval != -EEXIST || attempt >= 2)
-                goto out;
-        }
-    }
-
-    if (!p->stack_addr || !p->stack_info.stack_start) {
-        uint64_t target_sp, target_stack_info_addr;
-
-        retval = create_elf_tbls(&monitor_elf_ex, p->load_addr,
-                                 p->interp_load_addr, &p->stack_info,
-                                 &target_stack_info_addr, &target_sp,
-                                 argc, argv);
-        if (retval != NOD_SUCCESS)
-            goto out;
-
-        p->stack_addr = target_sp;
-        p->stack_info_addr = target_stack_info_addr;
-        p->stack_info.stack_addr = target_sp;
-        p->stack_info.stack_info_addr = target_stack_info_addr;
-
-        vpr_dbg("monitor: entry 0x%llx stack [0x%llx-0x%llx] stack_info_addr 0x%llx\n",
-                p->entry_addr, p->stack_info.stack_start,
-                p->stack_info.stack_end, p->stack_info_addr);
-    }
-
-    p->stack_info.syscall_nr = syscall_get_nr(current, regs);
-    syscall_get_arguments_deprecated(current, regs, 0, 1, &p->stack_info.exit_code);
-    retval = update_stack_info(&p->stack_info, p->stack_info_addr);
-    if (retval != 0)
+    retval = nod_build_consumer(p);
+    if (retval != NOD_SUCCESS)
         goto out;
 #else
     if (!p->entry_addr) {
@@ -481,25 +520,45 @@ nod_load_monitor(struct nod_proc_info *p)
         if (retval != NOD_SUCCESS)
             goto out;
 
-        retval = create_elf_tbls(&monitor_elf_ex, load_addr,
-                                 interp_load_addr, &p->stack_info,
+        p->load_addr = load_addr;
+        p->interp_load_addr = interp_load_addr;
+        p->entry_addr = entry;
+    }
+
+    need_build = !p->stack_addr;
+    if (!need_build) {
+        unsigned long w[3] = {0};
+
+        if (copy_from_user(w, (void __user *) p->stack_addr, sizeof(w)) ||
+            w[0] != (unsigned long) (argc + 1) ||
+            w[2] != p->stack_info_addr)
+            need_build = 1;
+    }
+
+    if (need_build) {
+        retval = create_elf_tbls(&monitor_elf_ex, p->load_addr,
+                                 p->interp_load_addr, &p->stack_info,
                                  &p->stack_info_addr, &p->stack_addr,
                                  argc, argv);
         if (retval != NOD_SUCCESS)
             goto out;
 
-        p->entry_addr = entry;
         vpr_dbg("monitor: entry 0x%llx stack [0x%llx-0x%llx] stack_info_addr 0x%llx\n",
                 p->entry_addr, p->stack_info.stack_start,
                 p->stack_info.stack_end, p->stack_info_addr);
     }
+
+#endif
+
+    if (unlikely(p->buffer.info && p->buffer.info->buffer_size &&
+                 p->buffer.info->tail > p->buffer.info->buffer_size))
+        p->buffer.info->tail = p->buffer.info->buffer_size;
 
     p->stack_info.syscall_nr = syscall_get_nr(current, regs);
     syscall_get_arguments_deprecated(current, regs, 0, 1, &p->stack_info.exit_code);
     retval = update_stack_info(&p->stack_info, p->stack_info_addr);
     if (retval != 0)
         goto out;
-#endif
 
     nod_proc_set_in(p);
 
@@ -507,13 +566,23 @@ nod_load_monitor(struct nod_proc_info *p)
     nod_prepare_context(p, regs);
 
     elf_reg_init(&current->thread, regs, 0);
+    if (!p->entry_addr) {
+        retval = -EINVAL;
+        goto out;
+    }
     regs->sp = p->stack_addr;
     regs->cx = regs->ip = p->entry_addr;
-
+    if (relaxed)
+        preempt_disable();
+    mutex_unlock(&nod_load_mutex);
     return NOD_SUCCESS_LOAD;
 
 out:
-    vpr_err("cannot transfer logging buffer (%d)\n", retval);
+    if (retval != -EINTR)
+        pr_err_ratelimited("nodrop: cannot transfer logging buffer (%d)\n", retval);
+    if (relaxed)
+        preempt_disable();
+    mutex_unlock(&nod_load_mutex);
     return retval;
 }
 
